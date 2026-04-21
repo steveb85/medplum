@@ -17,6 +17,7 @@ import { SitesPage } from './admin/SitesPage';
 import { SuperAdminAsyncDashboardPage } from './admin/SuperAdminAsyncJobPage';
 import { SuperAdminPage } from './admin/SuperAdminPage';
 import { UsersPage } from './admin/UsersPage';
+import { RoleGuard } from './components/RoleGuard';
 import { BatchPage } from './BatchPage';
 import { BulkAppPage } from './BulkAppPage';
 import { ChangePasswordPage } from './ChangePasswordPage';
@@ -30,6 +31,7 @@ import { MfaPage } from './MfaPage';
 import { OAuthPage } from './OAuthPage';
 import { RegisterPage } from './RegisterPage';
 import { ResetPasswordPage } from './ResetPasswordPage';
+import { BotoxTreatmentPage } from './nurse-mel/BotoxTreatmentPage';
 import { AccountsPage } from './resource/AccountsPage';
 import { ApplyPage } from './resource/ApplyPage';
 import { AppsPage } from './resource/AppsPage';
@@ -77,9 +79,32 @@ export function AppRoutes(): JSX.Element {
         <Route path="/changepassword" element={<ChangePasswordPage />} />
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/mfa" element={<MfaPage />} />
-        <Route path="/batch" element={<BatchPage />} />
-        <Route path="/bulk/:resourceType" element={<BulkAppPage />} />
-        <Route path="/smart" element={<SmartSearchPage />} />
+      {/* Batch/Bulk operations - Admin only */}
+      <Route
+        path="/batch"
+        element={
+          <RoleGuard>
+            <BatchPage />
+          </RoleGuard>
+        }
+      />
+      <Route
+        path="/bulk/:resourceType"
+        element={
+          <RoleGuard>
+            <BulkAppPage />
+          </RoleGuard>
+        }
+      />
+      {/* SMART search - Admin only */}
+      <Route
+        path="/smart"
+        element={
+          <RoleGuard>
+            <SmartSearchPage />
+          </RoleGuard>
+        }
+      />
         <Route path="/forms/:id" element={<FormPage />} />
         <Route path="/admin/super" element={<SuperAdminPage />} />
         <Route path="/admin/super/asyncjob/:tab" element={<SuperAdminAsyncDashboardPage />} />
@@ -103,8 +128,23 @@ export function AppRoutes(): JSX.Element {
           <Route path="secrets" element={<SecretsPage />} />
           <Route path="sites" element={<SitesPage />} />
         </Route>
-        <Route path="/lab/assays" element={<AssaysPage />} />
-        <Route path="/lab/panels" element={<PanelsPage />} />
+      {/* Lab routes - Admin only */}
+      <Route
+        path="/lab/assays"
+        element={
+          <RoleGuard>
+            <AssaysPage />
+          </RoleGuard>
+        }
+      />
+      <Route
+        path="/lab/panels"
+        element={
+          <RoleGuard>
+            <PanelsPage />
+          </RoleGuard>
+        }
+      />
         <Route path="/:resourceType/new" element={<CreateResourcePage />}>
           <Route index element={<FormCreatePage />} />
           <Route path="form" element={<FormCreatePage />} />
@@ -137,11 +177,12 @@ export function AppRoutes(): JSX.Element {
           <Route path="json" element={<JsonPage />} />
           <Route path="preview" element={<PreviewPage />} />
           <Route path="responses" element={<QuestionnaireResponsePage />} />
-          <Route path="report" element={<ReportPage />} />
-          <Route path="ranges" element={<ReferenceRangesPage />} />
-          <Route path="subscriptions" element={<SubscriptionsPage />} />
-          <Route path="timeline" element={<TimelinePage />} />
-          <Route path="tools" element={<ToolsPage />} />
+<Route path="report" element={<ReportPage />} />
+      <Route path="ranges" element={<ReferenceRangesPage />} />
+      <Route path="subscriptions" element={<SubscriptionsPage />} />
+      <Route path="timeline" element={<TimelinePage />} />
+      <Route path="botox-treatment" element={<BotoxTreatmentPage />} />
+      <Route path="tools" element={<ToolsPage />} />
           <Route path="payload" element={<CommunicationPayloadPage />} />
           <Route path="profiles" element={<ProfilesPage />} />
           <Route path="accounts" element={<AccountsPage />} />

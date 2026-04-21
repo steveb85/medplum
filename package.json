@@ -16,7 +16,8 @@
     "lint:fix": "turbo run lint:fix --filter=!@medplum/docs",
     "prettier": "prettier --write \"**/*.{ts,tsx,cts,mts,js,jsx,cjs,mjs,json}\"",
     "sort-package-json": "sort-package-json package.json \"packages/*/package.json\" \"examples/*/package.json\"",
-    "test": "turbo run test --filter=!@medplum/docs"
+    "test": "turbo run test --filter=!@medplum/docs",
+    "seed:nurse-mel": "echo 'Nurse Mel data is auto-seeded on server startup'"
   },
   "prettier": {
     "plugins": [

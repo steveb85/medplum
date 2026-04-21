@@ -24,6 +24,7 @@ import type { FunctionComponent, JSX } from 'react';
 import { Suspense } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
 import { AppRoutes } from './AppRoutes';
+import { filterMenuLinks, getMedSpaRole, type MedSpaRole } from './auth/role';
 
 import './App.css';
 
@@ -37,13 +38,16 @@ export function App(): JSX.Element {
     return <Loading />;
   }
 
+  // Get user's MedSpa role for UI filtering
+  const role = getMedSpaRole(medplum);
+
   return (
     <AppShell
       logo={<Logo size={24} />}
       pathname={location.pathname}
       searchParams={searchParams}
       version={MEDPLUM_VERSION}
-      menus={userConfigToMenu(config)}
+      menus={userConfigToMenu(config, role)}
       displayAddBookmark={!!config?.id}
     >
       <Suspense fallback={<Loading />}>
@@ -53,7 +57,8 @@ export function App(): JSX.Element {
   );
 }
 
-function userConfigToMenu(config: UserConfiguration | undefined): NavbarMenu[] {
+function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRole): NavbarMenu[] {
+  // Build the menu from user configuration
   const result =
     config?.menu?.map((menu) => ({
       title: menu.title,
@@ -65,7 +70,17 @@ function userConfigToMenu(config: UserConfiguration | undefined): NavbarMenu[] {
         })) || [],
     })) || [];
 
-  result.push({
+  // Filter menu links based on role
+  const filteredResult = result.map((menu) => ({
+    ...menu,
+    links: filterMenuLinks(menu.links, role),
+  }));
+
+  // Filter out empty menus (no visible links)
+  const nonEmptyMenus = filteredResult.filter((menu) => menu.links.length > 0);
+
+  // Add Settings menu (visible to all roles)
+  nonEmptyMenus.push({
     title: 'Settings',
     links: [
       {
@@ -76,7 +91,7 @@ function userConfigToMenu(config: UserConfiguration | undefined): NavbarMenu[] {
     ],
   });
 
-  return result;
+  return nonEmptyMenus;
 }
 
 const resourceTypeToIcon: Record<string, FunctionComponent> = {

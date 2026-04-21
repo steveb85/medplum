@@ -8,6 +8,8 @@ import { Document, LinkTabs, OperationOutcomeAlert, PatientHeader, useMedplum, u
 import type { JSX } from 'react';
 import { useState } from 'react';
 import { Outlet, useParams } from 'react-router';
+import { filterPatientTabs, getMedSpaRole } from '../auth/role';
+import  type { MedSpaRole } from '../auth/role';
 import { QuickServiceRequests } from '../components/QuickServiceRequests';
 import { QuickStatus } from '../components/QuickStatus';
 import { ResourceHeader } from '../components/ResourceHeader';
@@ -15,49 +17,97 @@ import { SpecimenHeader } from '../components/SpecimenHeader';
 import { getPatient, getSpecimen } from '../utils';
 import { cleanResource } from './utils';
 
-function getTabs(resourceType: string): string[] {
+/**
+ * Get tabs for a resource type, filtered by user role
+ *
+ * @param resourceType - The FHIR resource type
+ * @param role - The user's MedSpa role
+ * @returns Array of tab names to display
+ */
+function getTabs(resourceType: string, role: MedSpaRole): string[] {
   const result = ['Timeline'];
 
+  // Bot-specific tabs (admin only)
   if (resourceType === 'Bot') {
-    result.push('Editor', 'Subscriptions');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Editor', 'Subscriptions');
+    }
   }
 
+  // PlanDefinition tabs (admin only)
   if (resourceType === 'PlanDefinition') {
-    result.push('Apply', 'Builder');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Apply', 'Builder');
+    }
   }
 
+  // Questionnaire tabs (admin only for Builder/Bots, all for Preview/Responses)
   if (resourceType === 'Questionnaire') {
-    result.push('Preview', 'Builder', 'Bots', 'Responses');
+    result.push('Preview', 'Responses');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Builder', 'Bots');
+    }
   }
 
+  // ValueSet tabs (admin only)
   if (resourceType === 'ValueSet') {
-    result.push('Preview');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Preview');
+    }
   }
 
+  // Lab-related tabs (admin only)
   if (resourceType === 'DiagnosticReport' || resourceType === 'MeasureReport') {
-    result.push('Report');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Report');
+    }
   }
 
+  // RequestGroup (admin only)
   if (resourceType === 'RequestGroup') {
-    result.push('Checklist');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Checklist');
+    }
   }
 
+  // ObservationDefinition (admin/lab only)
   if (resourceType === 'ObservationDefinition') {
-    result.push('Ranges');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Ranges');
+    }
   }
 
+  // Agent tools (admin only)
   if (resourceType === 'Agent') {
-    result.push('Tools');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Tools');
+    }
   }
 
+  // Communication payload (admin only)
   if (resourceType === 'Communication') {
-    result.push('Payload');
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Payload');
+    }
   }
 
-  result.push('Details', 'Edit', 'Event', 'History', 'Blame', 'JSON', 'Apps', 'Profiles');
+  // Base tabs - filtered by role
+  const baseTabs = ['Details', 'Edit', 'Event', 'History', 'Blame', 'JSON', 'Apps', 'Profiles'];
+  const filteredBaseTabs = filterPatientTabs(baseTabs, role);
+  result.push(...filteredBaseTabs);
 
+  // Patient-specific tabs
   if (resourceType === 'Patient') {
-    result.push('Accounts', 'Export');
+    // Botox Treatment visible to all roles (coord is read-only via AccessPolicy)
+    result.push('Botox Treatment');
+
+    // Accounts visible to all roles
+    result.push('Accounts');
+
+    // Export - admin only
+    if (role === 'super-admin' || role === 'project-admin') {
+      result.push('Export');
+    }
   }
 
   return result;
@@ -69,7 +119,8 @@ export function ResourcePage(): JSX.Element | null {
   const reference = { reference: resourceType + '/' + id };
   const [outcome, setOutcome] = useState<OperationOutcome | undefined>();
   const value = useResource(reference, setOutcome);
-  const tabs = getTabs(resourceType);
+  const role = getMedSpaRole(medplum);
+  const tabs = getTabs(resourceType, role);
 
   async function restoreResource(): Promise<void> {
     const historyBundle = await medplum.readHistory(resourceType, id);

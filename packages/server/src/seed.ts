@@ -10,6 +10,7 @@ import type { SystemRepository } from './fhir/repo';
 import { getShardSystemRepo } from './fhir/repo';
 import { PLACEHOLDER_SHARD_ID } from './fhir/sharding';
 import { globalLogger } from './logger';
+import { seedNurseMelData } from './seeds/nursemel';
 import { rebuildR4SearchParameters } from './seeds/searchparameters';
 import { rebuildR4StructureDefinitions } from './seeds/structuredefinitions';
 import { rebuildR4ValueSets } from './seeds/valuesets';
@@ -26,28 +27,39 @@ export async function seedDatabase(config: MedplumServerConfig): Promise<void> {
       return;
     }
 
-    await systemRepo.withTransaction(async () => {
-      await createSuperAdmin(systemRepo, config);
+  await systemRepo.withTransaction(async () => {
+    const superAdminProject = await createSuperAdmin(systemRepo, config);
 
-      globalLogger.info('Building structure definitions...');
-      let startTime = Date.now();
-      await rebuildR4StructureDefinitions(systemRepo);
-      globalLogger.info('Finished building structure definitions', { durationMs: Date.now() - startTime });
+    globalLogger.info('Building structure definitions...');
+    let startTime = Date.now();
+    await rebuildR4StructureDefinitions(systemRepo);
+    globalLogger.info('Finished building structure definitions', { durationMs: Date.now() - startTime });
 
-      globalLogger.info('Building value sets...');
-      startTime = Date.now();
-      await rebuildR4ValueSets(systemRepo);
-      globalLogger.info('Finished building value sets', { durationMs: Date.now() - startTime });
+    globalLogger.info('Building value sets...');
+    startTime = Date.now();
+    await rebuildR4ValueSets(systemRepo);
+    globalLogger.info('Finished building value sets', { durationMs: Date.now() - startTime });
 
-      globalLogger.info('Building search parameters...');
-      startTime = Date.now();
-      await rebuildR4SearchParameters(systemRepo);
-      globalLogger.info('Finished building search parameters', { durationMs: Date.now() - startTime });
-    });
+    globalLogger.info('Building search parameters...');
+    startTime = Date.now();
+    await rebuildR4SearchParameters(systemRepo);
+    globalLogger.info('Finished building search parameters', { durationMs: Date.now() - startTime });
+
+    // Seed Nurse Mel test data if enabled
+    // Set MEDPLUM_SEED_DATA=true to enable, or MEDPLUM_SEED_DATA=false to disable
+    // Defaults to true (enabled) when not explicitly set to 'false'
+    const shouldSeedNurseMelData = process.env.MEDPLUM_SEED_DATA !== 'false';
+    if (shouldSeedNurseMelData) {
+      globalLogger.info('MEDPLUM_SEED_DATA is enabled, seeding Nurse Mel test data...');
+      await seedNurseMelData(systemRepo, superAdminProject);
+    } else {
+      globalLogger.info('MEDPLUM_SEED_DATA is disabled, skipping Nurse Mel test data');
+    }
+  });
   }, getDatabasePool(DatabaseMode.WRITER));
 }
 
-async function createSuperAdmin(systemRepo: SystemRepository, config: MedplumServerConfig): Promise<void> {
+async function createSuperAdmin(systemRepo: SystemRepository, config: MedplumServerConfig): Promise<Project> {
   const email = config.defaultSuperAdminEmail ?? 'admin@example.com';
   const password = config.defaultSuperAdminPassword ?? 'medplum_admin';
   const [firstName, lastName] = ['Medplum', 'Admin'];
@@ -99,6 +111,8 @@ async function createSuperAdmin(systemRepo: SystemRepository, config: MedplumSer
       profile: createReference(client),
     });
   }
+
+  return superAdminProject;
 }
 
 /**
