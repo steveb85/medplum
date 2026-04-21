@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
-import type { Filter, SearchRequest, SortRule } from '@medplum/core';
+import type { Filter, SearchRequest, SortRule, MedplumClient } from '@medplum/core';
 import { convertToTransactionBundle, DEFAULT_SEARCH_COUNT, formatSearchQuery } from '@medplum/core';
 import type { Bundle, ResourceType, UserConfiguration } from '@medplum/fhirtypes';
-import type { MedplumClient } from '@medplum/core';
+
 
 /** Custom navigation paths when the user clicks New... */
-export const RESOURCE_TYPE_CREATION_PATHS: Partial<Record<ResourceType, string>> = {
+export const RESOURCE_TYPE_CREATION_PATHS: Partial<Record<ResourceType, string>> & 
+  Record<string, string | undefined>= {
   Bot: '/admin/bots/new',
   ClientApplication: '/admin/clients/new',
 };

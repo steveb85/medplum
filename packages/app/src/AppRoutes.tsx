@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 import type { JSX } from 'react';
-import { Navigate, Route, Routes } from 'react-router';
+import { Navigate, Route, Routes, useParams } from 'react-router';
 import { BotsPage } from './admin/BotsPage';
 import { ClientsPage } from './admin/ClientsPage';
 import { CreateBotPage } from './admin/CreateBotPage';
@@ -20,6 +20,7 @@ import { UsersPage } from './admin/UsersPage';
 import { RoleGuard } from './components/RoleGuard';
 import { BatchPage } from './BatchPage';
 import { BulkAppPage } from './BulkAppPage';
+import { CalendarPage } from './pages/CalendarPage';
 import { ChangePasswordPage } from './ChangePasswordPage';
 import { CreateResourcePage } from './CreateResourcePage';
 import { ErrorPage } from './ErrorPage';
@@ -58,6 +59,7 @@ import { ReportPage } from './resource/ReportPage';
 import { ResourcePage } from './resource/ResourcePage';
 import { ResourceVersionPage } from './resource/ResourceVersionPage';
 import { SubscriptionsPage } from './resource/SubscriptionsPage';
+import { TreatmentsTab } from './nurse-mel/TreatmentsTab';
 import { TimelinePage } from './resource/TimelinePage';
 import { ToolsPage } from './resource/ToolsPage';
 import { SecurityPage } from './SecurityPage';
@@ -65,6 +67,18 @@ import { SetPasswordPage } from './SetPasswordPage';
 import { SignInPage } from './SignInPage';
 import { SmartSearchPage } from './SmartSearchPage';
 import { VerifyEmailPage } from './VerifyEmailPage';
+
+/**
+ * Wrapper component for TreatmentsTab that extracts patientId from URL params.
+ * Used within ResourcePage nested routes where :id param is available  
+ * @returns JSX element rendering TreatmentsTab with patientId prop
+ */
+function TreatmentsTabWrapper(): JSX.Element {
+  const { id } = useParams<{ id: string }>();
+  // id should always be available in nested routes under /:resourceType/:id
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return <TreatmentsTab patientId={id!} />;
+}
 
 export function AppRoutes(): JSX.Element {
   return (
@@ -76,8 +90,9 @@ export function AppRoutes(): JSX.Element {
         <Route path="/setpassword/:id/:secret" element={<SetPasswordPage />} />
         <Route path="/verifyemail/:id/:secret" element={<VerifyEmailPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/changepassword" element={<ChangePasswordPage />} />
-        <Route path="/security" element={<SecurityPage />} />
+<Route path="/changepassword" element={<ChangePasswordPage />} />
+      <Route path="/calendar" element={<CalendarPage />} />
+      <Route path="/security" element={<SecurityPage />} />
         <Route path="/mfa" element={<MfaPage />} />
       {/* Batch/Bulk operations - Admin only */}
       <Route
@@ -181,6 +196,7 @@ export function AppRoutes(): JSX.Element {
       <Route path="ranges" element={<ReferenceRangesPage />} />
       <Route path="subscriptions" element={<SubscriptionsPage />} />
       <Route path="timeline" element={<TimelinePage />} />
+      <Route path="treatments" element={<TreatmentsTabWrapper />} />
       <Route path="botox-treatment" element={<BotoxTreatmentPage />} />
       <Route path="tools" element={<ToolsPage />} />
           <Route path="payload" element={<CommunicationPayloadPage />} />

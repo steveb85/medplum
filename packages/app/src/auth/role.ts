@@ -14,7 +14,7 @@ import type { MedplumClient } from '@medplum/core';
  * @see docs/roles.md for full documentation
  */
 
-export type MedSpaRole = 'super-admin' | 'project-admin' | 'provider' | 'coordinator';
+export type MedSpaRole = 'super-admin' | 'project-admin' | 'provider' | 'assistant' | 'coordinator';
 
 /**
  * Feature flags for UI filtering
@@ -59,6 +59,14 @@ export function getMedSpaRole(medplum: MedplumClient): MedSpaRole {
   const config = medplum.getUserConfiguration();
   const userType = config?.option?.find((o: { id: string }) => o.id === 'userType')?.valueString;
 
+  if (userType === 'project-admin') {
+    return 'project-admin';
+  }
+
+  if (userType === 'assistant') {
+    return 'assistant';
+  }
+
   if (userType === 'provider') {
     return 'provider';
   }
@@ -75,10 +83,16 @@ export function getMedSpaRole(medplum: MedplumClient): MedSpaRole {
     return 'project-admin';
   }
 
-  // Check AccessPolicy name for provider hints
+  // Check AccessPolicy name for role hints
   const accessPolicy = membership?.access?.[0]?.policy;
   if (accessPolicy) {
     const policyName = (accessPolicy.display || '').toLowerCase();
+    if (policyName.includes('admin')) {
+      return 'project-admin';
+    }
+    if (policyName.includes('assistant')) {
+      return 'assistant';
+    }
     if (policyName.includes('provider')) {
       return 'provider';
     }
@@ -91,6 +105,12 @@ export function getMedSpaRole(medplum: MedplumClient): MedSpaRole {
   const accessPolicyRef = membership?.access?.[0]?.policy?.reference;
   if (accessPolicyRef) {
     const policyName = accessPolicyRef.toLowerCase();
+    if (policyName.includes('admin')) {
+      return 'project-admin';
+    }
+    if (policyName.includes('assistant')) {
+      return 'assistant';
+    }
     if (policyName.includes('provider')) {
       return 'provider';
     }
@@ -116,6 +136,7 @@ export function canAccess(role: MedSpaRole, feature: MedSpaFeature): boolean {
     'super-admin': ['*'],
     'project-admin': ['*'],
     provider: ['clinical-docs', 'labs-view', 'scheduling', 'photos', 'intake-forms'],
+    assistant: ['clinical-docs', 'labs-view', 'scheduling', 'photos', 'intake-forms'],
     coordinator: ['scheduling', 'photos', 'billing-edit', 'intake-forms'],
   };
 

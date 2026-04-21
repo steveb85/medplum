@@ -7,6 +7,7 @@ import { AppShell, Loading, Logo, useMedplum } from '@medplum/react';
 import {
   IconBrandAsana,
   IconBuilding,
+  IconCalendar,
   IconDatabase,
   IconFolder,
   IconForms,
@@ -69,6 +70,16 @@ function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRol
           icon: getIcon(link.target),
         })) || [],
     })) || [];
+
+  // Inject Calendar link into the first menu (usually Favorites or main menu)
+  // Calendar is visible to all roles
+  if (result.length > 0) {
+    result[0].links.unshift({
+      label: 'Calendar',
+      href: '/calendar',
+      icon: <IconCalendar />,
+    });
+  }
 
   // Filter menu links based on role
   const filteredResult = result.map((menu) => ({

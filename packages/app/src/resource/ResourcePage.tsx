@@ -98,6 +98,9 @@ function getTabs(resourceType: string, role: MedSpaRole): string[] {
 
   // Patient-specific tabs
   if (resourceType === 'Patient') {
+    // Treatments tab - list of all aesthetic procedures
+    result.push('Treatments');
+    
     // Botox Treatment visible to all roles (coord is read-only via AccessPolicy)
     result.push('Botox-Treatment');
 

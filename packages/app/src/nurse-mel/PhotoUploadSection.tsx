@@ -12,6 +12,7 @@ interface PhotoUploadSectionProps {
   photos: Attachment[];
   onPhotosChange: (photos: Attachment[]) => void;
   icon?: ReactNode;
+  readOnly?: boolean;
 }
 
 export function PhotoUploadSection({
@@ -19,6 +20,7 @@ export function PhotoUploadSection({
   photos,
   onPhotosChange,
   icon,
+  readOnly = false,
 }: PhotoUploadSectionProps): JSX.Element {
   const handleUpload = (attachment: Attachment): void => {
     const newPhotos = [...photos, attachment];
@@ -67,6 +69,7 @@ export function PhotoUploadSection({
                 radius="xs"
                 fallbackSrc="https://placehold.co/200x120?text=No+Preview"
               />
+            {!readOnly && (
               <ActionIcon
                 color="red"
                 variant="light"
@@ -80,6 +83,7 @@ export function PhotoUploadSection({
               >
                 <IconTrash size={14} />
               </ActionIcon>
+            )}
             </Paper>
           ))}
         </SimpleGrid>

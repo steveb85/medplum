@@ -13,6 +13,7 @@ import { addSearchValues, getTransactionBundle, RESOURCE_TYPE_CREATION_PATHS, sa
 import { getMedSpaRole } from './auth/role';
 import { canCreate, canDelete, canExport, canBulk } from './config/tablePermissions';
 
+
 export function HomePage(): JSX.Element {
   const medplum = useMedplum();
   const navigate = useNavigate();
@@ -25,7 +26,7 @@ export function HomePage(): JSX.Element {
   // Define all callbacks BEFORE any early returns
   const handleNew = useCallback(
     (resourceType: string) => () => {
-      navigate(RESOURCE_TYPE_CREATION_PATHS[resourceType] ?? `/${resourceType}/new`)?.catch(console.error);
+      navigate(RESOURCE_TYPE_CREATION_PATHS[resourceType]?? `/${resourceType}/new`)?.catch(console.error);
     },
     [navigate]
   );
@@ -33,7 +34,7 @@ export function HomePage(): JSX.Element {
   const handleDelete = useCallback(
     (resourceType: string, currentSearch: SearchRequest) => (ids: string[]) => {
       if (window.confirm('Are you sure you want to delete these resources?')) {
-        medplum.invalidateSearches(resourceType);
+        medplum.invalidateSearches(resourceType as any);
         medplum
           .executeBatch({
             resourceType: 'Bundle',
@@ -94,6 +95,7 @@ export function HomePage(): JSX.Element {
     ) {
       // If the URL matches the parsed search, then save it and execute it
       saveLastSearch(populatedSearch);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearch(populatedSearch);
     } else {
       // Otherwise, navigate to the desired URL

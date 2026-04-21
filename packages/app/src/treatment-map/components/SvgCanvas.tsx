@@ -190,104 +190,123 @@ function FaceTemplateSvg({ view }: { view: 'front' | 'profile' | 'left' | 'right
   if (view === 'profile') {
     return (
       <g>
-        {/* Face outline - profile */}
-        <path
-          d="M120 60
-             C 80 60, 60 100, 60 140
-             C 60 180, 70 200, 75 220
-             C 80 240, 85 260, 85 280
-             C 85 320, 90 360, 110 400
-             C 130 440, 160 460, 200 460
-             C 240 460, 270 440, 290 400
-             C 310 360, 315 320, 315 280
-             C 315 260, 320 240, 325 220
-             C 330 200, 340 180, 340 140
-             C 340 100, 320 60, 280 60
-             Z"
-          fill="#f8f9fa"
-          stroke="#dee2e6"
-          strokeWidth="2"
-        />
+{/* Face outline - proper profile view (right-facing silhouette) */}
+<path
+d="M 150 60
+C 120 60, 100 80, 95 120
+C 90 150, 100 160, 110 170
+L 115 175
+C 140 165, 220 160, 260 175
+C 285 185, 295 200, 290 215
+C 285 230, 270 235, 260 240
+L 255 245
+C 260 255, 265 265, 260 280
+C 255 300, 240 320, 220 340
+C 200 360, 190 380, 185 420
+L 180 460
+L 280 460
+L 285 420
+C 290 380, 300 340, 305 300
+C 310 250, 300 200, 290 170
+C 280 140, 270 110, 250 90
+C 230 70, 200 60, 150 60
+Z"
+fill="#f8f9fa"
+stroke="#dee2e6"
+strokeWidth="2"
+/>
 
-        {/* Hair */}
-        <path
-          d="M60 140
-             C 60 80, 100 40, 200 40
-             C 300 40, 340 80, 340 140
-             C 340 120, 320 60, 200 60
-             C 80 60, 60 120, 60 140"
-          fill="#e9ecef"
-          stroke="#dee2e6"
-          strokeWidth="1"
-        />
+{/* Hair - profile (top/back of head) */}
+<path
+d="M 150 60
+C 120 60, 100 80, 95 120
+C 92 140, 100 150, 110 160
+L 115 165
+C 110 120, 140 50, 200 50
+C 250 50, 280 80, 290 120
+C 300 160, 310 200, 315 250
+C 320 300, 310 350, 305 380
+L 310 400
+L 280 400
+L 285 380
+C 290 350, 280 200, 250 90
+C 240 70, 220 60, 200 60
+C 180 60, 160 60, 150 60
+Z"
+fill="#e9ecef"
+stroke="#dee2e6"
+strokeWidth="1"
+/>
 
-        {/* Forehead area - subtle indication */}
-        <ellipse cx="200" cy="110" rx="50" ry="35" fill="#f1f3f4" opacity="0.3" />
+{/* Forehead area - subtle indication */}
+<ellipse cx="140" cy="110" rx="40" ry="30" fill="#f1f3f4" opacity="0.3" />
 
-        {/* Eyebrow */}
-        <path
-          d="M140 125 Q 180 115, 220 125"
-          stroke="#adb5bd"
-          strokeWidth="3"
-          fill="none"
-        />
+{/* Eyebrow */}
+<path
+d="M 120 130 Q 145 125, 170 130"
+stroke="#adb5bd"
+strokeWidth="3"
+fill="none"
+/>
 
-        {/* Eye */}
-        <ellipse cx="195" cy="145" rx="25" ry="12" fill="#fff" stroke="#dee2e6" strokeWidth="1" />
-        <circle cx="195" cy="145" r="8" fill="#e9ecef" />
+{/* Eye - profile view (almond shape) */}
+<ellipse cx="150" cy="150" rx="18" ry="10" fill="#fff" stroke="#dee2e6" strokeWidth="1" />
+<circle cx="152" cy="150" r="6" fill="#e9ecef" />
 
-        {/* Nose */}
-        <path
-          d="M220 145
-             L 240 200
-             L 230 220
-             L 225 225"
-          stroke="#dee2e6"
-          strokeWidth="2"
-          fill="none"
-        />
+{/* Nose - profile with bridge and tip */}
+<path
+d="M 168 150
+L 260 180
+L 265 185
+L 260 200
+L 250 205"
+stroke="#dee2e6"
+strokeWidth="2"
+fill="none"
+/>
 
-        {/* Lips - profile */}
-        <path
-          d="M225 240
-             Q 240 240, 245 245
-             Q 240 255, 225 255
-             Q 235 248, 225 240"
-          fill="#f8d7da"
-          stroke="#dee2e6"
-          strokeWidth="1"
-        />
+{/* Lips - profile (protruding) */}
+<path
+d="M 250 240
+Q 275 240, 280 245
+Q 275 255, 250 255
+Q 265 248, 250 240"
+fill="#f8d7da"
+stroke="#dee2e6"
+strokeWidth="1"
+/>
 
-        {/* Chin */}
-        <path
-          d="M225 255
-             Q 230 280, 220 300
-             Q 210 320, 200 330"
-          stroke="#dee2e6"
-          strokeWidth="1"
-          fill="none"
-        />
+{/* Chin - profile curve */}
+<path
+d="M 255 260
+Q 260 300, 240 340
+Q 230 360, 220 380"
+stroke="#dee2e6"
+strokeWidth="1"
+fill="none"
+/>
 
-        {/* Jawline */}
-        <path
-          d="M220 300
-             Q 260 350, 280 400"
-          stroke="#dee2e6"
-          strokeWidth="1"
-          fill="none"
-          strokeDasharray="4 2"
-        />
+{/* Jawline - profile */}
+<path
+d="M 250 280
+Q 280 320, 285 380
+Q 290 420, 280 460"
+stroke="#dee2e6"
+strokeWidth="1"
+fill="none"
+strokeDasharray="4 2"
+/>
 
-        {/* Neck */}
-        <path
-          d="M200 330
-             L 180 420
-             L 240 420
-             L 260 380"
-          fill="#f8f9fa"
-          stroke="#dee2e6"
-          strokeWidth="1"
-        />
+{/* Neck - profile (back of neck) */}
+<path
+d="M 220 380
+L 180 460
+L 280 460
+L 285 420"
+fill="#f8f9fa"
+stroke="#dee2e6"
+strokeWidth="1"
+/>
 
         {/* Temple area indication */}
         <ellipse cx="200" cy="130" rx="30" ry="40" fill="#e3f2fd" opacity="0.2" />
