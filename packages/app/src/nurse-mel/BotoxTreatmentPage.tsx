@@ -45,7 +45,7 @@ export function BotoxTreatmentPage(): JSX.Element {
   const [treatmentHistory, setTreatmentHistory] = useState<TreatmentRecord[]>([]);
   const [nurseMel, setNurseMel] = useState<Practitioner | null>(null);
   const [activeTab, setActiveTab] = useState<string>('new');
-  console.log(isLoading)
+  
   // New treatment state
   const [beforePhotos, setBeforePhotos] = useState<Attachment[]>([]);
   const [afterPhotos, setAfterPhotos] = useState<Attachment[]>([]);

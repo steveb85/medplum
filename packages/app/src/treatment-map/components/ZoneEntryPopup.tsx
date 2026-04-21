@@ -102,7 +102,7 @@ export function ZoneEntryPopup({
     <Modal
       opened={isOpen}
       onClose={onClose}
-      title={<Title order={5}>Document Injection</Title>}
+      title="Document Injection"
       size="md"
       centered
     >

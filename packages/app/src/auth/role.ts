@@ -75,6 +75,30 @@ export function getMedSpaRole(medplum: MedplumClient): MedSpaRole {
     return 'project-admin';
   }
 
+  // Check AccessPolicy name for provider hints
+  const accessPolicy = membership?.access?.[0]?.policy;
+  if (accessPolicy) {
+    const policyName = (accessPolicy.display || '').toLowerCase();
+    if (policyName.includes('provider')) {
+      return 'provider';
+    }
+    if (policyName.includes('coordinator')) {
+      return 'coordinator';
+    }
+  }
+
+  // Check AccessPolicy reference
+  const accessPolicyRef = membership?.access?.[0]?.policy?.reference;
+  if (accessPolicyRef) {
+    const policyName = accessPolicyRef.toLowerCase();
+    if (policyName.includes('provider')) {
+      return 'provider';
+    }
+    if (policyName.includes('coordinator')) {
+      return 'coordinator';
+    }
+  }
+
   // Default to coordinator for safety
   // This ensures new users have limited access until explicitly granted
   return 'coordinator';
@@ -142,6 +166,19 @@ export function filterMenuLinks<T extends { href: string }>(links: T[], role: Me
     if (link.href.startsWith('/lab/')) {
       return false;
     }
+    
+    // get rid of diagnostic report
+    if (link.href.startsWith('/DiagnosticReport')) {
+      return false;
+    }
+    // get rid of service request
+    if (link.href.startsWith('/ServiceRequest')) {
+      return false;
+    }
+    // get rid of orgnanization
+    if (link.href.startsWith('/Organization')) {
+      return false;
+    }
 
     // Hide admin links from non-admins
     if (link.href.startsWith('/admin/')) {
@@ -165,11 +202,11 @@ export function filterPatientTabs(tabs: string[], role: MedSpaRole): string[] {
   }
 
   // Tabs that should be hidden for non-admins
-  const adminOnlyTabs = ['Event', 'Blame', 'JSON', 'Apps', 'Profiles', 'Export'];
+  const adminOnlyTabs = ['Event', 'Blame', 'JSON', 'Apps', 'Profiles', 'Export', 'History', 'Accounts'];
 
   // Tabs that should be hidden for coordinators
   const coordinatorHiddenTabs = ['Edit'];
-
+  
   return tabs.filter((tab) => {
     // Hide admin-only tabs
     if (adminOnlyTabs.includes(tab)) {

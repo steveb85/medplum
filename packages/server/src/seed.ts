@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 import { createReference } from '@medplum/core';
-import type { ClientApplication, Project, ProjectMembership, User } from '@medplum/fhirtypes';
+import type { ClientApplication, Practitioner, Project, ProjectMembership, User } from '@medplum/fhirtypes';
 import { bcryptHashPassword, createProfile, createProjectMembership } from './auth/utils';
 import type { MedplumServerConfig } from './config/types';
 import { r4ProjectId } from './constants';
@@ -51,7 +51,33 @@ export async function seedDatabase(config: MedplumServerConfig): Promise<void> {
     const shouldSeedNurseMelData = process.env.MEDPLUM_SEED_DATA !== 'false';
     if (shouldSeedNurseMelData) {
       globalLogger.info('MEDPLUM_SEED_DATA is enabled, seeding Nurse Mel test data...');
-      await seedNurseMelData(systemRepo, superAdminProject);
+      
+      // Create a dedicated project for Nurse Mel's practice
+      // This is NOT a super admin project - it's a regular project
+      const nurseMelProject = await systemRepo.createResource<Project>({
+        resourceType: 'Project',
+        name: 'Nurse Mel Aesthetics',
+        strictMode: true,
+      });
+      globalLogger.info(`Created Nurse Mel project: ${nurseMelProject.id}`);
+      
+      // Super Admin gets a membership in this project with admin privileges
+      const superAdmin = await systemRepo.searchOne<User>({
+        resourceType: 'User',
+        filters: [{ code: 'email', operator: 'eq', value: config.defaultSuperAdminEmail ?? 'admin@example.com' }],
+      });
+      if (superAdmin) {
+        const superAdminPractitioner = await systemRepo.searchOne<Practitioner>({
+          resourceType: 'Practitioner',
+          filters: [{ code: 'email', operator: 'eq', value: config.defaultSuperAdminEmail ?? 'admin@example.com' }],
+        });
+        if (superAdminPractitioner) {
+          await createProjectMembership(systemRepo, superAdmin, nurseMelProject, superAdminPractitioner, { admin: true });
+          globalLogger.info('Super Admin added to Nurse Mel project with admin privileges');
+        }
+      }
+      
+      await seedNurseMelData(systemRepo, nurseMelProject);
     } else {
       globalLogger.info('MEDPLUM_SEED_DATA is disabled, skipping Nurse Mel test data');
     }

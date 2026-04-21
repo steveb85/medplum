@@ -7,6 +7,8 @@ export { PhotoCanvas } from './components/PhotoCanvas';
 export { PhotoUploadZone } from './components/PhotoUploadZone';
 export { ZoneEntryPopup } from './components/ZoneEntryPopup';
 export { ZoneList } from './components/ZoneList';
+export { FaceTemplate } from './components/FaceTemplate';
+export { SvgCanvas } from './components/SvgCanvas';
 
 // Hooks
 export { useInjectionMap } from './hooks/useInjectionMap';

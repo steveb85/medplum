@@ -92,17 +92,17 @@ function getTabs(resourceType: string, role: MedSpaRole): string[] {
   }
 
   // Base tabs - filtered by role
-  const baseTabs = ['Details', 'Edit', 'Event', 'History', 'Blame', 'JSON', 'Apps', 'Profiles'];
+  const baseTabs = ['Details', 'Edit', 'Event', 'History', 'Blame', 'Accounts','JSON', 'Apps', 'Profiles'];
   const filteredBaseTabs = filterPatientTabs(baseTabs, role);
   result.push(...filteredBaseTabs);
 
   // Patient-specific tabs
   if (resourceType === 'Patient') {
     // Botox Treatment visible to all roles (coord is read-only via AccessPolicy)
-    result.push('Botox Treatment');
+    result.push('Botox-Treatment');
 
     // Accounts visible to all roles
-    result.push('Accounts');
+    // result.push('Accounts');
 
     // Export - admin only
     if (role === 'super-admin' || role === 'project-admin') {

@@ -14,12 +14,11 @@ import {
   Divider,
   Box,
 } from '@mantine/core';
-import { IconDeviceFloppy, IconX, IconPhoto, IconMap } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconX, IconMap } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import type { TreatmentMapProps } from '../types/injection';
 import { useInjectionMap } from '../hooks/useInjectionMap';
-import { PhotoCanvas } from './PhotoCanvas';
-import { PhotoUploadZone } from './PhotoUploadZone';
+import { SvgCanvas } from './SvgCanvas';
 import { ZoneEntryPopup } from './ZoneEntryPopup';
 import { ZoneList } from './ZoneList';
 import { PRODUCT_NAMES } from '../types/injection';
@@ -52,7 +51,6 @@ export function TreatmentMap({
     // State
     bodyRegion,
     view,
-    patientPhoto,
     markers,
     selectedMarker,
     isSaving: internalIsSaving,
@@ -65,7 +63,6 @@ export function TreatmentMap({
     // Actions
     setBodyRegion,
     setView,
-    setPatientPhoto,
     addMarker,
     updateMarker,
     deleteMarker,
@@ -87,9 +84,9 @@ export function TreatmentMap({
                 <IconMap size={20} style={{ marginRight: 8, verticalAlign: 'middle' }} />
                 Treatment Mapping
               </Title>
-              <Text size="sm" c="dimmed">
-                Click on the photo to mark injection points
-              </Text>
+        <Text size="sm" c="dimmed">
+          Click on the face diagram to mark injection points
+        </Text>
             </div>
 
             {/* Summary stats */}
@@ -128,82 +125,73 @@ export function TreatmentMap({
         </Stack>
       </Paper>
 
-      {/* Photo upload (if no photo yet) */}
-      {!patientPhoto && !readOnly && (
-        <PhotoUploadZone
-          onPhotoUpload={setPatientPhoto}
-        />
-      )}
+      {/* Main content: SVG Canvas + Zone List */}
+      <Grid gutter="md">
+        {/* Canvas - Takes up most space */}
+        <Grid.Col span={{ base: 12, md: 8, lg: 9 }}>
+          <Stack gap="xs">
+            {/* Canvas title with product legend */}
+            <Group justify="space-between">
+              <Text size="sm" fw={500}>
+                <IconMap size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                Injection Map
+              </Text>
 
-      {/* Main content: Canvas + Zone List */}
-      {patientPhoto && (
-        <Grid gutter="md">
-          {/* Canvas - Takes up most space */}
-          <Grid.Col span={{ base: 12, md: 8, lg: 9 }}>
-            <Stack gap="xs">
-              {/* Canvas title with product legend */}
-              <Group justify="space-between">
-                <Text size="sm" fw={500}>
-                  <IconPhoto size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                  Injection Map
-                </Text>
-
-                {/* Product color legend */}
-                <Group gap="xs">
-                  {Object.entries(unitsByProduct).map(([product, units]) => (
-                    <Badge
-                      key={product}
-                      size="sm"
-                      variant="dot"
-                      styles={{
-                        root: {
-                          borderLeft: `3px solid var(--mantine-color-${getProductColor(product)}-6)`,
-                        },
-                      }}
-                    >
-                      {PRODUCT_NAMES[product as keyof typeof PRODUCT_NAMES]}: {units}u
-                    </Badge>
-                  ))}
-                </Group>
+              {/* Product color legend */}
+              <Group gap="xs">
+                {Object.entries(unitsByProduct).map(([product, units]) => (
+                  <Badge
+                    key={product}
+                    size="sm"
+                    variant="dot"
+                    styles={{
+                      root: {
+                        borderLeft: `3px solid var(--mantine-color-${getProductColor(product)}-6)`,
+                      },
+                    }}
+                  >
+                    {PRODUCT_NAMES[product as keyof typeof PRODUCT_NAMES]}: {units}u
+                  </Badge>
+                ))}
               </Group>
+            </Group>
 
-              {/* Photo canvas */}
-              <PhotoCanvas
-                photoUrl={patientPhoto.url || ''}
-                markers={markers}
-                zones={zones}
-                selectedMarker={selectedMarker}
-                onCanvasClick={readOnly ? () => {} : addMarker}
-                onMarkerClick={selectMarker}
-                readOnly={readOnly}
-                markerColorMode="product"
-              />
+            {/* SVG Canvas with anatomical template */}
+            <SvgCanvas
+              view={view}
+              markers={markers}
+              zones={zones}
+              selectedMarker={selectedMarker}
+              onCanvasClick={readOnly ? () => {} : addMarker}
+              onMarkerClick={selectMarker}
+              readOnly={readOnly}
+              markerColorMode="product"
+            />
 
-              {/* Instructions */}
-              {!readOnly && (
-                <Text size="xs" c="dimmed">
-                  {markers.length === 0
-                    ? 'Click anywhere on the photo to add your first injection point'
-                    : 'Click on the photo to add more injection points, or click an existing marker to edit'}
-                </Text>
-              )}
-            </Stack>
-          </Grid.Col>
+            {/* Instructions */}
+            {!readOnly && (
+              <Text size="xs" c="dimmed">
+                {markers.length === 0
+                  ? 'Click anywhere on the face diagram to add your first injection point'
+                  : 'Click on the diagram to add more injection points, or click an existing marker to edit'}
+              </Text>
+            )}
+          </Stack>
+        </Grid.Col>
 
-          {/* Zone List - Sidebar */}
-          <Grid.Col span={{ base: 12, md: 4, lg: 3 }}>
-            <Box h="100%">
-              <ZoneList
-                markers={markers}
-                selectedMarker={selectedMarker}
-                onMarkerSelect={selectMarker}
-                onMarkerDelete={deleteMarker}
-                readOnly={readOnly}
-              />
-            </Box>
-          </Grid.Col>
-        </Grid>
-      )}
+        {/* Zone List - Sidebar */}
+        <Grid.Col span={{ base: 12, md: 4, lg: 3 }}>
+          <Box h="100%">
+            <ZoneList
+              markers={markers}
+              selectedMarker={selectedMarker}
+              onMarkerSelect={selectMarker}
+              onMarkerDelete={deleteMarker}
+              readOnly={readOnly}
+            />
+          </Box>
+        </Grid.Col>
+      </Grid>
 
       {/* Zone Entry Popup (for editing markers) */}
       <ZoneEntryPopup
@@ -238,17 +226,11 @@ export function TreatmentMap({
             </Button>
           </Group>
 
-          {!canSave && markers.length === 0 && (
-            <Text size="sm" c="dimmed" mt="xs" ta="right">
-              Add at least one injection point to save
-            </Text>
-          )}
-
-          {!canSave && markers.length > 0 && !patientPhoto && (
-            <Text size="sm" c="dimmed" mt="xs" ta="right">
-              Upload a photo to save
-            </Text>
-          )}
+{markers.length === 0 && (
+              <Text size="sm" c="dimmed" mt="xs" ta="right">
+                Add at least one injection point to save
+              </Text>
+            )}
         </Paper>
       )}
 

@@ -12,6 +12,7 @@ import type {
   Questionnaire,
   QuestionnaireResponse,
   User,
+  UserConfiguration,
 } from '@medplum/fhirtypes';
 import { bcryptHashPassword, createProfile, createProjectMembership } from '../auth/utils';
 import type { SystemRepository } from '../fhir/repo';
@@ -182,12 +183,15 @@ async function createProviderAccessPolicy(
     name: 'MedSpa Provider Policy',
     resource: [
       { resourceType: 'Patient', interaction: ['read', 'vread', 'create', 'update', 'search'] },
+      // Can see all practitioners, but only update own profile
       { resourceType: 'Practitioner', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Practitioner', criteria: 'Practitioner?_id=%profile.id', interaction: ['update'] },
       { resourceType: 'Appointment', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Encounter', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Procedure', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Observation', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Media', interaction: ['read', 'vread', 'create', 'update', 'search'] },
+      { resourceType: 'Binary', interaction: ['read', 'vread', 'create', 'search'] },
       { resourceType: 'DocumentReference', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Questionnaire', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'QuestionnaireResponse', interaction: ['read', 'vread', 'create', 'search'] },
@@ -195,6 +199,20 @@ async function createProviderAccessPolicy(
       { resourceType: 'Invoice', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Organization', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Bundle', interaction: ['read', 'create'] },
+      { resourceType: 'Communication', interaction: ['read', 'vread', 'create', 'update', 'search'] },
+      // Additional resources for Patient view
+      { resourceType: 'RelatedPerson', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'CareTeam', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Coverage', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Account', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Subscription', interaction: ['read', 'create', 'delete'] },
+      // Clinical resources that may be queried
+      { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'DiagnosticReport', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'MedicationRequest', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
     ],
   });
 
@@ -221,12 +239,15 @@ async function createCoordinatorAccessPolicy(
     name: 'MedSpa Coordinator Policy',
     resource: [
       { resourceType: 'Patient', interaction: ['read', 'vread', 'search'] },
+      // Can see all practitioners, but only update own profile
       { resourceType: 'Practitioner', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Practitioner', criteria: 'Practitioner?_id=%profile.id', interaction: ['update'] },
       { resourceType: 'Appointment', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Encounter', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Procedure', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Observation', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Media', interaction: ['read', 'vread', 'create', 'search'] },
+      { resourceType: 'Binary', interaction: ['read', 'vread', 'create', 'search'] },
       { resourceType: 'DocumentReference', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Questionnaire', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'QuestionnaireResponse', interaction: ['read', 'vread', 'search'] },
@@ -235,6 +256,20 @@ async function createCoordinatorAccessPolicy(
       { resourceType: 'PaymentReconciliation', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Organization', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Bundle', interaction: ['read', 'create'] },
+      { resourceType: 'Communication', interaction: ['read', 'vread', 'create', 'search'] },
+      // Additional resources for Patient view (read-only for coordinators)
+      { resourceType: 'RelatedPerson', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'CareTeam', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Coverage', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Account', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Subscription', interaction: ['read', 'create', 'delete'] },
+      // Clinical resources that may be queried (read-only for coordinators)
+      { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'DiagnosticReport', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'MedicationRequest', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
     ],
   });
 
@@ -294,7 +329,19 @@ async function createNurseMelPractitioner(
     ],
   });
 
-  // Create project membership with access policy
+  // Create UserConfiguration to set userType='provider' for frontend role detection
+  const userConfiguration = await systemRepo.createResource<UserConfiguration>({
+    resourceType: 'UserConfiguration',
+    meta: { project: project.id },
+    option: [
+      {
+        id: 'userType',
+        valueString: 'provider',
+      },
+    ],
+  });
+
+  // Create project membership with access policy and userConfiguration
   const access: ProjectMembershipAccess[] | undefined = accessPolicy.id
     ? [{ policy: createReference(accessPolicy) }]
     : undefined;
@@ -302,6 +349,7 @@ async function createNurseMelPractitioner(
   await createProjectMembership(systemRepo, user, project, practitioner, {
     admin: false,
     access,
+    userConfiguration: createReference(userConfiguration),
   });
 
   globalLogger.info(`Created Nurse Mel practitioner: ${practitioner.id}`);
@@ -357,7 +405,19 @@ async function createCoordinator(
     ],
   });
 
-  // Create project membership with access policy
+  // Create UserConfiguration to set userType='coordinator' for frontend role detection
+  const userConfiguration = await systemRepo.createResource<UserConfiguration>({
+    resourceType: 'UserConfiguration',
+    meta: { project: project.id },
+    option: [
+      {
+        id: 'userType',
+        valueString: 'coordinator',
+      },
+    ],
+  });
+
+  // Create project membership with access policy and userConfiguration
   const access: ProjectMembershipAccess[] | undefined = accessPolicy.id
     ? [{ policy: createReference(accessPolicy) }]
     : undefined;
@@ -365,6 +425,7 @@ async function createCoordinator(
   await createProjectMembership(systemRepo, user, project, coordinatorPractitioner, {
     admin: false,
     access,
+    userConfiguration: createReference(userConfiguration),
   });
 
   globalLogger.info(`Created Coordinator: ${user.id}`);

@@ -76,8 +76,8 @@ export interface InjectionMap {
   /** View angle of the photo */
   view: ViewAngle;
 
-  /** Patient photo attachment */
-  patientPhoto: Attachment;
+  /** Patient photo attachment (optional - can use SVG templates instead) */
+  patientPhoto?: Attachment;
 
   /** All injection markers */
   markers: InjectionMarker[];

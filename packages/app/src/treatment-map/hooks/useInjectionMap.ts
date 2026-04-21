@@ -84,7 +84,7 @@ export function useInjectionMap(
   // State
   const [bodyRegion, setBodyRegionState] = useState<BodyRegion>(initialState.bodyRegion);
   const [view, setViewState] = useState<ViewAngle>(initialState.view);
-  const [patientPhoto, setPatientPhotoState] = useState<Attachment | null>(initialState.patientPhoto);
+  const [patientPhoto, setPatientPhotoState] = useState<Attachment | null>(initialState.patientPhoto || null);
   const [markers, setMarkers] = useState<InjectionMarker[]>(initialState.markers);
   const [selectedMarker, setSelectedMarker] = useState<InjectionMarker | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -96,7 +96,8 @@ export function useInjectionMap(
   const unitsByProduct = useMemo(() => calculateUnitsByProduct(markers), [markers]);
   const totalUnits = useMemo(() => calculateTotalUnits(markers), [markers]);
   const totalMarkers = markers.length;
-  const canSave = markers.length > 0 && patientPhoto !== null;
+  // Can save if there are markers (photo is optional now with SVG templates)
+  const canSave = markers.length > 0;
 
   // Actions
   const setBodyRegion = useCallback((region: BodyRegion) => {
@@ -159,15 +160,6 @@ export function useInjectionMap(
   }, []);
 
   const saveTreatment = useCallback(async () => {
-    if (!patientPhoto) {
-      showNotification({
-        title: 'Missing Photo',
-        message: 'Please upload a patient photo first',
-        color: 'red',
-      });
-      return;
-    }
-
     if (markers.length === 0) {
       showNotification({
         title: 'No Injections',
@@ -184,7 +176,12 @@ export function useInjectionMap(
       const injectionMap: InjectionMap = {
         bodyRegion,
         view,
-        patientPhoto,
+        // Use a placeholder attachment for the SVG template
+        patientPhoto: patientPhoto || {
+          contentType: 'image/svg+xml',
+          url: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"><!-- ${view} view template --></svg>`)}`,
+          title: `Face Template (${view} view)`,
+        },
         markers,
         createdAt: new Date().toISOString(),
         createdBy: profile ? { reference: `Practitioner/${profile.id}` } : undefined,
