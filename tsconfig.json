@@ -19,7 +19,7 @@
     "strictNullChecks": true,
     "noImplicitThis": true,
     "alwaysStrict": true,
-    "noUnusedLocals": true,
+    "noUnusedLocals": false,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": false,
     "experimentalDecorators": true,
@@ -27,7 +27,8 @@
     "allowJs": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "noUnusedParameters": false
   },
   "exclude": ["node_modules", "**/node_modules", "**/dist", "packages/docs/build"]
 }

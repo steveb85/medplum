@@ -475,6 +475,7 @@ export function BotoxTreatmentPage(): JSX.Element {
                 <Stack gap="md">
                   <TreatmentMap
                     patientId={id}
+                    mode="create"
                     onSave={handleSaveTreatment}
                     isSaving={isSaving}
                   />
@@ -559,6 +560,7 @@ export function BotoxTreatmentPage(): JSX.Element {
                           </Text>
                           <TreatmentMap
                             patientId={id}
+                            mode="view"
                             initialMap={record.injectionMap}
                             readOnly
                           />

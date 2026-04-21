@@ -37,12 +37,17 @@ const VIEW_OPTIONS = [
 
 export function TreatmentMap({
   patientId,
-  mode,
+  mode = 'create',
   existingProcedure,
-  
+  initialMap,
+  onSave,
   onCancel,
   readOnly = false,
+  isSaving: externalIsSaving,
 }: TreatmentMapProps): JSX.Element {
+  // Use initialMap if provided, otherwise fall back to existingProcedure
+  const mapToUse = initialMap || existingProcedure?.injectionMap;
+
   const {
     // State
     bodyRegion,
@@ -50,7 +55,7 @@ export function TreatmentMap({
     patientPhoto,
     markers,
     selectedMarker,
-    isSaving,
+    isSaving: internalIsSaving,
     zones,
     unitsByProduct,
     totalUnits,
@@ -66,7 +71,10 @@ export function TreatmentMap({
     deleteMarker,
     selectMarker,
     saveTreatment,
-  } = useInjectionMap(patientId, mode, existingProcedure?.injectionMap);
+  } = useInjectionMap(patientId, mode, mapToUse);
+
+  // Use external isSaving if provided, otherwise use internal
+  const isSaving = externalIsSaving ?? internalIsSaving;
 
   return (
     <Stack gap="md">

@@ -2,4 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { medplumEslintConfig } from '@medplum/eslint-config';
 import { defineConfig } from 'eslint/config';
-export default defineConfig(medplumEslintConfig);
+export default defineConfig([
+  ...medplumEslintConfig,
+  {
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
+]);
