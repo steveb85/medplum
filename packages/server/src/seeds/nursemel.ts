@@ -274,7 +274,23 @@ async function createNurseMelPractitioner(
     NURSE_MEL_DATA.email
   );
 
-  const practitioner = profile as Practitioner;
+  // Add qualification code for Provider
+  const practitioner = await systemRepo.updateResource<Practitioner>({
+    ...(profile as Practitioner),
+    qualification: [
+      {
+        code: {
+          coding: [
+            {
+              system: 'http://hl7.org/fhir/v2/0360',
+              code: 'RN',
+              display: 'Registered Nurse',
+            },
+          ],
+        },
+      },
+    ],
+  });
 
   // Create project membership with access policy
   const access: ProjectMembershipAccess[] | undefined = accessPolicy.id
@@ -316,13 +332,26 @@ async function createCoordinator(
     passwordHash,
   });
 
-  // Create a Patient profile for coordinator (simpler than RelatedPerson for this use case)
-  const patient = await systemRepo.createResource<Patient>({
-    resourceType: 'Patient',
+  // Create a Practitioner profile for coordinator with coordinator role
+  const coordinatorPractitioner = await systemRepo.createResource<Practitioner>({
+    resourceType: 'Practitioner',
     meta: { project: project.id },
     name: [{ use: 'official', family: COORDINATOR_DATA.lastName, given: [COORDINATOR_DATA.firstName] }],
     telecom: [
       { system: 'email', value: COORDINATOR_DATA.email, use: 'work' },
+    ],
+    qualification: [
+      {
+        code: {
+          coding: [
+            {
+              system: 'http://melissaknudson.com/roles',
+              code: 'coordinator',
+              display: 'Patient Coordinator',
+            },
+          ],
+        },
+      },
     ],
   });
 
@@ -331,7 +360,7 @@ async function createCoordinator(
     ? [{ policy: createReference(accessPolicy) }]
     : undefined;
 
-  await createProjectMembership(systemRepo, user, project, patient, {
+  await createProjectMembership(systemRepo, user, project, coordinatorPractitioner, {
     admin: false,
     access,
   });
