@@ -40,7 +40,7 @@ export interface UseInjectionMapReturn {
   updateMarker: (marker: InjectionMarker) => void;
   deleteMarker: (markerId: string) => void;
   selectMarker: (marker: InjectionMarker | null) => void;
-  saveTreatment: (background: BackgroundConfig) => Promise<void>;
+  saveTreatment: (background: BackgroundConfig) => Promise<InjectionMap | null>;
   reset: () => void;
 
   // Computed
@@ -166,61 +166,51 @@ export function useInjectionMap(
     setSelectedMarker(marker);
   }, []);
 
-  const saveTreatment = useCallback(async (background: BackgroundConfig) => {
+const saveTreatment = useCallback(async (background: BackgroundConfig): Promise<InjectionMap | null> => {
     if (markers.length === 0) {
       showNotification({
         title: 'No Injections',
         message: 'Please mark at least one injection point',
         color: 'red',
       });
-      return;
+      return null;
     }
 
     setIsSaving(true);
 
     try {
       const profile = medplum.getProfile();
-    const injectionMap: InjectionMap = {
-      bodyRegion,
-      view: background.type === 'template' ? background.templateView : 'front',
-      backgroundType: background.type,
-      templateGender: background.type === 'template' ? (background.templateGender as 'male' | 'female' | 'unknown') : undefined,
-      templateView: background.templateView,
-      photoMediaId: background.type === 'photo' ? background.photoId : undefined,
-      // Use a placeholder attachment for the SVG template
-      patientPhoto: patientPhoto || {
-        contentType: 'image/svg+xml',
-        url: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"><!-- ${background.templateView} view template --></svg>`)}`,
-        title: `Face Template (${background.templateView} view)`,
-      },
-      markers,
-      createdAt: new Date().toISOString(),
-      createdBy: profile ? { reference: `Practitioner/${profile.id}` } : undefined,
-    };
-      console.log('Saving injection map:', injectionMap);
+      const injectionMap: InjectionMap = {
+        bodyRegion,
+        view: background.type === 'template' ? background.templateView : 'front',
+        backgroundType: background.type,
+        templateGender: background.type === 'template' ? (background.templateGender as 'male' | 'female' | 'unknown') : undefined,
+        templateView: background.templateView,
+        photoMediaId: background.type === 'photo' ? background.photoId : undefined,
+        // Use a placeholder attachment for the SVG template
+        patientPhoto: patientPhoto || {
+          contentType: 'image/svg+xml',
+          url: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"><!-- ${background.templateView} view template --></svg>`)}`,
+          title: `Face Template (${background.templateView} view)`,
+        },
+        markers,
+        createdAt: new Date().toISOString(),
+        createdBy: profile ? { reference: `Practitioner/${profile.id}` } : undefined,
+      };
 
-      // TODO: Create Procedure resource with extension
-      // For now, just log success
-      showNotification({
-        title: 'Treatment Saved',
-        message: `Documented ${markers.length} injection points (${totalUnits} total units)`,
-        color: 'green',
-      });
-
-      // Reset form for new treatment
-      setMarkers([]);
-      setSelectedMarker(null);
-      setPatientPhotoState(null);
+      // Return the injection map for parent to handle actual save
+      return injectionMap;
     } catch (err) {
       showNotification({
-        title: 'Error Saving Treatment',
+        title: 'Error Creating Treatment Map',
         message: normalizeErrorString(err),
         color: 'red',
       });
+      return null;
     } finally {
       setIsSaving(false);
     }
-  }, [patientPhoto, markers, bodyRegion, view, totalUnits, medplum]);
+  }, [patientPhoto, markers, bodyRegion, view, medplum]);
 
   const reset = useCallback(() => {
     setBodyRegionState('face');

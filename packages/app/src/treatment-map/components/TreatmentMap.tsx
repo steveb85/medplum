@@ -1,35 +1,21 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  Button,
-  Grid,
-  Group,
-  Paper,
-  Select,
-  Stack,
-  Text,
-  Title,
-  Badge,
-  Divider,
-  Box,
-} from '@mantine/core';
-import { IconDeviceFloppy, IconX, IconMap } from '@tabler/icons-react';
+import { Badge, Box, Button, Divider, Grid, Group, Paper, Select, Stack, Text, Title } from '@mantine/core';
+import { IconDeviceFloppy, IconMap, IconX } from '@tabler/icons-react';
 import type { JSX } from 'react';
-import { useState, useCallback, useEffect } from 'react';
-import type { TreatmentMapProps } from '../types/injection';
+import { useCallback, useEffect, useState } from 'react';
 import { useInjectionMap } from '../hooks/useInjectionMap';
 import { usePatientAssets } from '../hooks/usePatientAssets';
+import type { InjectionMarker, TreatmentMapProps } from '../types/injection';
+import { PRODUCT_NAMES } from '../types/injection';
+import { BackgroundSelector, type BackgroundConfig } from './BackgroundSelector';
 import { ImageCanvas } from './ImageCanvas';
 import { ZoneEntryPopup } from './ZoneEntryPopup';
 import { ZoneList } from './ZoneList';
-import { BackgroundSelector, type BackgroundConfig } from './BackgroundSelector';
-import { PRODUCT_NAMES } from '../types/injection';
 
 // Body region options
-const BODY_REGION_OPTIONS = [
-  { value: 'face', label: 'Face' },
-];
+const BODY_REGION_OPTIONS = [{ value: 'face', label: 'Face' }];
 
 export function TreatmentMap({
   patientId,
@@ -45,10 +31,7 @@ export function TreatmentMap({
   const mapToUse = initialMap || existingProcedure?.injectionMap;
 
   // Fetch patient assets (gender and photos)
-  const { gender, photos, loading: assetsLoading } = usePatientAssets(
-    patientId,
-    existingProcedure?.id
-  );
+  const { gender, photos, loading: assetsLoading } = usePatientAssets(patientId, existingProcedure?.id);
 
   // Background state
   const [background, setBackground] = useState<BackgroundConfig>(() => {
@@ -86,9 +69,10 @@ export function TreatmentMap({
   }, [gender, background.type, background.templateGender]);
 
   // Get selected photo URL
-  const selectedPhotoUrl = background.type === 'photo' && background.photoId
-    ? photos.find((p) => p.id === background.photoId)?.url
-    : undefined;
+  const selectedPhotoUrl =
+    background.type === 'photo' && background.photoId
+      ? photos.find((p) => p.id === background.photoId)?.url
+      : undefined;
 
   const {
     // State
@@ -115,10 +99,28 @@ export function TreatmentMap({
     setBackground(newBackground);
   }, []);
 
-  // Handle save with background info
+  // Handle save marker and immediately persist to parent
+  const handleSaveMarker = useCallback(
+    async (updatedMarker: InjectionMarker): Promise<void> => {
+      // First update local state
+      updateMarker(updatedMarker);
+
+      // Build complete injection map and save immediately
+      const injectionMap = await saveTreatment(background);
+      if (injectionMap && onSave) {
+        await onSave(injectionMap);
+      }
+    },
+    [updateMarker, saveTreatment, background, onSave]
+  );
+
+  // Legacy handleSave (for any direct save buttons, though we removed them)
   const handleSave = useCallback(async () => {
-    await saveTreatment(background);
-  }, [saveTreatment, background]);
+    const injectionMap = await saveTreatment(background);
+    if (injectionMap && onSave) {
+      await onSave(injectionMap);
+    }
+  }, [saveTreatment, background, onSave]);
 
   return (
     <Stack gap="md">
@@ -247,42 +249,17 @@ export function TreatmentMap({
       <ZoneEntryPopup
         isOpen={!!selectedMarker && !readOnly}
         marker={selectedMarker}
-        onSave={updateMarker}
+        onSave={handleSaveMarker}
         onDelete={deleteMarker}
-        onClose={() => selectMarker(null)}
+        onClose={() => {
+          // Delete unsaved markers (new markers with no units)
+          if (selectedMarker && selectedMarker.units === 0) {
+            deleteMarker(selectedMarker.id);
+          } else {
+            selectMarker(null);
+          }
+        }}
       />
-
-      {/* Action buttons */}
-      {!readOnly && (
-        <Paper withBorder p="md">
-          <Group justify="space-between">
-            <Button
-              variant="light"
-              color="gray"
-              leftSection={<IconX size={16} />}
-              onClick={onCancel}
-            >
-              Cancel
-            </Button>
-
-            <Button
-              leftSection={<IconDeviceFloppy size={16} />}
-              onClick={handleSave}
-              loading={isSaving}
-              disabled={!canSave}
-              color="green"
-            >
-              Save Treatment
-            </Button>
-          </Group>
-
-          {markers.length === 0 && (
-            <Text size="sm" c="dimmed" mt="xs" ta="right">
-              Add at least one injection point to save
-            </Text>
-          )}
-        </Paper>
-      )}
 
       {/* Read-only notice for coordinators */}
       {readOnly && (

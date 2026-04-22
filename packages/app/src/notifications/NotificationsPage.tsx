@@ -16,6 +16,7 @@ import {
   Loader,
   Center,
   ScrollArea,
+  Switch,
 } from '@mantine/core';
 import { useMedplum } from '@medplum/react';
 import type { Communication, Practitioner } from '@medplum/fhirtypes';
@@ -30,9 +31,16 @@ import {
   IconNotes,
   IconBell,
   IconX,
+  IconList,
 } from '@tabler/icons-react';
-import { getNotifications, markNotificationAsRead, isNotificationRead, getRelatedResource, getNotificationCategory } from './utils';
 import { useNavigate } from 'react-router';
+import {
+  getNotifications,
+  markNotificationAsRead,
+  isNotificationRead,
+  getRelatedResource,
+  getNotificationCategory,
+} from './utils';
 
 // Category icons
 const CATEGORY_ICONS: Record<string, JSX.Element> = {
@@ -59,6 +67,7 @@ export function NotificationsPage(): JSX.Element {
   const [notifications, setNotifications] = useState<Communication[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showAll, setShowAll] = useState(false);
 
   // Load notifications
   const loadNotifications = useCallback(async () => {
@@ -66,7 +75,7 @@ export function NotificationsPage(): JSX.Element {
 
     try {
       setLoading(true);
-      const comms = await getNotifications(medplum, user.id, 50);
+      const comms = await getNotifications(medplum, user.id, 20);
       setNotifications(comms);
 
       // Count unread
@@ -142,6 +151,13 @@ export function NotificationsPage(): JSX.Element {
     }
   }, [navigate, handleMarkAsRead]);
 
+  // Filter notifications based on showAll toggle
+  const displayedNotifications = showAll
+    ? notifications
+    : notifications.filter((comm) => !isNotificationRead(comm));
+
+  const readCount = notifications.length - unreadCount;
+
   // Format date
   const formatDate = (dateString: string | undefined): string => {
     if (!dateString) return 'Unknown';
@@ -183,35 +199,50 @@ export function NotificationsPage(): JSX.Element {
               </Badge>
             )}
           </Group>
-          {unreadCount > 0 && (
-            <Button variant="light" size="sm" onClick={handleMarkAllAsRead}>
-              Mark all as read
-            </Button>
-          )}
+          <Group>
+            {readCount > 0 && (
+              <Switch
+                label={showAll ? 'Showing all' : `Hide ${readCount} read`}
+                checked={showAll}
+                onChange={(e) => setShowAll(e.currentTarget.checked)}
+              />
+            )}
+            {unreadCount > 0 && (
+              <Button variant="light" size="sm" onClick={handleMarkAllAsRead}>
+                Mark all as read
+              </Button>
+            )}
+          </Group>
         </Group>
 
         <Divider />
 
         {/* Notification List */}
-        {notifications.length === 0 ? (
+        {displayedNotifications.length === 0 ? (
           <Paper p="xl" withBorder>
             <Center>
               <Stack align="center" gap="md">
-                <IconBell size={48} color="gray" />
+                <IconBell size={48} style={{ color: 'var(--mantine-color-gray-6)' }} />
                 <Text size="lg" c="dimmed">
-                  No notifications yet
+                  {showAll ? 'No notifications yet' : 'No unread notifications'}
                 </Text>
                 <Text size="sm" c="dimmed" ta="center">
-                  Notifications will appear here when appointments are booked,
-                  treatments are updated, or photos are uploaded.
+                  {showAll
+                    ? 'Notifications will appear here when appointments are booked, treatments are updated, or photos are uploaded.'
+                    : `You have ${readCount} read notification${readCount === 1 ? '' : 's'}. Toggle "Show all" to view them.`}
                 </Text>
+                {!showAll && readCount > 0 && (
+                  <Button variant="light" onClick={() => setShowAll(true)}>
+                    Show all notifications
+                  </Button>
+                )}
               </Stack>
             </Center>
           </Paper>
         ) : (
           <ScrollArea h="calc(100vh - 200px)">
             <Stack gap="xs">
-              {notifications.map((notification) => {
+              {displayedNotifications.map((notification) => {
                 const isRead = isNotificationRead(notification);
                 const category = getNotificationCategory(notification);
                 const icon = CATEGORY_ICONS[category] || CATEGORY_ICONS.general;
@@ -222,10 +253,11 @@ export function NotificationsPage(): JSX.Element {
                     key={notification.id}
                     p="md"
                     withBorder
-                    bg={isRead ? 'gray.0' : 'white'}
+                    bg={isRead ? 'var(--mantine-color-gray-3)' : 'var(--mantine-color-body)'}
                     style={{
                       borderLeft: `4px solid var(--mantine-color-${color}-6)`,
                       cursor: 'pointer',
+                      opacity: isRead ? 0.8 : 1,
                     }}
                     onClick={() => handleNavigate(notification)}
                   >

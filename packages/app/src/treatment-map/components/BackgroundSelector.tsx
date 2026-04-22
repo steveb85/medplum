@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { Select, Stack, Text, Group } from '@mantine/core';
-import { IconTemplate, IconPhoto } from '@tabler/icons-react';
+import { Select, Stack, Text } from '@mantine/core';
 import type { JSX } from 'react';
 import type { PatientGender, TreatmentPhoto } from '../hooks/usePatientAssets';
 
@@ -38,15 +37,28 @@ export function BackgroundSelector({
   disabled = false,
 }: BackgroundSelectorProps): JSX.Element {
   // Determine which gender to show in templates
-  const effectiveGender = patientGender === 'male' || patientGender === 'female'
-    ? patientGender
-    : 'unknown';
+  const effectiveGender = patientGender === 'male' || patientGender === 'female' ? patientGender : 'unknown';
 
   // Build template options
   const templateOptions = [
-    { value: `${effectiveGender}-front`, label: `${capitalize(effectiveGender)} - Front`, gender: effectiveGender, view: 'front' as TemplateView },
-    { value: `${effectiveGender}-left`, label: `${capitalize(effectiveGender)} - Left Profile`, gender: effectiveGender, view: 'left' as TemplateView },
-    { value: `${effectiveGender}-right`, label: `${capitalize(effectiveGender)} - Right Profile`, gender: effectiveGender, view: 'right' as TemplateView },
+    {
+      value: `${effectiveGender}-front`,
+      label: `${capitalize(effectiveGender)} - Front`,
+      gender: effectiveGender,
+      view: 'front' as TemplateView,
+    },
+    {
+      value: `${effectiveGender}-left`,
+      label: `${capitalize(effectiveGender)} - Left Profile`,
+      gender: effectiveGender,
+      view: 'left' as TemplateView,
+    },
+    {
+      value: `${effectiveGender}-right`,
+      label: `${capitalize(effectiveGender)} - Right Profile`,
+      gender: effectiveGender,
+      view: 'right' as TemplateView,
+    },
   ];
 
   // Build photo options
@@ -58,11 +70,12 @@ export function BackgroundSelector({
   }));
 
   // Current combined value
-  const currentValue = config.type === 'template'
-    ? `${config.templateGender || effectiveGender}-${config.templateView}`
-    : config.photoId
-      ? `photo-${config.photoId}`
-      : '';
+  const currentValue =
+    config.type === 'template'
+      ? `${config.templateGender || effectiveGender}-${config.templateView}`
+      : config.photoId
+        ? `photo-${config.photoId}`
+        : '';
 
   const handleChange = (value: string | null): void => {
     if (!value) return;
@@ -110,12 +123,13 @@ export function BackgroundSelector({
       <Text size="sm" fw={500}>
         Background
       </Text>
+      <div></div>
       <Select
         value={currentValue}
         onChange={handleChange}
         data={selectData}
         disabled={disabled}
-        placeholder={photos.length === 0 ? "Select template" : "Select template or photo"}
+        placeholder={photos.length === 0 ? 'Select template' : 'Select template or photo'}
         searchable
         clearable={false}
       />

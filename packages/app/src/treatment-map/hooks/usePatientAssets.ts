@@ -60,7 +60,7 @@ export function usePatientAssets(
       const patientRef = getReferenceString(patient);
       const mediaBundle = await medplum.search('Media', {
         subject: patientRef,
-        _sort: '-date',
+        _sort: '-created',
         _count: '100',
       });
 

@@ -23,6 +23,7 @@ import type { JSX } from 'react';
 import { getMedSpaRole } from '../auth/role';
 import { useNavigate } from 'react-router';
 import dayjs from 'dayjs';
+import { getTreatmentPageRoute } from '../treatments/shared/getTreatmentType';
 
 interface TreatmentsTabProps {
   patientId: string;
@@ -184,9 +185,11 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
     return units || 0;
   }, []);
 
-  // Handle opening a treatment
-  const handleOpenTreatment = useCallback((procedureId: string) => {
-    navigate(`/Patient/${patientId}/botox-treatment?procedureId=${procedureId}`);
+  // Handle opening a treatment - routes to appropriate treatment page based on service type
+  const handleOpenTreatment = useCallback((procedure: Procedure) => {
+    if (!procedure.id) return;
+    const route = getTreatmentPageRoute(patientId, procedure.id, procedure);
+    navigate(route);
   }, [navigate, patientId]);
 
   // Handle creating new treatment - opens calendar for booking
@@ -314,7 +317,7 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
                         <Tooltip label="Open treatment">
                           <ActionIcon
                             variant="light"
-                            onClick={() => handleOpenTreatment(procedure.id as string)}
+                            onClick={() => handleOpenTreatment(procedure)}
                           >
                             <IconEye size={16} />
                           </ActionIcon>

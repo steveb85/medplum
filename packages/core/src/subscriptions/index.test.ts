@@ -857,8 +857,8 @@ describe('SubscriptionManager', () => {
       const originalWarn = console.warn;
       console.warn = vi.fn();
 
-      // @ts-expect-error We don't use defaultManager
-      const _manager = new SubscriptionManager(medplum, 'wss://example.com/ws/subscriptions-r4');
+  const manager = new SubscriptionManager(medplum, 'wss://example.com/ws/subscriptions-r4');
+  expect(manager).toBeDefined();
       await wsServer.connected;
 
       const timestamp = new Date().toISOString();

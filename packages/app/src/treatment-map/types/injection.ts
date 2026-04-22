@@ -205,14 +205,17 @@ export interface ZoneEntryPopupProps {
   /** Marker being edited (null for new marker) */
   marker: InjectionMarker | null;
 
-  /** Callback when marker is saved */
-  onSave: (marker: InjectionMarker) => void;
+  /** Callback when marker is saved - returns Promise for async handling */
+  onSave: (marker: InjectionMarker) => Promise<void> | void;
 
   /** Callback when marker is deleted */
   onDelete: (markerId: string) => void;
 
   /** Callback when popup is closed */
   onClose: () => void;
+
+  /** Whether save is in progress */
+  isSaving?: boolean;
 }
 
 /**

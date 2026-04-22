@@ -22,7 +22,7 @@ try {
 process.env.MEDPLUM_VERSION = packageJson.version + '-' + gitHash;
 
 export default defineConfig({
-  envPrefix: ['MEDPLUM_', 'GOOGLE_', 'RECAPTCHA_'],
+  envPrefix: ['MEDPLUM_', 'GOOGLE_', 'RECAPTCHA_', 'VITE_'],
   plugins: [react()],
   server: {
     port: 3000,

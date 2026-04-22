@@ -209,7 +209,7 @@ export async function getUnreadNotificationCount(
 export async function getNotifications(
   medplum: MedplumClient,
   userId: string,
-  limit = 50
+  limit = 20
 ): Promise<Communication[]> {
   try {
     const bundle = await medplum.search('Communication', {

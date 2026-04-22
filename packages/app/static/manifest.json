@@ -1,0 +1,23 @@
+{
+  "name": "Nurse Mel MedSpa",
+  "short_name": "NurseMel",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1976d2",
+  "orientation": "portrait",
+  "scope": "/",
+  "id": "/",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    }
+  ],
+  "description": "MedSpa practice management for Nurse Mel",
+  "categories": ["medical", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false
+}

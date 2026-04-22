@@ -16,7 +16,7 @@ import {
 } from '@mantine/core';
 import { IconTrash, IconDeviceFloppy } from '@tabler/icons-react';
 import type { JSX } from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { ZoneEntryPopupProps } from '../types/injection';
 import { PRODUCT_NAMES, PRODUCT_COLORS } from '../types/injection';
 
@@ -35,12 +35,18 @@ export function ZoneEntryPopup({
   onSave,
   onDelete,
   onClose,
+  isSaving: externalIsSaving = false,
 }: ZoneEntryPopupProps): JSX.Element {
   // Form state
   const [productBrand, setProductBrand] = useState<string>('botox_cosmetic');
   const [units, setUnits] = useState<number | ''>('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<{ units?: string }>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Ref for units input to auto-focus
+  const unitsInputRef = useRef<HTMLInputElement>(null);
 
   // Reset form when marker changes
   useEffect(() => {
@@ -58,7 +64,19 @@ export function ZoneEntryPopup({
     }
   }, [marker, isOpen]);
 
-  const handleSave = (): void => {
+  // Auto-focus units input when modal opens
+  useEffect(() => {
+    if (isOpen && marker) {
+      // Small delay to ensure modal is rendered and input is available
+      const timer = setTimeout(() => {
+        unitsInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [isOpen, marker]);
+
+  const handleSave = async (): Promise<void> => {
     // Validation
     const newErrors: { units?: string } = {};
 
@@ -75,16 +93,27 @@ export function ZoneEntryPopup({
       return;
     }
 
-    if (marker) {
-      onSave({
+    if (!marker) return;
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      // Call onSave and await completion
+      await onSave({
         ...marker,
         productBrand: productBrand as typeof marker.productBrand,
         units: Number(units),
         notes: notes.trim(),
       });
+      // Only close on success
+      onClose();
+    } catch (err) {
+      // On error, stay open and show error
+      setSaveError(err instanceof Error ? err.message : 'Failed to save marker');
+    } finally {
+      setIsSaving(false);
     }
-
-    onClose();
   };
 
   const handleDelete = (): void => {
@@ -139,27 +168,28 @@ export function ZoneEntryPopup({
           }}
         />
 
-        {/* Units Input */}
-        <NumberInput
-          label="Units Injected"
-          description="Enter exact units - no typical ranges provided"
-          placeholder="e.g., 8"
-          value={units}
-    onChange={(value) => {
-      setUnits(value === '' ? '' : Number(value));
-      setErrors({});
-    }}
-          min={1}
-          max={100}
-          required
-          error={errors.units}
-          styles={{
-            input: {
-              fontWeight: 600,
-              fontSize: '1.1rem',
-            },
-          }}
-        />
+      {/* Units Input */}
+      <NumberInput
+        ref={unitsInputRef}
+        label="Units Injected"
+        description="Enter exact units - no typical ranges provided"
+        placeholder="e.g., 8"
+        value={units}
+        onChange={(value) => {
+          setUnits(value === '' ? '' : Number(value));
+          setErrors({});
+        }}
+        min={1}
+        max={100}
+        required
+        error={errors.units}
+        styles={{
+          input: {
+            fontWeight: 600,
+            fontSize: '1.1rem',
+          },
+        }}
+      />
 
         {/* Notes */}
         <Textarea
@@ -173,37 +203,46 @@ export function ZoneEntryPopup({
           autosize
         />
 
-        {/* Position Reference */}
-        <Box bg="gray.0" p="xs" style={{ borderRadius: 'var(--mantine-radius-sm)' }}>
-          <Text size="xs" c="dimmed">
-            Coordinates: {marker.position.x.toFixed(3)}, {marker.position.y.toFixed(3)}
-          </Text>
-        </Box>
+      {/* Position Reference */}
+      <Box bg="gray.0" p="xs" style={{ borderRadius: 'var(--mantine-radius-sm)' }}>
+        <Text size="xs" c="dimmed">
+          Coordinates: {marker.position.x.toFixed(3)}, {marker.position.y.toFixed(3)}
+        </Text>
+      </Box>
 
-        {/* Action Buttons */}
-        <Group justify="space-between" mt="md">
-          <Button
-            variant="light"
-            color="red"
-            leftSection={<IconTrash size={16} />}
-            onClick={handleDelete}
-          >
-            Delete
+      {/* Error Message */}
+      {saveError && (
+        <Text size="sm" c="red" ta="center">
+          Error: {saveError}. Please try again.
+        </Text>
+      )}
+
+      {/* Action Buttons */}
+      <Group justify="space-between" mt="md">
+        <Button
+          variant="light"
+          color="red"
+          leftSection={<IconTrash size={16} />}
+          onClick={handleDelete}
+          disabled={isSaving}
+        >
+          Delete
+        </Button>
+
+        <Group>
+          <Button variant="light" onClick={onClose} disabled={isSaving}>
+            Cancel
           </Button>
-
-          <Group>
-            <Button variant="light" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              leftSection={<IconDeviceFloppy size={16} />}
-              onClick={handleSave}
-              disabled={!units || units === 0}
-            >
-              Save Marker
-            </Button>
-          </Group>
+          <Button
+            leftSection={<IconDeviceFloppy size={16} />}
+            onClick={handleSave}
+            loading={isSaving}
+            disabled={!units || units === 0}
+          >
+            Save Marker
+          </Button>
         </Group>
+      </Group>
       </Stack>
     </Modal>
   );

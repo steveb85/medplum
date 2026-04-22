@@ -16,7 +16,7 @@ import { DatePickerInput } from '@mantine/dates';
 import { showNotification } from '@mantine/notifications';
 import { createReference, getReferenceString, normalizeErrorString } from '@medplum/core';
 import type { Appointment, Patient, Practitioner, Procedure } from '@medplum/fhirtypes';
-import { ResourceInput, useMedplum } from '@medplum/react';
+import { AsyncAutocomplete, ResourceInput, useMedplum } from '@medplum/react';
 import { IconCalendar } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
@@ -31,6 +31,7 @@ interface CreateAppointmentModalProps {
   onSuccess: () => void;
   initialDate?: Date;
   initialTime?: string;
+  initialDuration?: number;
 }
 
 // Service types - extendable in future
@@ -41,7 +42,32 @@ const SERVICE_TYPES = [
   { value: 'Consultation', label: 'Consultation', code: 'consultation' },
 ];
 
-// Duration options in minutes
+// Helper function to check if a practitioner is a provider (RN - can be main provider)
+function isProvider(practitioner: Practitioner): boolean {
+  return practitioner.qualification?.some(
+    (q) => q.code?.coding?.some((c) => c.code === 'RN')
+  ) ?? false;
+}
+
+// Helper function to check if a practitioner is an assistant (can be assistant only)
+function isAssistant(practitioner: Practitioner): boolean {
+  return practitioner.qualification?.some(
+    (q) => q.code?.coding?.some((c) => c.code === 'assistant')
+  ) ?? false;
+}
+
+// Helper function to get display name for practitioner
+function getPractitionerDisplay(practitioner: Practitioner): string {
+  const name = practitioner.name?.[0];
+  if (name) {
+    const given = name.given?.join(' ') ?? '';
+    const family = name.family ?? '';
+    return `${given} ${family}`.trim() || 'Unknown';
+  }
+  return 'Unknown';
+}
+
+// Duration options in minutes (15 min increments up to 1 hour, then 30 min increments up to 6 hours)
 const DURATIONS = [
   { value: '15', label: '15 minutes' },
   { value: '30', label: '30 minutes' },
@@ -49,6 +75,14 @@ const DURATIONS = [
   { value: '60', label: '1 hour' },
   { value: '90', label: '1.5 hours' },
   { value: '120', label: '2 hours' },
+  { value: '150', label: '2.5 hours' },
+  { value: '180', label: '3 hours' },
+  { value: '210', label: '3.5 hours' },
+  { value: '240', label: '4 hours' },
+  { value: '270', label: '4.5 hours' },
+  { value: '300', label: '5 hours' },
+  { value: '330', label: '5.5 hours' },
+  { value: '360', label: '6 hours' },
 ];
 
 // Generate time slots (15-minute increments)
@@ -70,6 +104,7 @@ export function CreateAppointmentModal({
   onSuccess,
   initialDate = new Date(),
   initialTime = '09:00',
+  initialDuration = 30,
 }: CreateAppointmentModalProps): JSX.Element {
   const medplum = useMedplum();
   const role = getMedSpaRole(medplum);
@@ -80,16 +115,13 @@ export function CreateAppointmentModal({
   const [patient, setPatient] = useState<Patient | null>(null);
   const [date, setDate] = useState<Date>(initialDate);
   const [time, setTime] = useState<string>(initialTime);
-  const [duration, setDuration] = useState<number>(30);
+  const [duration, setDuration] = useState<number>(initialDuration);
   const [serviceType, setServiceType] = useState<string>('Botox Cosmetic');
   const [mainProvider, setMainProvider] = useState<Practitioner | null>(null);
   const [assistantProvider, setAssistantProvider] = useState<Practitioner | null>(null);
   const [notes, setNotes] = useState('');
 
   const timeSlots = useMemo(() => generateTimeSlots(), []);
-
-  // Keep track of previous initialDate using a ref to prevent unnecessary updates
-  const prevInitialDateRef = useRef<number>(initialDate.getTime());
 
   // Normalize date to midnight (remove time component)
   const normalizeDate = useCallback((d: Date | string): Date => {
@@ -98,14 +130,27 @@ export function CreateAppointmentModal({
     return normalized;
   }, []);
 
-  // Update date when initialDate prop changes (only if actually different)
+  // Track previous isOpen state to detect transitions
+  const prevIsOpenRef = useRef(isOpen);
+
+  // Reset form when modal opens (isOpen transitions from false to true)
   useEffect(() => {
-    const newTime = initialDate.getTime();
-    if (newTime !== prevInitialDateRef.current) {
-      prevInitialDateRef.current = newTime;
+    const wasOpen = prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
+    // Only reset when modal transitions from closed to open
+    if (isOpen && !wasOpen) {
       setDate(normalizeDate(initialDate));
+      setTime(initialTime);
+      setDuration(initialDuration);
+      setErrors({});
+      setPatient(null);
+      setMainProvider(null);
+      setAssistantProvider(null);
+      setNotes('');
+      setServiceType('Botox Cosmetic');
     }
-  }, [initialDate, normalizeDate]);
+  }, [isOpen, initialDate, initialTime, initialDuration, normalizeDate]);
 
   // Validation
   const validateForm = useCallback((): boolean => {
@@ -285,21 +330,11 @@ export function CreateAppointmentModal({
     onSuccess,
   ]);
 
-  // Reset form when modal opens
-  const handleOpen = useCallback(() => {
-    // Only reset if modal is actually opening
-    if (isOpen) {
-      setDate(normalizeDate(initialDate));
-      setTime(initialTime);
-      setErrors({});
-      setPatient(null);
-      setMainProvider(null);
-      setAssistantProvider(null);
-      setNotes('');
-      setDuration(30);
-      setServiceType('Botox Cosmetic');
-    }
-  }, [isOpen, initialDate, initialTime, normalizeDate]);
+  // Clear form errors when modal closes (transition end)
+  const handleCloseTransition = useCallback(() => {
+    // Just clear errors, actual reset happens when modal opens
+    setErrors({});
+  }, []);
 
   return (
     <Modal
@@ -307,7 +342,7 @@ export function CreateAppointmentModal({
       onClose={onClose}
       title="New Appointment"
       size="lg"
-      onExitTransitionEnd={handleOpen}
+      onExitTransitionEnd={handleCloseTransition}
     >
       <Stack gap="md">
         {/* Patient Selection */}
@@ -387,11 +422,21 @@ export function CreateAppointmentModal({
           <Text size="sm" fw={500} mb="xs">
             Main Provider
           </Text>
-          <ResourceInput
-            resourceType="Practitioner"
+          <AsyncAutocomplete<Practitioner>
             name="mainProvider"
             placeholder="Select main provider (optional)..."
-            onChange={(value) => setMainProvider(value as Practitioner | null)}
+            toOption={(p) => ({ value: p.id ?? '', label: getPractitionerDisplay(p), resource: p })}
+            loadOptions={async (input, signal) => {
+              const searchParams = new URLSearchParams({
+                name: input ?? '',
+                _count: '20',
+              });
+              const results = await medplum.searchResources('Practitioner', searchParams, { signal });
+              // Only actual providers (RN) can be main provider
+              return results.filter((p) => isProvider(p));
+            }}
+            onChange={(items) => setMainProvider(items[0] ?? null)}
+            clearable
           />
         </div>
 
@@ -400,13 +445,22 @@ export function CreateAppointmentModal({
           <Text size="sm" fw={500} mb="xs">
             Assistant Provider
           </Text>
-<ResourceInput
-              resourceType="Practitioner"
-              name="assistantProvider"
-              placeholder="Select assistant provider (optional)..."
-              onChange={(value) => setAssistantProvider(value as Practitioner | null)}
-              defaultValue={assistantProvider ?? undefined}
-            />
+          <AsyncAutocomplete<Practitioner>
+            name="assistantProvider"
+            placeholder="Select assistant provider (optional)..."
+            toOption={(p) => ({ value: p.id ?? '', label: getPractitionerDisplay(p), resource: p })}
+            loadOptions={async (input, signal) => {
+              const searchParams = new URLSearchParams({
+                name: input ?? '',
+                _count: '20',
+              });
+              const results = await medplum.searchResources('Practitioner', searchParams, { signal });
+              // Providers (RN) and assistants can be selected as assistants
+              return results.filter((p) => isProvider(p) || isAssistant(p));
+            }}
+            onChange={(items) => setAssistantProvider(items[0] ?? null)}
+            clearable
+          />
         </div>
 
         {/* Notes */}

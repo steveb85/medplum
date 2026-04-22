@@ -7,22 +7,27 @@ import { useMedplum } from '@medplum/react';
 import { useMediaQuery } from '@mantine/hooks';
 import type { Appointment, Procedure } from '@medplum/fhirtypes';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar as ReactBigCalendar, dayjsLocalizer } from 'react-big-calendar';
+import { Calendar as ReactBigCalendar, momentLocalizer } from 'react-big-calendar';
 import type { View } from 'react-big-calendar';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import moment from 'moment';
+import 'moment-timezone';
 import dayjs from 'dayjs';
-import timezone from 'dayjs/plugin/timezone';
-import utc from 'dayjs/plugin/utc';
 import { IconPlus } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { CreateAppointmentModal } from '../components/CreateAppointmentModal';
 
-// Configure dayjs plugins
-dayjs.extend(utc);
-dayjs.extend(timezone);
+// Set moment to use local timezone
+moment.tz.setDefault(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
-// Set up the localizer for react-big-calendar
-const localizer = dayjsLocalizer(dayjs);
+// Set up the localizer for react-big-calendar using moment
+const localizer = momentLocalizer(moment);
+
+// Calendar time range constants
+// Using explicit Date constructor with year, month, day, hour, minute
+// This creates dates in local time that will display as 8am-8pm
+const CALENDAR_MIN_TIME = new Date(1970, 0, 1, 8, 0, 0); // 8:00 AM
+const CALENDAR_MAX_TIME = new Date(1970, 0, 1, 20, 0, 0); // 8:00 PM
 
 // NOTIFICATION_OPPORTUNITY: When a new appointment is created,
 // we could notify the assigned provider via Communication resource or in-app notification
@@ -260,6 +265,10 @@ export function CalendarPage(): JSX.Element {
           selectable
           popup
           style={{ height: '100%' }}
+          min={CALENDAR_MIN_TIME} // 8:00 AM
+          max={CALENDAR_MAX_TIME} // 8:00 PM
+          step={30}
+          timeslots={2}
         />
       </Paper>
 
@@ -268,7 +277,8 @@ export function CalendarPage(): JSX.Element {
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleModalSuccess}
         initialDate={selectedSlot?.start}
-        initialTime={selectedSlot ? dayjs(selectedSlot.start).format('HH:mm') : undefined}
+          initialTime={selectedSlot ? moment(selectedSlot.start).format('HH:mm') : undefined}
+          initialDuration={selectedSlot ? Math.max(15, moment(selectedSlot.end).diff(moment(selectedSlot.start), 'minutes')) : undefined}
       />
     </Stack>
   );

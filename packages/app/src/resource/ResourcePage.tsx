@@ -100,12 +100,9 @@ function getTabs(resourceType: string, role: MedSpaRole): string[] {
   if (resourceType === 'Patient') {
     // Treatments tab - list of all aesthetic procedures
     result.push('Treatments');
-    
-    // Botox Treatment visible to all roles (coord is read-only via AccessPolicy)
-    result.push('Botox-Treatment');
 
-    // Accounts visible to all roles
-    // result.push('Accounts');
+    // Note: Treatment detail pages (botox-treatment, filler-treatment, etc.)
+    // are accessed via the Treatments list, not as tabs
 
     // Export - admin only
     if (role === 'super-admin' || role === 'project-admin') {

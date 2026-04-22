@@ -131,12 +131,11 @@ describe('FHIRcast', () => {
   describe('fhircastConnect', () => {
     let client: MedplumClient;
 
-    beforeAll(() => {
-      const fetch = mockFetch(500, { error: 'How did we get here?' });
-      // @ts-expect-error not used directly but needed for mocking WS
-      const _wsServer = new WS('wss://api.medplum.com/ws/fhircast/abc123', { jsonProtocol: true });
-      client = new MedplumClient({ fetch });
-    });
+  beforeAll(() => {
+    const fetch = mockFetch(500, { error: 'How did we get here?' });
+    const _wsServer = new WS('wss://api.medplum.com/ws/fhircast/abc123', { jsonProtocol: true });
+    client = new MedplumClient({ fetch });
+  });
 
     afterAll(() => {
       WS.clean();

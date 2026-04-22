@@ -4,6 +4,7 @@ import { createReference } from '@medplum/core';
 import type {
   AccessPolicy,
   Appointment,
+  Bot,
   Organization,
   Patient,
   Practitioner,
@@ -11,6 +12,7 @@ import type {
   ProjectMembershipAccess,
   Questionnaire,
   QuestionnaireResponse,
+  Subscription,
   User,
   UserConfiguration,
 } from '@medplum/fhirtypes';
@@ -141,6 +143,12 @@ export async function seedNurseMelData(systemRepo: SystemRepository, project: Pr
     await createQuestionnaireResponses(systemRepo, project, questionnaire, createdPatients);
   }
 
+  // Create push notification bot and subscription (auto-deployed)
+  const pushBot = await createPushNotificationBot(systemRepo, project);
+  if (pushBot.id) {
+    await createPushNotificationSubscription(systemRepo, project, pushBot);
+  }
+
   globalLogger.info('Nurse Mel test data seeding complete');
   globalLogger.info('');
   globalLogger.info('==============================================================');
@@ -164,10 +172,7 @@ export async function seedNurseMelData(systemRepo: SystemRepository, project: Pr
   globalLogger.info('==============================================================');
 }
 
-async function createOrganization(
-  systemRepo: SystemRepository,
-  project: Project
-): Promise<Organization> {
+async function createOrganization(systemRepo: SystemRepository, project: Project): Promise<Organization> {
   const existing = await systemRepo.searchOne<Organization>({
     resourceType: 'Organization',
     filters: [{ code: 'name', operator: 'eq', value: ORGANIZATION_DATA.name }],
@@ -201,10 +206,7 @@ async function createOrganization(
   return organization;
 }
 
-async function createProviderAccessPolicy(
-  systemRepo: SystemRepository,
-  project: Project
-): Promise<AccessPolicy> {
+async function createProviderAccessPolicy(systemRepo: SystemRepository, project: Project): Promise<AccessPolicy> {
   const existing = await systemRepo.searchOne<AccessPolicy>({
     resourceType: 'AccessPolicy',
     filters: [{ code: 'name', operator: 'eq', value: 'MedSpa Provider Policy' }],
@@ -257,10 +259,7 @@ async function createProviderAccessPolicy(
   return policy;
 }
 
-async function createCoordinatorAccessPolicy(
-  systemRepo: SystemRepository,
-  project: Project
-): Promise<AccessPolicy> {
+async function createCoordinatorAccessPolicy(systemRepo: SystemRepository, project: Project): Promise<AccessPolicy> {
   const existing = await systemRepo.searchOne<AccessPolicy>({
     resourceType: 'AccessPolicy',
     filters: [{ code: 'name', operator: 'eq', value: 'MedSpa Coordinator Policy' }],
@@ -275,13 +274,13 @@ async function createCoordinatorAccessPolicy(
     meta: { project: project.id },
     name: 'MedSpa Coordinator Policy',
     resource: [
-      { resourceType: 'Patient', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Patient', interaction: ['read', 'vread', 'create', 'search'] },
       // Can see all practitioners, but only update own profile
       { resourceType: 'Practitioner', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Practitioner', criteria: 'Practitioner?_id=%profile.id', interaction: ['update'] },
       { resourceType: 'Appointment', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Encounter', interaction: ['read', 'vread', 'search'] },
-      { resourceType: 'Procedure', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Procedure', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'Observation', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Media', interaction: ['read', 'vread', 'create', 'search'] },
       { resourceType: 'Binary', interaction: ['read', 'vread', 'create', 'search'] },
@@ -314,10 +313,7 @@ async function createCoordinatorAccessPolicy(
   return policy;
 }
 
-async function createProjectAdminAccessPolicy(
-  systemRepo: SystemRepository,
-  project: Project
-): Promise<AccessPolicy> {
+async function createProjectAdminAccessPolicy(systemRepo: SystemRepository, project: Project): Promise<AccessPolicy> {
   const existing = await systemRepo.searchOne<AccessPolicy>({
     resourceType: 'AccessPolicy',
     filters: [{ code: 'name', operator: 'eq', value: 'MedSpa Project Admin Policy' }],
@@ -373,10 +369,7 @@ async function createProjectAdminAccessPolicy(
   return policy;
 }
 
-async function createAssistantAccessPolicy(
-  systemRepo: SystemRepository,
-  project: Project
-): Promise<AccessPolicy> {
+async function createAssistantAccessPolicy(systemRepo: SystemRepository, project: Project): Promise<AccessPolicy> {
   const existing = await systemRepo.searchOne<AccessPolicy>({
     resourceType: 'AccessPolicy',
     filters: [{ code: 'name', operator: 'eq', value: 'MedSpa Assistant Policy' }],
@@ -537,9 +530,7 @@ async function createCoordinator(
     resourceType: 'Practitioner',
     meta: { project: project.id },
     name: [{ use: 'official', family: COORDINATOR_DATA.lastName, given: [COORDINATOR_DATA.firstName] }],
-    telecom: [
-      { system: 'email', value: COORDINATOR_DATA.email, use: 'work' },
-    ],
+    telecom: [{ system: 'email', value: COORDINATOR_DATA.email, use: 'work' }],
     qualification: [
       {
         code: {
@@ -781,10 +772,7 @@ async function createPatient(
   return patient;
 }
 
-async function createBotoxQuestionnaire(
-  systemRepo: SystemRepository,
-  project: Project
-): Promise<Questionnaire> {
+async function createBotoxQuestionnaire(systemRepo: SystemRepository, project: Project): Promise<Questionnaire> {
   const existing = await systemRepo.searchOne<Questionnaire>({
     resourceType: 'Questionnaire',
     filters: [{ code: 'name', operator: 'eq', value: 'Aesthetic Treatment Intake - Botox' }],
@@ -853,16 +841,39 @@ async function createSampleAppointments(
 
   // Define appointments with proper ISO dates
   const appointments = [
-    { patientIdx: 0, practitionerIdx: 0, date: '2025-03-15', time: '14:00', status: 'fulfilled', service: 'Botox - Forehead & Crows Feet' },
+    {
+      patientIdx: 0,
+      practitionerIdx: 0,
+      date: '2025-03-15',
+      time: '14:00',
+      status: 'fulfilled',
+      service: 'Botox - Forehead & Crows Feet',
+    },
     { patientIdx: 0, practitionerIdx: 1, date: dateStr, time: '10:00', status: 'booked', service: 'Botox Touch-up' },
-    { patientIdx: 1, practitionerIdx: 0, date: dateStr, time: '15:30', status: 'booked', service: 'Botox Consultation' },
-    { patientIdx: 2, practitionerIdx: 1, date: '2025-04-25', time: '11:00', status: 'booked', service: 'Botox - Crows Feet & Brow Lift' },
+    {
+      patientIdx: 1,
+      practitionerIdx: 0,
+      date: dateStr,
+      time: '15:30',
+      status: 'booked',
+      service: 'Botox Consultation',
+    },
+    {
+      patientIdx: 2,
+      practitionerIdx: 1,
+      date: '2025-04-25',
+      time: '11:00',
+      status: 'booked',
+      service: 'Botox - Crows Feet & Brow Lift',
+    },
   ];
 
   for (const appt of appointments) {
     const p = patients[appt.patientIdx];
     const practitioner = practitioners[appt.practitionerIdx];
-    if (!p || !practitioner) {continue;}
+    if (!p || !practitioner) {
+      continue;
+    }
 
     // Create proper ISO 8601 dates with timezone
     const startDate = new Date(`${appt.date}T${appt.time}:00-04:00`);
@@ -883,7 +894,9 @@ async function createSampleAppointments(
       ],
     });
 
-    globalLogger.info(`Created appointment: ${appt.service} for ${p.data.firstName} ${p.data.lastName} with ${practitioner.name?.[0]?.given?.[0] || 'provider'}`);
+    globalLogger.info(
+      `Created appointment: ${appt.service} for ${p.data.firstName} ${p.data.lastName} with ${practitioner.name?.[0]?.given?.[0] || 'provider'}`
+    );
   }
 }
 
@@ -910,4 +923,205 @@ async function createQuestionnaireResponses(
       ],
     });
   }
+}
+
+// Push Notification Bot - Sends browser push notifications to staff
+const PUSH_NOTIFICATION_BOT_CODE = `
+import { BotEvent, MedplumClient } from '@medplum/core';
+import { Communication } from '@medplum/fhirtypes';
+
+interface PushPayload {
+  title: string;
+  body: string;
+  url: string;
+  notificationId: string;
+}
+
+export async function handler(medplum: MedplumClient, event: BotEvent): Promise<void> {
+  const communication = event.communication as Communication;
+  
+  if (!communication || communication.resourceType !== 'Communication') {
+    return;
+  }
+
+  // Only process notification-type Communications
+  const isNotification = communication.category?.some(
+    (cat) => cat.coding?.some(
+      (coding) => coding.system === 'http://melissaknudson.com/notification-type'
+    )
+  );
+
+  if (!isNotification) {
+    return;
+  }
+
+  const title = communication.category?.[0]?.coding?.[0]?.display || 'Nurse Mel';
+  const body = communication.payload?.[0]?.contentString || 'New notification';
+  const url = getNotificationUrl(communication);
+  const notificationId = communication.id || '';
+
+  // Send to each recipient
+  for (const recipient of communication.recipient || []) {
+    if (!recipient.reference?.startsWith('Practitioner/')) {
+      continue;
+    }
+
+    const practitionerId = recipient.reference.split('/')[1];
+    
+    try {
+      // Get push subscriptions from FHIR Subscriptions
+      const subscriptions = await getPushSubscriptions(medplum, practitionerId);
+      
+      for (const subscription of subscriptions) {
+        await sendPushNotification(subscription, {
+          title,
+          body,
+          url,
+          notificationId,
+        });
+      }
+    } catch (err) {
+      console.error('[Push Bot] Error:', err);
+    }
+  }
+}
+
+async function getPushSubscriptions(medplum: MedplumClient, practitionerId: string): Promise<any[]> {
+  const bundle = await medplum.search('Subscription', {
+    reason: 'Push notifications',
+    _count: '100',
+  });
+
+  const subscriptions = [];
+  for (const entry of bundle.entry || []) {
+    const sub = entry.resource as any;
+    if (sub.channel?.payload) {
+      try {
+        const pushSub = JSON.parse(sub.channel.payload);
+        if (pushSub.endpoint && pushSub.keys) {
+          subscriptions.push(pushSub);
+        }
+      } catch {}
+    }
+  }
+  return subscriptions;
+}
+
+async function sendPushNotification(subscription: any, payload: PushPayload): Promise<void> {
+  const webpush = require('web-push');
+  
+  const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+  
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    throw new Error('VAPID keys not configured');
+  }
+
+  try {
+    await webpush.sendNotification(
+      subscription,
+      JSON.stringify(payload),
+      {
+        vapidDetails: {
+          subject: 'mailto:support@melissaknudson.com',
+          publicKey: vapidPublicKey,
+          privateKey: vapidPrivateKey,
+        },
+        TTL: 60,
+      }
+    );
+  } catch (err: any) {
+    if (err.statusCode === 404 || err.statusCode === 410) {
+      console.log('[Push Bot] Subscription expired:', subscription.endpoint);
+    } else {
+      throw err;
+    }
+  }
+}
+
+function getNotificationUrl(communication: Communication): string {
+  const apptRef = communication.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/related-appointment'
+  )?.valueReference?.reference;
+  
+  if (apptRef) return '/calendar';
+  
+  const procRef = communication.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/related-procedure'
+  )?.valueReference?.reference;
+  
+  if (procRef && communication.subject?.reference) {
+    const patientId = communication.subject.reference.split('/')[1];
+    const procedureId = procRef.split('/')[1];
+    return \`/Patient/\${patientId}/botox-treatment?procedureId=\${procedureId}\`;
+  }
+  
+  return '/notifications';
+}
+`;
+
+async function createPushNotificationBot(systemRepo: SystemRepository, project: Project): Promise<Bot> {
+  // Search for existing bot by looking at all Bots (name is not a searchable field)
+  const existingBots = await systemRepo.search<Bot>({
+    resourceType: 'Bot',
+    count: 100,
+  });
+
+  const existing = existingBots.entry?.find((entry) => entry.resource?.name === 'Push Notification Sender')?.resource;
+
+  if (existing) {
+    globalLogger.info('Push notification bot already exists');
+    return existing;
+  }
+
+  const bot = await systemRepo.createResource<Bot>({
+    resourceType: 'Bot',
+    meta: { project: project.id },
+    name: 'Push Notification Sender',
+    description: 'Sends browser push notifications to staff when notifications are created',
+    runtimeVersion: 'vmcontext',
+    code: PUSH_NOTIFICATION_BOT_CODE,
+  });
+
+  globalLogger.info(`Created push notification bot: ${bot.id}`);
+  return bot;
+}
+
+async function createPushNotificationSubscription(
+  systemRepo: SystemRepository,
+  project: Project,
+  bot: Bot
+): Promise<Subscription> {
+  // Search for existing subscription by looking at all Subscriptions (reason is not a searchable field)
+  const existingSubs = await systemRepo.search<Subscription>({
+    resourceType: 'Subscription',
+    count: 100,
+  });
+
+  const existing = existingSubs.entry?.find(
+    (entry) =>
+      entry.resource?.reason === 'Trigger push notifications' &&
+      entry.resource?.criteria === 'Communication?status=completed'
+  )?.resource;
+
+  if (existing) {
+    globalLogger.info('Push notification subscription already exists');
+    return existing;
+  }
+
+  const subscription = await systemRepo.createResource<Subscription>({
+    resourceType: 'Subscription',
+    meta: { project: project.id },
+    status: 'active',
+    reason: 'Trigger push notifications',
+    criteria: 'Communication?status=completed',
+    channel: {
+      type: 'rest-hook',
+      endpoint: `Bot/${bot.id}/$execute`,
+      payload: 'application/fhir+json',
+    },
+  });
+
+  globalLogger.info(`Created push notification subscription: ${subscription.id}`);
+  return subscription;
 }

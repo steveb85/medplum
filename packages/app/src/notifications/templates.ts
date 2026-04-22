@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Appointment, Patient, Practitioner, Procedure } from '@medplum/fhirtypes';
+import type { Appointment, Patient, Practitioner, Procedure, Reference } from '@medplum/fhirtypes';
 import dayjs from 'dayjs';
 
 /**

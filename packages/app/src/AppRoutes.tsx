@@ -20,7 +20,14 @@ import { UsersPage } from './admin/UsersPage';
 import { RoleGuard } from './components/RoleGuard';
 import { BatchPage } from './BatchPage';
 import { BulkAppPage } from './BulkAppPage';
+import { BookingsPage } from './pages/BookingsPage';
 import { CalendarPage } from './pages/CalendarPage';
+import {
+  BotoxTreatmentPage,
+  FillerTreatmentPage,
+  LaserTreatmentPage,
+  ConsultationTreatmentPage,
+} from './treatments';
 import { ChangePasswordPage } from './ChangePasswordPage';
 import { CreateResourcePage } from './CreateResourcePage';
 import { ErrorPage } from './ErrorPage';
@@ -32,7 +39,7 @@ import { MfaPage } from './MfaPage';
 import { OAuthPage } from './OAuthPage';
 import { RegisterPage } from './RegisterPage';
 import { ResetPasswordPage } from './ResetPasswordPage';
-import { BotoxTreatmentPage } from './nurse-mel/BotoxTreatmentPage';
+
 import { NotificationsPage } from './notifications';
 import { AccountsPage } from './resource/AccountsPage';
 import { ApplyPage } from './resource/ApplyPage';
@@ -93,6 +100,7 @@ export function AppRoutes(): JSX.Element {
         <Route path="/register" element={<RegisterPage />} />
       <Route path="/changepassword" element={<ChangePasswordPage />} />
       <Route path="/calendar" element={<CalendarPage />} />
+      <Route path="/bookings" element={<BookingsPage />} />
       <Route path="/notifications" element={<NotificationsPage />} />
       <Route path="/security" element={<SecurityPage />} />
       <Route path="/mfa" element={<MfaPage />} />
