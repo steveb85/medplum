@@ -159,3 +159,102 @@ body,
 [data-mantine-color-scheme='dark'] .rbc-time-header-cell + .rbc-time-header-cell {
   border-color: var(--mantine-color-dark-4);
 }
+
+/* Mantine DatePicker Input styling for Calendar */
+.mantine-Popover-dropdown[data-dates-dropdown="true"] {
+  min-width: 260px !important;
+  max-width: 280px !important;
+  padding: 8px 12px !important;
+}
+
+.mantine-DatePickerInput-levelsGroup {
+  display: flex;
+  justify-content: center;
+}
+
+/* Calendar header - month/year and arrows */
+.mantine-DatePickerInput-calendarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 0 4px;
+  gap: 8px;
+}
+
+/* Header control buttons (arrows) - make them smaller and left/right */
+.mantine-DatePickerInput-calendarHeaderControl {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 4px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Arrow icons - make them smaller and ensure they point correctly */
+.mantine-DatePickerInput-calendarHeaderControlIcon {
+  width: 14px !important;
+  height: 14px !important;
+  display: block;
+}
+
+/* Month/Year label button */
+.mantine-DatePickerInput-calendarHeaderLevel {
+  flex: 1;
+  text-align: center;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+/* Month table */
+.mantine-DatePickerInput-month {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* Weekday row headers */
+.mantine-DatePickerInput-weekdaysRow {
+  text-align: center;
+}
+
+.mantine-DatePickerInput-weekday {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mantine-color-gray-6);
+  padding: 4px 0;
+  text-align: center;
+  width: 32px;
+}
+
+/* Month cells */
+.mantine-DatePickerInput-monthCell {
+  padding: 2px;
+  text-align: center;
+}
+
+/* Day buttons */
+.mantine-DatePickerInput-day {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  min-height: 30px !important;
+  font-size: 13px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+/* Dark mode styles */
+[data-mantine-color-scheme='dark'] .mantine-Popover-dropdown[data-dates-dropdown="true"] {
+  background-color: var(--mantine-color-dark-6);
+  border-color: var(--mantine-color-dark-4);
+}
+
+[data-mantine-color-scheme='dark'] .mantine-DatePickerInput-weekday {
+  color: var(--mantine-color-gray-4);
+}

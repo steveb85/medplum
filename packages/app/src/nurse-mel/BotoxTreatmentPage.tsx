@@ -6,22 +6,16 @@ import { showNotification } from '@mantine/notifications';
 import { createReference, getReferenceString, normalizeErrorString } from '@medplum/core';
 import type { Attachment, Media, Observation, Patient, Practitioner, Procedure } from '@medplum/fhirtypes';
 import { Document, Loading, useMedplum } from '@medplum/react';
-import { IconCamera, IconCircleCheck, IconMap, IconPlayerPlay } from '@tabler/icons-react';
+import { IconCamera, IconCircleCheck, IconPlayerPlay } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { getMedSpaRole } from '../auth/role';
+import { createNotification } from '../notifications/utils';
+import type { NotificationData } from '../notifications/templates';
 import type { InjectionMap } from '../treatment-map';
 import { TreatmentMap } from '../treatment-map';
 import { PhotoUploadSection } from './PhotoUploadSection';
-
-// NOTIFICATION_OPPORTUNITY: When provider starts treatment,
-// notify coordinator that treatment is in progress
-// Location: After status transition to 'in-progress'
-
-// NOTIFICATION_OPPORTUNITY: When provider completes treatment,
-// notify coordinator for follow-up scheduling
-// Location: After status transition to 'completed'
 
 // NOTIFICATION_OPPORTUNITY: When coordinator uploads photos,
 // notify provider that photos are ready
@@ -86,13 +80,15 @@ function parseInjectionMapExtension(extension: any): InjectionMap | undefined {
       }
     });
 
-    return {
-      bodyRegion: bodyRegion || 'face',
-      view: view || 'front',
-      patientPhoto: patientPhoto || { contentType: 'image/jpeg' },
-      markers,
-      createdAt: extension.extension?.find((e: any) => e.url === 'createdAt')?.valueString || new Date().toISOString(),
-    };
+  return {
+    bodyRegion: bodyRegion || 'face',
+    view: view || 'front',
+    backgroundType: 'template',
+    templateView: view || 'front',
+    patientPhoto: patientPhoto || { contentType: 'image/jpeg' },
+    markers,
+    createdAt: extension.extension?.find((e: any) => e.url === 'createdAt')?.valueString || new Date().toISOString(),
+  };
   } catch (err) {
     console.error('Error parsing injection map:', err);
     return undefined;
@@ -107,8 +103,20 @@ export function BotoxTreatmentPage(): JSX.Element {
   const role = getMedSpaRole(medplum);
   const user = medplum.getProfile() as Practitioner | undefined;
 
-  // Mode: 'create' for new treatment, 'view' for existing
-  const mode = procedureId ? 'view' : 'create';
+  // Must have a procedureId - treatments are only created via Calendar/appointments
+  if (!procedureId) {
+    return (
+      <Document>
+        <Stack gap="md" p="xl">
+          <Title order={4}>No Treatment Selected</Title>
+          <Text>Treatments must be scheduled through the Calendar.</Text>
+          <Button onClick={() => window.location.href = '/calendar'}>
+            Go to Calendar
+          </Button>
+        </Stack>
+      </Document>
+    );
+  }
 
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -117,16 +125,11 @@ export function BotoxTreatmentPage(): JSX.Element {
   // Patient data
   const [patient, setPatient] = useState<Patient | undefined>();
 
-  // Procedure data (for existing treatments)
+  // Procedure data
   const [procedure, setProcedure] = useState<Procedure | undefined>();
   const [injectionMap, setInjectionMap] = useState<InjectionMap | undefined>();
   const [beforePhotos, setBeforePhotos] = useState<Attachment[]>([]);
   const [afterPhotos, setAfterPhotos] = useState<Attachment[]>([]);
-
-  // New treatment state
-  const [newInjectionMap, setNewInjectionMap] = useState<InjectionMap | undefined>();
-  const [newBeforePhotos, setNewBeforePhotos] = useState<Attachment[]>([]);
-  const [newAfterPhotos, setNewAfterPhotos] = useState<Attachment[]>([]);
 
   // Load patient
   useEffect(() => {
@@ -217,7 +220,7 @@ export function BotoxTreatmentPage(): JSX.Element {
   }, [procedureId]);
 
   // Permission helpers
-    // Check if current user is the main provider (not assistant)
+  // Check if current user is the main provider (not assistant)
   const isMainProvider = useCallback((): boolean => {
     if (!procedure || !user) return false;
     const performers = procedure.performer || [];
@@ -299,6 +302,15 @@ export function BotoxTreatmentPage(): JSX.Element {
         message: 'Treatment is now in progress',
         color: 'blue',
       });
+
+      // Create notification for treatment started
+      const notificationData: NotificationData = {
+        patient,
+        procedure: saved,
+        provider: user,
+        serviceType: saved.code?.text || 'Treatment',
+      };
+      await createNotification(medplum, 'treatment-started', notificationData, user);
     } catch (err) {
       showNotification({
         title: 'Error',
@@ -334,6 +346,15 @@ export function BotoxTreatmentPage(): JSX.Element {
         message: 'Treatment has been marked as complete',
         color: 'green',
       });
+
+      // Create notification for treatment completed
+      const notificationData: NotificationData = {
+        patient,
+        procedure: saved,
+        provider: user,
+        serviceType: saved.code?.text || 'Treatment',
+      };
+      await createNotification(medplum, 'treatment-completed', notificationData, user);
     } catch (err) {
       showNotification({
         title: 'Error',
@@ -345,178 +366,7 @@ export function BotoxTreatmentPage(): JSX.Element {
     }
   }, [procedure, patient, medplum]);
 
-  // Save new treatment (create mode)
-  const handleSaveNewTreatment = useCallback(
-    async (map: InjectionMap): Promise<void> => {
-      if (!patient) return;
 
-      try {
-        setSaving(true);
-        const now = new Date().toISOString();
-        const patientRef = createReference(patient);
-        const totalUnits = map.markers.reduce((sum, m) => sum + m.units, 0);
-
-        // Create Procedure
-        const procedure: Procedure = {
-          resourceType: 'Procedure',
-          status: 'completed', // New treatments created directly are completed
-          code: {
-            coding: [
-              {
-                system: 'http://melissaknudson.com/treatments',
-                code: 'botox-cosmetic',
-                display: 'Botox Cosmetic Treatment',
-              },
-            ],
-            text: `Botox - ${map.markers.map((m) => m.zoneName).join(', ')}`,
-          },
-          subject: patientRef,
-          performedDateTime: now,
-          performedPeriod: {
-            start: now,
-            end: now,
-          },
-          extension: [
-            {
-              url: 'http://melissaknudson.com/fhir/StructureDefinition/treatment-areas',
-              valueString: map.markers.map((m) => m.zoneName).join(', '),
-            },
-            {
-              url: 'http://melissaknudson.com/fhir/StructureDefinition/units-used',
-              valueInteger: totalUnits,
-            },
-            {
-              url: 'http://melissaknudson.com/fhir/StructureDefinition/product-brand',
-              valueString: map.markers[0]?.productBrand || 'botox_cosmetic',
-            },
-            {
-              url: 'http://melissaknudson.com/fhir/StructureDefinition/injection-map',
-              extension: [
-                { url: 'bodyRegion', valueString: map.bodyRegion },
-                { url: 'view', valueString: map.view },
-                { url: 'patientPhoto', valueAttachment: map.patientPhoto },
-                { url: 'createdAt', valueString: map.createdAt },
-                ...map.markers.map((marker) => ({
-                  url: 'marker',
-                  extension: [
-                    { url: 'id', valueString: marker.id },
-                    { url: 'zoneId', valueString: marker.zoneId },
-                    { url: 'zoneName', valueString: marker.zoneName },
-                    { url: 'x', valueDecimal: marker.position.x },
-                    { url: 'y', valueDecimal: marker.position.y },
-                    { url: 'productBrand', valueString: marker.productBrand },
-                    { url: 'units', valueInteger: marker.units },
-                    { url: 'notes', valueString: marker.notes },
-                    { url: 'isPredefinedZone', valueBoolean: marker.isPredefinedZone },
-                  ],
-                })),
-              ],
-            },
-          ],
-        };
-
-        const savedProcedure = await medplum.createResource(procedure);
-
-        // Create Observation for units
-        const observation: Observation = {
-          resourceType: 'Observation',
-          status: 'final',
-          code: {
-            coding: [
-              {
-                system: 'http://melissaknudson.com/observations',
-                code: 'botox-units',
-                display: 'Botox Units Used',
-              },
-            ],
-            text: 'Botox Units Used',
-          },
-          subject: patientRef,
-          effectiveDateTime: now,
-          valueQuantity: {
-            value: totalUnits,
-            unit: 'units',
-            system: 'http://unitsofmeasure.org',
-            code: 'U',
-          },
-          partOf: [createReference(savedProcedure)],
-        };
-
-        await medplum.createResource(observation);
-
-        // Create Media for photos
-        for (const attachment of newBeforePhotos) {
-          const media: Media = {
-            resourceType: 'Media',
-            status: 'completed',
-            type: {
-              coding: [
-                {
-                  system: 'http://melissaknudson.com/photo-type',
-                  code: 'before',
-                  display: 'Before Treatment',
-                },
-              ],
-            },
-            subject: patientRef,
-            issued: now,
-            content: attachment,
-            extension: [
-              {
-                url: 'http://melissaknudson.com/fhir/StructureDefinition/related-procedure',
-                valueReference: createReference(savedProcedure),
-              },
-            ],
-          };
-          await medplum.createResource(media);
-        }
-
-        for (const attachment of newAfterPhotos) {
-          const media: Media = {
-            resourceType: 'Media',
-            status: 'completed',
-            type: {
-              coding: [
-                {
-                  system: 'http://melissaknudson.com/photo-type',
-                  code: 'after',
-                  display: 'After Treatment',
-                },
-              ],
-            },
-            subject: patientRef,
-            issued: now,
-            content: attachment,
-            extension: [
-              {
-                url: 'http://melissaknudson.com/fhir/StructureDefinition/related-procedure',
-                valueReference: createReference(savedProcedure),
-              },
-            ],
-          };
-          await medplum.createResource(media);
-        }
-
-        showNotification({
-          title: 'Treatment Saved',
-          message: 'Treatment documented successfully',
-          color: 'green',
-        });
-
-        // Navigate to view mode
-        window.location.href = `/Patient/${patientId}/botox-treatment?procedureId=${savedProcedure.id}`;
-      } catch (err) {
-        showNotification({
-          title: 'Error saving treatment',
-          message: normalizeErrorString(err),
-          color: 'red',
-        });
-      } finally {
-        setSaving(false);
-      }
-    },
-    [patient, newBeforePhotos, newAfterPhotos, patientId, medplum]
-  );
 
   // Save updates to existing treatment (view mode)
   const handleSaveTreatmentUpdate = useCallback(
@@ -740,169 +590,127 @@ export function BotoxTreatmentPage(): JSX.Element {
   return (
     <Document>
       <Stack gap="xl">
-        {/* Header */}
-        <Group justify="space-between" align="flex-start">
-          <div>
-            <Title order={4}>{mode === 'create' ? 'New Treatment' : 'Treatment Details'}</Title>
-            {mode === 'view' && procedure && (
-              <Text size="sm" c="dimmed" mt="xs">
-                {formatDate(procedure.performedDateTime || procedure.performedPeriod?.start)}
-              </Text>
-            )}
-          </div>
-          <Group>
-            {mode === 'view' && procedure && (
-              <Badge color={statusInfo.color} size="lg">
-                {statusInfo.label}
-              </Badge>
-            )}
-          </Group>
+      {/* Header */}
+      <Group justify="space-between" align="flex-start">
+        <div>
+          <Title order={4}>Treatment Details</Title>
+          {procedure && (
+            <Text size="sm" c="dimmed" mt="xs">
+              {formatDate(procedure.performedDateTime || procedure.performedPeriod?.start)}
+            </Text>
+          )}
+        </div>
+        <Group>
+          {procedure && (
+            <Badge color={statusInfo.color} size="lg">
+              {statusInfo.label}
+            </Badge>
+          )}
         </Group>
+      </Group>
 
-        {/* Status Alert */}
-        {mode === 'view' && procedure && (
-          <Alert color={statusInfo.color} variant="light">
-            <Group>
-              <Text fw={500}>{statusInfo.label}</Text>
-              <Text size="sm">{statusInfo.description}</Text>
-            </Group>
+      {/* Status Alert */}
+      {procedure && (
+        <Alert color={statusInfo.color} variant="light">
+          <Group>
+            <Text fw={500}>{statusInfo.label}</Text>
+            <Text size="sm">{statusInfo.description}</Text>
+          </Group>
           </Alert>
         )}
 
-        {/* Treatment Info */}
-        {mode === 'view' && procedure && (
-          <Paper p="md" withBorder>
-            <Stack gap="xs">
-              <Group>
-                <Text fw={500}>Patient:</Text>
-                <Text>
-                  {patient.name?.[0]?.given?.[0]} {patient.name?.[0]?.family}
-                </Text>
-              </Group>
-              <Group>
-                <Text fw={500}>Areas:</Text>
-                <Text>{getTreatmentAreas(procedure)}</Text>
-              </Group>
-              <Group>
-                <Text fw={500}>Total Units:</Text>
-                <Text>{getTotalUnits(procedure)} units</Text>
-              </Group>
-            </Stack>
-          </Paper>
-        )}
-
-        <Divider />
-
-        {/* Status Transition Buttons */}
-        {mode === 'view' && procedure && (
-          <Group justify="space-between">
-            <div>
-              {canTransitionStatus('preparation') && (
-                <Button
-                  leftSection={<IconPlayerPlay size={16} />}
-                  onClick={handleStartTreatment}
-                  loading={saving}
-                  color="blue"
-                >
-                  Start Treatment
-                </Button>
-              )}
-              {canTransitionStatus('in-progress') && (
-                <Button
-                  leftSection={<IconCircleCheck size={16} />}
-                  onClick={handleCompleteTreatment}
-                  loading={saving}
-                  color="green"
-                >
-                  Complete Treatment
-                </Button>
-              )}
-            </div>
-            <Text size="sm" c="dimmed">
-              {role === 'coordinator' && 'View only - contact provider to make changes'}
-              {role === 'provider' && procedure?.status === 'completed' && 'Treatment complete - read only'}
-            </Text>
-          </Group>
-        )}
-
-        {/* Treatment Map */}
-        {mode === 'create' ? (
-          <TreatmentMap patientId={patientId} mode="create" onSave={handleSaveNewTreatment} isSaving={saving} />
-        ) : (
-          injectionMap && (
-            <TreatmentMap
-              patientId={patientId}
-              mode="view"
-              initialMap={injectionMap}
-              onSave={handleSaveTreatmentUpdate}
-              readOnly={!canEditInjections()}
-              isSaving={saving}
-            />
-          )
-        )}
-
-        {/* Photo Upload Sections */}
-        {mode === 'create' ? (
-          <>
-            <PhotoUploadSection
-              title="Before Photos"
-              photos={newBeforePhotos}
-              onPhotosChange={setNewBeforePhotos}
-              icon={<IconCamera size={20} />}
-            />
-            <PhotoUploadSection
-              title="After Photos"
-              photos={newAfterPhotos}
-              onPhotosChange={setNewAfterPhotos}
-              icon={<IconCamera size={20} />}
-            />
-          </>
-        ) : (
-          <>
-            <PhotoUploadSection
-              title="Before Photos"
-              photos={beforePhotos}
-              onPhotosChange={(photos) => {
-                if (canUploadBeforePhotos()) {
-                  handleSavePhotos(photos, afterPhotos);
-                }
-              }}
-              readOnly={!canUploadBeforePhotos()}
-              icon={<IconCamera size={20} />}
-            />
-            <PhotoUploadSection
-              title="After Photos"
-              photos={afterPhotos}
-              onPhotosChange={(photos) => {
-                if (canUploadAfterPhotos()) {
-                  handleSavePhotos(beforePhotos, photos);
-                }
-              }}
-              readOnly={!canUploadAfterPhotos()}
-              icon={<IconCamera size={20} />}
-            />
-          </>
-        )}
-
-        {/* Empty state for create mode */}
-        {mode === 'create' && (
-          <Paper p="xl" withBorder>
-            <Stack align="center" gap="md">
-              <IconMap size={48} color="gray" />
-              <Text size="lg" fw={500} c="dimmed">
-                New Treatment
+      {/* Treatment Info */}
+      {procedure && (
+        <Paper p="md" withBorder>
+          <Stack gap="xs">
+            <Group>
+              <Text fw={500}>Patient:</Text>
+              <Text>
+                {patient.name?.[0]?.given?.[0]} {patient.name?.[0]?.family}
               </Text>
-              <Text size="sm" c="dimmed" ta="center">
-                Use the treatment map above to mark injection points.
-                <br />
-                Upload before and after photos.
-                <br />
-                Then save to complete the treatment documentation.
-              </Text>
-            </Stack>
-          </Paper>
-        )}
-      </Stack>
-    </Document>
-  );
+            </Group>
+            <Group>
+              <Text fw={500}>Areas:</Text>
+              <Text>{getTreatmentAreas(procedure)}</Text>
+            </Group>
+            <Group>
+              <Text fw={500}>Total Units:</Text>
+              <Text>{getTotalUnits(procedure)} units</Text>
+            </Group>
+          </Stack>
+        </Paper>
+      )}
+
+      <Divider />
+
+      {/* Status Transition Buttons */}
+      {procedure && (
+        <Group justify="space-between">
+          <div>
+            {canTransitionStatus('preparation') && (
+              <Button
+                leftSection={<IconPlayerPlay size={16} />}
+                onClick={handleStartTreatment}
+                loading={saving}
+                color="blue"
+              >
+                Start Treatment
+              </Button>
+            )}
+            {canTransitionStatus('in-progress') && (
+              <Button
+                leftSection={<IconCircleCheck size={16} />}
+                onClick={handleCompleteTreatment}
+                loading={saving}
+                color="green"
+              >
+                Complete Treatment
+              </Button>
+            )}
+          </div>
+          <Text size="sm" c="dimmed">
+            {role === 'coordinator' && 'View only - contact provider to make changes'}
+            {role === 'provider' && procedure?.status === 'completed' && 'Treatment complete - read only'}
+          </Text>
+        </Group>
+      )}
+
+      {/* Treatment Map */}
+      {injectionMap && (
+        <TreatmentMap
+          patientId={patientId}
+          mode="view"
+          initialMap={injectionMap}
+          onSave={handleSaveTreatmentUpdate}
+          readOnly={!canEditInjections()}
+          isSaving={saving}
+        />
+      )}
+
+      {/* Photo Upload Sections */}
+      <PhotoUploadSection
+        title="Before Photos"
+        photos={beforePhotos}
+        onPhotosChange={(photos) => {
+          if (canUploadBeforePhotos()) {
+            handleSavePhotos(photos, afterPhotos);
+          }
+        }}
+        readOnly={!canUploadBeforePhotos()}
+        icon={<IconCamera size={20} />}
+      />
+      <PhotoUploadSection
+        title="After Photos"
+        photos={afterPhotos}
+        onPhotosChange={(photos) => {
+          if (canUploadAfterPhotos()) {
+            handleSavePhotos(beforePhotos, photos);
+          }
+        }}
+        readOnly={!canUploadAfterPhotos()}
+        icon={<IconCamera size={20} />}
+      />
+    </Stack>
+  </Document>
+);
 }

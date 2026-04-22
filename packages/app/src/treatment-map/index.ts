@@ -9,9 +9,12 @@ export { ZoneEntryPopup } from './components/ZoneEntryPopup';
 export { ZoneList } from './components/ZoneList';
 export { FaceTemplate } from './components/FaceTemplate';
 export { SvgCanvas } from './components/SvgCanvas';
+export { ImageCanvas } from './components/ImageCanvas';
+export { BackgroundSelector } from './components/BackgroundSelector';
 
 // Hooks
 export { useInjectionMap } from './hooks/useInjectionMap';
+export { usePatientAssets } from './hooks/usePatientAssets';
 
 // Types
 export type {

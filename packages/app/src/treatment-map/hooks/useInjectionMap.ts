@@ -20,11 +20,13 @@ import {
   calculateTotalUnits,
 } from '../types/injection';
 import { getZones } from '../config/zones';
+import type { BackgroundConfig } from '../components/BackgroundSelector';
 
 export interface UseInjectionMapReturn {
   // State
   bodyRegion: BodyRegion;
   view: ViewAngle;
+  templateView: 'front' | 'left' | 'right';
   patientPhoto: Attachment | null;
   markers: InjectionMarker[];
   selectedMarker: InjectionMarker | null;
@@ -38,7 +40,7 @@ export interface UseInjectionMapReturn {
   updateMarker: (marker: InjectionMarker) => void;
   deleteMarker: (markerId: string) => void;
   selectMarker: (marker: InjectionMarker | null) => void;
-  saveTreatment: () => Promise<void>;
+  saveTreatment: (background: BackgroundConfig) => Promise<void>;
   reset: () => void;
 
   // Computed
@@ -69,6 +71,7 @@ export function useInjectionMap(
       return {
         bodyRegion: existingMap.bodyRegion,
         view: existingMap.view,
+        templateView: existingMap.templateView || 'front',
         patientPhoto: existingMap.patientPhoto,
         markers: existingMap.markers,
       };
@@ -76,6 +79,7 @@ export function useInjectionMap(
     return {
       bodyRegion: 'face' as BodyRegion,
       view: 'front' as ViewAngle,
+      templateView: 'front' as 'front' | 'left' | 'right',
       patientPhoto: null as Attachment | null,
       markers: [] as InjectionMarker[],
     };
@@ -84,6 +88,7 @@ export function useInjectionMap(
   // State
   const [bodyRegion, setBodyRegionState] = useState<BodyRegion>(initialState.bodyRegion);
   const [view, setViewState] = useState<ViewAngle>(initialState.view);
+  const [templateView, setTemplateView] = useState<'front' | 'left' | 'right'>(initialState.templateView);
   const [patientPhoto, setPatientPhotoState] = useState<Attachment | null>(initialState.patientPhoto || null);
   const [markers, setMarkers] = useState<InjectionMarker[]>(initialState.markers);
   const [selectedMarker, setSelectedMarker] = useState<InjectionMarker | null>(null);
@@ -126,8 +131,10 @@ export function useInjectionMap(
       zoneId: nearestZone?.id || 'custom',
       zoneName: nearestZone?.name || 'Custom Location',
       position: {
-        x: nearestZone?.bounds.x || x,
-        y: nearestZone?.bounds.y || y,
+        // Use the actual click position, not the zone center
+        // This preserves the exact injection location for precise mapping
+        x: x,
+        y: y,
       },
       productBrand: 'botox_cosmetic',
       units: 0,
@@ -159,7 +166,7 @@ export function useInjectionMap(
     setSelectedMarker(marker);
   }, []);
 
-  const saveTreatment = useCallback(async () => {
+  const saveTreatment = useCallback(async (background: BackgroundConfig) => {
     if (markers.length === 0) {
       showNotification({
         title: 'No Injections',
@@ -173,19 +180,23 @@ export function useInjectionMap(
 
     try {
       const profile = medplum.getProfile();
-      const injectionMap: InjectionMap = {
-        bodyRegion,
-        view,
-        // Use a placeholder attachment for the SVG template
-        patientPhoto: patientPhoto || {
-          contentType: 'image/svg+xml',
-          url: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"><!-- ${view} view template --></svg>`)}`,
-          title: `Face Template (${view} view)`,
-        },
-        markers,
-        createdAt: new Date().toISOString(),
-        createdBy: profile ? { reference: `Practitioner/${profile.id}` } : undefined,
-      };
+    const injectionMap: InjectionMap = {
+      bodyRegion,
+      view: background.type === 'template' ? background.templateView : 'front',
+      backgroundType: background.type,
+      templateGender: background.type === 'template' ? (background.templateGender as 'male' | 'female' | 'unknown') : undefined,
+      templateView: background.templateView,
+      photoMediaId: background.type === 'photo' ? background.photoId : undefined,
+      // Use a placeholder attachment for the SVG template
+      patientPhoto: patientPhoto || {
+        contentType: 'image/svg+xml',
+        url: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"><!-- ${background.templateView} view template --></svg>`)}`,
+        title: `Face Template (${background.templateView} view)`,
+      },
+      markers,
+      createdAt: new Date().toISOString(),
+      createdBy: profile ? { reference: `Practitioner/${profile.id}` } : undefined,
+    };
       console.log('Saving injection map:', injectionMap);
 
       // TODO: Create Procedure resource with extension
@@ -223,6 +234,7 @@ export function useInjectionMap(
     // State
     bodyRegion,
     view,
+    templateView,
     patientPhoto,
     markers,
     selectedMarker,

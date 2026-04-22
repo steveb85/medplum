@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Title, Paper, Stack, Group, Button, Select } from '@mantine/core';
+import { getReferenceString } from '@medplum/core';
 import { useMedplum } from '@medplum/react';
-import type { Appointment } from '@medplum/fhirtypes';
+import { useMediaQuery } from '@mantine/hooks';
+import type { Appointment, Procedure } from '@medplum/fhirtypes';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Calendar as ReactBigCalendar, dayjsLocalizer } from 'react-big-calendar';
 import type { View } from 'react-big-calendar';
@@ -22,7 +24,7 @@ dayjs.extend(timezone);
 // Set up the localizer for react-big-calendar
 const localizer = dayjsLocalizer(dayjs);
 
-// NOTIFICATION_OPPORTUNITY: When a new appointment is created, 
+// NOTIFICATION_OPPORTUNITY: When a new appointment is created,
 // we could notify the assigned provider via Communication resource or in-app notification
 // Location: In CreateAppointmentModal after successful creation
 
@@ -37,18 +39,26 @@ const localizer = dayjsLocalizer(dayjs);
 export function CalendarPage(): JSX.Element {
   const medplum = useMedplum();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const isMobile = useMediaQuery('(max-width: 768px)');
   const [view, setView] = useState<'month' | 'week' | 'day'>('week');
   const [date, setDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
-  
+
+  // Auto-switch to day view on mobile
+  useEffect(() => {
+    if (isMobile && view !== 'day') {
+      setView('day');
+    }
+  }, [isMobile, view]);
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null);
 
-// Load appointments
-const loadCalendarData = useCallback(async () => {
-try {
-setLoading(true);
+  // Load appointments
+  const loadCalendarData = useCallback(async () => {
+    try {
+      setLoading(true);
 
       // Calculate date range based on current view
       // Format dates without milliseconds for FHIR compatibility
@@ -72,12 +82,12 @@ setLoading(true);
     }
   }, [medplum, date, view]);
 
-useEffect(() => {
-// Load calendar data on mount and when dependencies change.
-// This is the standard pattern for initializing data from an external API.
-// eslint-disable-next-line react-hooks/set-state-in-effect
-loadCalendarData().catch(console.error);
-}, [loadCalendarData]);
+  useEffect(() => {
+    // Load calendar data on mount and when dependencies change.
+    // This is the standard pattern for initializing data from an external API.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadCalendarData().catch(console.error);
+  }, [loadCalendarData]);
 
   // Convert appointments to calendar events
   const events = useMemo(() => {
@@ -88,7 +98,7 @@ loadCalendarData().catch(console.error);
 
       const patientName = patientParticipant?.actor?.display || 'Unknown Patient';
       const serviceType = appointment.serviceType?.[0]?.text || 'Appointment';
-      
+
       return {
         id: appointment.id,
         title: `${patientName} - ${serviceType}`,
@@ -100,17 +110,45 @@ loadCalendarData().catch(console.error);
   }, [appointments]);
 
   // Handle clicking on an event
-  const handleSelectEvent = useCallback((event: { resource: Appointment }) => {
+  const handleSelectEvent = useCallback(async (event: { resource: Appointment }) => {
     const patientParticipant = event.resource.participant?.find(
       p => p.actor?.reference?.startsWith('Patient/')
     );
     const patientId = patientParticipant?.actor?.reference?.split('/')[1];
-    
-    if (patientId) {
-      // Navigate to patient's treatments tab
+    const appointment = event.resource;
+
+    if (!patientId) return;
+
+    // Try to find the linked procedure for this appointment
+    try {
+      const proceduresBundle = await medplum.search('Procedure', {
+        subject: `Patient/${patientId}`,
+        _sort: '-date',
+        _count: '10',
+      });
+
+      // Find procedure with linked appointment extension
+      const procedures = (proceduresBundle.entry || []).map(e => e.resource as Procedure);
+      const linkedProcedure = procedures.find(p =>
+        p.extension?.some(e =>
+          e.url === 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment' &&
+          e.valueReference?.reference === getReferenceString(appointment)
+        )
+      );
+
+      if (linkedProcedure?.id) {
+        // Navigate directly to the treatment
+        window.location.href = `/Patient/${patientId}/botox-treatment?procedureId=${linkedProcedure.id}`;
+      } else {
+        // Fall back to treatments list
+        window.location.href = `/Patient/${patientId}/treatments`;
+      }
+    } catch (err) {
+      console.error('Error finding linked procedure:', err);
+      // Fall back to treatments list
       window.location.href = `/Patient/${patientId}/treatments`;
     }
-  }, []);
+  }, [medplum]);
 
   // Handle clicking on a time slot
   const handleSelectSlot = useCallback((slotInfo: { start: Date; end: Date }) => {
@@ -120,7 +158,10 @@ loadCalendarData().catch(console.error);
 
   // Handle opening modal from "New Appointment" button
   const handleOpenModal = useCallback(() => {
-    setSelectedSlot(null);
+    // Use current date but reset to start of day
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setSelectedSlot({ start: today, end: today });
     setIsModalOpen(true);
   }, []);
 
@@ -132,20 +173,42 @@ loadCalendarData().catch(console.error);
     loadCalendarData().catch(console.error);
   }, [loadCalendarData]);
 
-  // Handle navigation (prev/next/today)
-  const handleNavigate = useCallback((newDate: Date) => {
-    setDate(newDate);
+  // Navigation button handlers (memoized to prevent infinite loops)
+  const handlePrev = useCallback(() => {
+    setDate((prevDate) => dayjs(prevDate).subtract(1, view).toDate());
+  }, [view]);
+
+  const handleToday = useCallback(() => {
+    setDate(new Date());
   }, []);
 
-// Handle view change
-const handleViewChange = useCallback((newView: View) => {
-// Only accept supported views, fallback to 'week' for unsupported views
-if (newView === 'month' || newView === 'week' || newView === 'day') {
-setView(newView);
-} else {
-setView('week');
-}
-}, []);
+  const handleNext = useCallback(() => {
+    setDate((prevDate) => dayjs(prevDate).add(1, view).toDate());
+  }, [view]);
+
+  // Handle navigation (prev/next/today)
+  const handleNavigate = useCallback((newDate: Date) => {
+    setDate((prevDate) => {
+      // Prevent unnecessary updates if the date hasn't changed
+      if (newDate.getTime() === prevDate.getTime()) {
+        return prevDate;
+      }
+      return newDate;
+    });
+  }, []);
+
+  // Handle view change
+  const handleViewChange = useCallback((newView: View) => {
+    setView((prevView) => {
+      // Only accept supported views, fallback to 'week' for unsupported views
+      const validView = newView === 'month' || newView === 'week' || newView === 'day' ? newView : 'week';
+      // Prevent unnecessary updates if the view hasn't changed
+      if (validView === prevView) {
+        return prevView;
+      }
+      return validView;
+    });
+  }, []);
 
   return (
     <Stack gap="md" p="md">
@@ -153,13 +216,13 @@ setView('week');
         <Title order={3}>Calendar</Title>
         <Group>
           <Button.Group>
-            <Button variant="default" onClick={() => setDate(dayjs(date).subtract(1, view).toDate())}>
+            <Button variant="default" onClick={handlePrev}>
               ←
             </Button>
-            <Button variant="default" onClick={() => setDate(new Date())}>
+            <Button variant="default" onClick={handleToday}>
               Today
             </Button>
-            <Button variant="default" onClick={() => setDate(dayjs(date).add(1, view).toDate())}>
+            <Button variant="default" onClick={handleNext}>
               →
             </Button>
           </Button.Group>
@@ -173,40 +236,40 @@ setView('week');
             ]}
             w={120}
           />
-<Button
-          leftSection={<IconPlus size={16} />}
-          onClick={handleOpenModal}
-        >
-          New Appointment
-        </Button>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={handleOpenModal}
+          >
+            New Appointment
+          </Button>
         </Group>
       </Group>
 
-<Paper withBorder p="md" style={{ height: 'calc(100vh - 200px)' }}>
-      <ReactBigCalendar
-        localizer={localizer}
-        events={events}
-        startAccessor="start"
-        endAccessor="end"
-        view={view}
-        onView={handleViewChange}
-        date={date}
-        onNavigate={handleNavigate}
-        onSelectEvent={handleSelectEvent}
-        onSelectSlot={handleSelectSlot}
-        selectable
-        popup
-        style={{ height: '100%' }}
-      />
-    </Paper>
+      <Paper withBorder p="md" style={{ height: 'calc(100vh - 200px)' }}>
+        <ReactBigCalendar
+          localizer={localizer}
+          events={events}
+          startAccessor="start"
+          endAccessor="end"
+          view={view}
+          onView={handleViewChange}
+          date={date}
+          onNavigate={handleNavigate}
+          onSelectEvent={handleSelectEvent}
+          onSelectSlot={handleSelectSlot}
+          selectable
+          popup
+          style={{ height: '100%' }}
+        />
+      </Paper>
 
-    <CreateAppointmentModal
-      isOpen={isModalOpen}
-      onClose={() => setIsModalOpen(false)}
-      onSuccess={handleModalSuccess}
-      initialDate={selectedSlot?.start}
-      initialTime={selectedSlot ? dayjs(selectedSlot.start).format('HH:mm') : undefined}
-    />
-  </Stack>
-);
+      <CreateAppointmentModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleModalSuccess}
+        initialDate={selectedSlot?.start}
+        initialTime={selectedSlot ? dayjs(selectedSlot.start).format('HH:mm') : undefined}
+      />
+    </Stack>
+  );
 }

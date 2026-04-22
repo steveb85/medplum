@@ -16,22 +16,19 @@ import {
 } from '@mantine/core';
 import { IconDeviceFloppy, IconX, IconMap } from '@tabler/icons-react';
 import type { JSX } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { TreatmentMapProps } from '../types/injection';
 import { useInjectionMap } from '../hooks/useInjectionMap';
-import { SvgCanvas } from './SvgCanvas';
+import { usePatientAssets } from '../hooks/usePatientAssets';
+import { ImageCanvas } from './ImageCanvas';
 import { ZoneEntryPopup } from './ZoneEntryPopup';
 import { ZoneList } from './ZoneList';
+import { BackgroundSelector, type BackgroundConfig } from './BackgroundSelector';
 import { PRODUCT_NAMES } from '../types/injection';
 
 // Body region options
 const BODY_REGION_OPTIONS = [
   { value: 'face', label: 'Face' },
-];
-
-// View angle options (will be dynamic based on region)
-const VIEW_OPTIONS = [
-  { value: 'front', label: 'Front' },
-  { value: 'profile', label: 'Profile' },
 ];
 
 export function TreatmentMap({
@@ -47,10 +44,54 @@ export function TreatmentMap({
   // Use initialMap if provided, otherwise fall back to existingProcedure
   const mapToUse = initialMap || existingProcedure?.injectionMap;
 
+  // Fetch patient assets (gender and photos)
+  const { gender, photos, loading: assetsLoading } = usePatientAssets(
+    patientId,
+    existingProcedure?.id
+  );
+
+  // Background state
+  const [background, setBackground] = useState<BackgroundConfig>(() => {
+    // Try to restore from existing map
+    if (mapToUse) {
+      if (mapToUse.backgroundType === 'photo' && mapToUse.photoMediaId) {
+        return {
+          type: 'photo',
+          templateView: mapToUse.templateView || 'front',
+          photoId: mapToUse.photoMediaId,
+        };
+      }
+      return {
+        type: 'template',
+        templateGender: mapToUse.templateGender || gender || 'unknown',
+        templateView: mapToUse.templateView || 'front',
+      };
+    }
+    // Default: use patient's gender if available
+    return {
+      type: 'template',
+      templateGender: gender || 'unknown',
+      templateView: 'front',
+    };
+  });
+
+  // Update background when patient gender loads
+  useEffect(() => {
+    if (gender && background.type === 'template' && !background.templateGender) {
+      setBackground((prev) => ({
+        ...prev,
+        templateGender: gender,
+      }));
+    }
+  }, [gender, background.type, background.templateGender]);
+
+  // Get selected photo URL
+  const selectedPhotoUrl = background.type === 'photo' && background.photoId
+    ? photos.find((p) => p.id === background.photoId)?.url
+    : undefined;
+
   const {
     // State
-    bodyRegion,
-    view,
     markers,
     selectedMarker,
     isSaving: internalIsSaving,
@@ -59,10 +100,6 @@ export function TreatmentMap({
     totalUnits,
     totalMarkers,
     canSave,
-
-    // Actions
-    setBodyRegion,
-    setView,
     addMarker,
     updateMarker,
     deleteMarker,
@@ -72,6 +109,16 @@ export function TreatmentMap({
 
   // Use external isSaving if provided, otherwise use internal
   const isSaving = externalIsSaving ?? internalIsSaving;
+
+  // Handle background change
+  const handleBackgroundChange = useCallback((newBackground: BackgroundConfig) => {
+    setBackground(newBackground);
+  }, []);
+
+  // Handle save with background info
+  const handleSave = useCallback(async () => {
+    await saveTreatment(background);
+  }, [saveTreatment, background]);
 
   return (
     <Stack gap="md">
@@ -84,9 +131,9 @@ export function TreatmentMap({
                 <IconMap size={20} style={{ marginRight: 8, verticalAlign: 'middle' }} />
                 Treatment Mapping
               </Title>
-        <Text size="sm" c="dimmed">
-          Click on the face diagram to mark injection points
-        </Text>
+              <Text size="sm" c="dimmed">
+                Click on the image to mark injection points
+              </Text>
             </div>
 
             {/* Summary stats */}
@@ -105,27 +152,30 @@ export function TreatmentMap({
           <Divider />
 
           {/* Controls */}
-          <Group grow>
-            <Select
-              label="Body Region"
-              data={BODY_REGION_OPTIONS}
-              value={bodyRegion}
-              onChange={(value) => value && setBodyRegion(value as typeof bodyRegion)}
-              disabled={readOnly || markers.length > 0}
-              description={markers.length > 0 ? 'Cannot change after adding markers' : undefined}
-            />
-            <Select
-              label="View"
-              data={VIEW_OPTIONS}
-              value={view}
-              onChange={(value) => value && setView(value as typeof view)}
-              disabled={readOnly}
-            />
-          </Group>
+          <Grid>
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <Select
+                label="Body Region"
+                data={BODY_REGION_OPTIONS}
+                value="face"
+                disabled={true}
+                description="Face treatments only"
+              />
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <BackgroundSelector
+                config={background}
+                onChange={handleBackgroundChange}
+                patientGender={gender}
+                photos={photos}
+                disabled={readOnly || assetsLoading}
+              />
+            </Grid.Col>
+          </Grid>
         </Stack>
       </Paper>
 
-      {/* Main content: SVG Canvas + Zone List */}
+      {/* Main content: Image Canvas + Zone List */}
       <Grid gutter="md">
         {/* Canvas - Takes up most space */}
         <Grid.Col span={{ base: 12, md: 8, lg: 9 }}>
@@ -156,11 +206,11 @@ export function TreatmentMap({
               </Group>
             </Group>
 
-            {/* SVG Canvas with anatomical template */}
-            <SvgCanvas
-              view={view}
+            {/* Image Canvas with markers */}
+            <ImageCanvas
+              background={background}
+              photoUrl={selectedPhotoUrl}
               markers={markers}
-              zones={zones}
               selectedMarker={selectedMarker}
               onCanvasClick={readOnly ? () => {} : addMarker}
               onMarkerClick={selectMarker}
@@ -172,8 +222,8 @@ export function TreatmentMap({
             {!readOnly && (
               <Text size="xs" c="dimmed">
                 {markers.length === 0
-                  ? 'Click anywhere on the face diagram to add your first injection point'
-                  : 'Click on the diagram to add more injection points, or click an existing marker to edit'}
+                  ? 'Click anywhere on the image to add your first injection point'
+                  : 'Click on the image to add more injection points, or click an existing marker to edit'}
               </Text>
             )}
           </Stack>
@@ -217,7 +267,7 @@ export function TreatmentMap({
 
             <Button
               leftSection={<IconDeviceFloppy size={16} />}
-              onClick={saveTreatment}
+              onClick={handleSave}
               loading={isSaving}
               disabled={!canSave}
               color="green"
@@ -226,11 +276,11 @@ export function TreatmentMap({
             </Button>
           </Group>
 
-{markers.length === 0 && (
-              <Text size="sm" c="dimmed" mt="xs" ta="right">
-                Add at least one injection point to save
-              </Text>
-            )}
+          {markers.length === 0 && (
+            <Text size="sm" c="dimmed" mt="xs" ta="right">
+              Add at least one injection point to save
+            </Text>
+          )}
         </Paper>
       )}
 

@@ -20,6 +20,7 @@ import {
   IconReportMedical,
   IconStar,
   IconWebhook,
+  IconBell,
 } from '@tabler/icons-react';
 import type { FunctionComponent, JSX } from 'react';
 import { Suspense } from 'react';
@@ -71,14 +72,21 @@ function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRol
         })) || [],
     })) || [];
 
-  // Inject Calendar link into the first menu (usually Favorites or main menu)
-  // Calendar is visible to all roles
+  // Inject Calendar and Notifications links into the first menu (usually Favorites or main menu)
+  // These are visible to all roles
   if (result.length > 0) {
-    result[0].links.unshift({
-      label: 'Calendar',
-      href: '/calendar',
-      icon: <IconCalendar />,
-    });
+    result[0].links.unshift(
+      {
+        label: 'Notifications',
+        href: '/notifications',
+        icon: <IconBell />,
+      },
+      {
+        label: 'Calendar',
+        href: '/calendar',
+        icon: <IconCalendar />,
+      }
+    );
   }
 
   // Filter menu links based on role

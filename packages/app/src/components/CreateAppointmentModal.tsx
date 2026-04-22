@@ -19,13 +19,11 @@ import type { Appointment, Patient, Practitioner, Procedure } from '@medplum/fhi
 import { ResourceInput, useMedplum } from '@medplum/react';
 import { IconCalendar } from '@tabler/icons-react';
 import dayjs from 'dayjs';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { JSX } from 'react';
 import { getMedSpaRole } from '../auth/role';
-
-// NOTIFICATION_OPPORTUNITY: Send notification to assigned provider(s)
-// when appointment is created
-// Location: After successful creation of Appointment + Procedure
+import { createNotification } from '../notifications/utils';
+import type { NotificationData } from '../notifications/templates';
 
 interface CreateAppointmentModalProps {
   isOpen: boolean;
@@ -89,6 +87,25 @@ export function CreateAppointmentModal({
   const [notes, setNotes] = useState('');
 
   const timeSlots = useMemo(() => generateTimeSlots(), []);
+
+  // Keep track of previous initialDate using a ref to prevent unnecessary updates
+  const prevInitialDateRef = useRef<number>(initialDate.getTime());
+
+  // Normalize date to midnight (remove time component)
+  const normalizeDate = useCallback((d: Date | string): Date => {
+    const normalized = new Date(d);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+  }, []);
+
+  // Update date when initialDate prop changes (only if actually different)
+  useEffect(() => {
+    const newTime = initialDate.getTime();
+    if (newTime !== prevInitialDateRef.current) {
+      prevInitialDateRef.current = newTime;
+      setDate(normalizeDate(initialDate));
+    }
+  }, [initialDate, normalizeDate]);
 
   // Validation
   const validateForm = useCallback((): boolean => {
@@ -164,27 +181,26 @@ export function CreateAppointmentModal({
 
       const savedAppointment = await medplum.createResource(appointment);
 
-      // 2. Create linked Procedure (Treatment)
-      const serviceCode = getServiceCode(serviceType);
-      const procedure: Procedure = {
-        resourceType: 'Procedure',
-        status: 'preparation',
-        code: {
-          text: serviceType,
-          coding: [
-            {
-              system: 'http://melissaknudson.com/treatments',
-              code: serviceCode,
-              display: serviceType,
-            },
-          ],
-        },
-        subject: createReference(patient),
-        performedPeriod: {
-          start: undefined,
-          end: undefined,
-        },
-        extension: [
+// 2. Create linked Procedure (Treatment)
+    const serviceCode = getServiceCode(serviceType);
+    const procedure: Procedure = {
+      resourceType: 'Procedure',
+      status: 'preparation',
+      code: {
+        text: serviceType,
+        coding: [
+          {
+            system: 'http://melissaknudson.com/treatments',
+            code: serviceCode,
+            display: serviceType,
+          },
+        ],
+      },
+      subject: createReference(patient),
+      // Set main provider as performer so they can transition status later
+      performer: mainProvider ? [{ actor: createReference(mainProvider) }] : undefined,
+      // Note: performedPeriod is NOT set here - it will be set when treatment starts
+      extension: [
           {
             url: 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment',
             valueReference: createReference(savedAppointment),
@@ -214,13 +230,29 @@ export function CreateAppointmentModal({
           : undefined,
       };
 
-      await medplum.createResource(procedure);
+      const savedProcedure = await medplum.createResource(procedure);
 
+      // Show toast notification
       showNotification({
         title: 'Appointment Booked',
         message: `${serviceType} appointment scheduled for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} on ${startDateTime.format('MMM D, YYYY')} at ${startDateTime.format('h:mm A')}`,
         color: 'green',
       });
+
+      // Create in-app notification for assigned providers
+      const user = medplum.getProfile() as Practitioner | undefined;
+      const notificationData: NotificationData = {
+        patient,
+        appointment: savedAppointment,
+        procedure: savedProcedure,
+        provider: mainProvider || undefined,
+        assistant: assistantProvider || undefined,
+        date: startDateTime.toISOString(),
+        time: startDateTime.format('h:mm A'),
+        serviceType,
+      };
+
+      await createNotification(medplum, 'appointment-created', notificationData, user);
 
       // Reset form
       setPatient(null);
@@ -255,10 +287,19 @@ export function CreateAppointmentModal({
 
   // Reset form when modal opens
   const handleOpen = useCallback(() => {
-    setDate(initialDate);
-    setTime(initialTime);
-    setErrors({});
-  }, [initialDate, initialTime]);
+    // Only reset if modal is actually opening
+    if (isOpen) {
+      setDate(normalizeDate(initialDate));
+      setTime(initialTime);
+      setErrors({});
+      setPatient(null);
+      setMainProvider(null);
+      setAssistantProvider(null);
+      setNotes('');
+      setDuration(30);
+      setServiceType('Botox Cosmetic');
+    }
+  }, [isOpen, initialDate, initialTime, normalizeDate]);
 
   return (
     <Modal
@@ -274,13 +315,12 @@ export function CreateAppointmentModal({
           <Text size="sm" fw={500} mb="xs">
             Patient <span style={{ color: 'red' }}>*</span>
           </Text>
-<ResourceInput
-              resourceType="Patient"
-              name="patient"
-              placeholder="Search for patient..."
-              onChange={(value) => setPatient(value as Patient | null)}
-              defaultValue={patient ?? undefined}
-            />
+          <ResourceInput
+            resourceType="Patient"
+            name="patient"
+            placeholder="Search for patient..."
+            onChange={(value) => setPatient(value as Patient | null)}
+          />
           {errors.patient && (
             <Text size="xs" color="red" mt="xs">
               {errors.patient}
@@ -294,13 +334,13 @@ export function CreateAppointmentModal({
             <Text size="sm" fw={500} mb="xs">
               Date <span style={{ color: 'red' }}>*</span>
             </Text>
-            <DatePickerInput
-              value={date}
-              onChange={(d:any) => setDate(d || new Date())}
-              placeholder="Select date"
-              leftSection={<IconCalendar size={16} />}
-              error={errors.date}
-            />
+              <DatePickerInput
+                value={date}
+                onChange={(d) => setDate(d ? normalizeDate(d) : normalizeDate(new Date()))}
+                placeholder="Select date"
+                leftSection={<IconCalendar size={16} />}
+                error={errors.date}
+              />
           </div>
           <div>
             <Text size="sm" fw={500} mb="xs">

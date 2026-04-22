@@ -12,6 +12,7 @@ import {
   Title,
   ActionIcon,
   Tooltip,
+  Box,
 } from '@mantine/core';
 import { useMedplum } from '@medplum/react';
 import type { Procedure, Media } from '@medplum/fhirtypes';
@@ -21,6 +22,7 @@ import { getReferenceString } from '@medplum/core';
 import type { JSX } from 'react';
 import { getMedSpaRole } from '../auth/role';
 import { useNavigate } from 'react-router';
+import dayjs from 'dayjs';
 
 interface TreatmentsTabProps {
   patientId: string;
@@ -40,6 +42,27 @@ const statusConfig: Record<string, { color: string; label: string }> = {
   cancelled: { color: 'red', label: 'Cancelled' },
 };
 
+// Service type display names
+const getServiceDisplayName = (procedure: Procedure): string => {
+  // First try to get from code.text
+  if (procedure.code?.text) {
+    return procedure.code.text;
+  }
+  // Then try coding display
+  const coding = procedure.code?.coding?.[0];
+  if (coding?.display) {
+    return coding.display;
+  }
+  // Fall back to code value
+  if (coding?.code) {
+    return coding.code
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+  return 'Unknown Service';
+};
+
 export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
   const medplum = useMedplum();
   const navigate = useNavigate();
@@ -51,20 +74,20 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
   const loadTreatments = useCallback(async () => {
     try {
       setLoading(true);
-      
-      // Search for Botox procedures for this patient
+
+      // Search for all aesthetic treatment procedures for this patient
       const proceduresBundle = await medplum.search('Procedure', {
         subject: `Patient/${patientId}`,
-        code: 'http://melissaknudson.com/treatments|botox-cosmetic',
+        'code:has': 'http://melissaknudson.com/treatments|', // Any code in our system
         _sort: '-date',
         _count: '50',
       });
 
       const procedures = (proceduresBundle.entry || []).map(e => e.resource as Procedure);
-      
+
       // For each procedure, count before/after photos
       const treatmentRows: TreatmentRow[] = [];
-      
+
       for (const procedure of procedures) {
         // Search for Media linked to this procedure
         const mediaBundle = await medplum.search('Media', {
@@ -73,19 +96,19 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
         });
 
         const media = (mediaBundle.entry || []).map(e => e.resource as Media);
-        
+
         // Filter media by related procedure
-        const beforePhotos = media.filter(m => 
+        const beforePhotos = media.filter(m =>
           m.type?.coding?.[0]?.code === 'before' &&
-          m.extension?.some(e => 
+          m.extension?.some(e =>
             e.url === 'http://melissaknudson.com/fhir/StructureDefinition/related-procedure' &&
             e.valueReference?.reference === getReferenceString(procedure)
           )
         );
-        
-        const afterPhotos = media.filter(m => 
+
+        const afterPhotos = media.filter(m =>
           m.type?.coding?.[0]?.code === 'after' &&
-          m.extension?.some(e => 
+          m.extension?.some(e =>
             e.url === 'http://melissaknudson.com/fhir/StructureDefinition/related-procedure' &&
             e.valueReference?.reference === getReferenceString(procedure)
           )
@@ -101,13 +124,18 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
       // Sort by status: preparation first, then in-progress, then completed, then cancelled
       const statusOrder = { preparation: 0, 'in-progress': 1, completed: 2, cancelled: 3 };
       treatmentRows.sort((a, b) => {
-        const statusDiff = (statusOrder[a.procedure.status as keyof typeof statusOrder] ?? 4) - 
-                          (statusOrder[b.procedure.status as keyof typeof statusOrder] ?? 4);
+        const statusDiff = (statusOrder[a.procedure.status as keyof typeof statusOrder] ?? 4) -
+          (statusOrder[b.procedure.status as keyof typeof statusOrder] ?? 4);
         if (statusDiff !== 0) return statusDiff;
         // Within same status, sort by date descending
-        const dateA = new Date(a.procedure.performedDateTime || 0).getTime();
-        const dateB = new Date(b.procedure.performedDateTime || 0).getTime();
-        return dateB - dateA;
+        // Use scheduled date from extension if available, otherwise fall back
+        const getDate = (p: Procedure) => {
+          const scheduledExt = p.extension?.find(
+            e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
+          )?.valueDateTime;
+          return new Date(scheduledExt || p.performedDateTime || 0).getTime();
+        };
+        return getDate(b.procedure) - getDate(a.procedure);
       });
 
       setTreatments(treatmentRows);
@@ -122,10 +150,28 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
     loadTreatments();
   }, [loadTreatments]);
 
-  // Get treatment areas from extension
+  // Get treatment areas from injection map extension
   const getTreatmentAreas = useCallback((procedure: Procedure): string => {
+    const injectionMapExt = procedure.extension?.find(
+      e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/injection-map'
+    );
+    if (injectionMapExt?.extension) {
+      // Count markers in injection map
+      const markers = injectionMapExt.extension.filter(e => e.url === 'marker');
+      if (markers.length > 0) {
+        // Extract zone names from markers
+        const zoneNames = markers.map(m => {
+          const zoneName = m.extension?.find(e => e.url === 'zoneName')?.valueString;
+          return zoneName;
+        }).filter(Boolean);
+        // Return unique zone names
+        const uniqueZones = [...new Set(zoneNames)];
+        return uniqueZones.join(', ') || 'Not specified';
+      }
+    }
+    // Fall back to treatment-areas extension
     const areas = procedure.extension?.find(
-      (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/treatment-areas'
+      e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/treatment-areas'
     )?.valueString;
     return areas || 'Not specified';
   }, []);
@@ -133,7 +179,7 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
   // Get total units from extension
   const getTotalUnits = useCallback((procedure: Procedure): number => {
     const units = procedure.extension?.find(
-      (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/units-used'
+      e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/units-used'
     )?.valueInteger;
     return units || 0;
   }, []);
@@ -143,111 +189,150 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
     navigate(`/Patient/${patientId}/botox-treatment?procedureId=${procedureId}`);
   }, [navigate, patientId]);
 
-  // Handle creating new treatment
+  // Handle creating new treatment - opens calendar for booking
   const handleNewTreatment = useCallback(() => {
-    navigate(`/Patient/${patientId}/botox-treatment`);
-  }, [navigate, patientId]);
+    navigate('/calendar');
+  }, [navigate]);
 
-  // Format date
-  const formatDate = useCallback((dateString: string | undefined): string => {
-    if (!dateString) return 'Not scheduled';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+  // Format date from scheduled-datetime extension or performedDateTime
+  const formatDate = useCallback((procedure: Procedure): string => {
+    // First try scheduled date from appointment
+    const scheduledDate = procedure.extension?.find(
+      e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
+    )?.valueDateTime;
+
+    const dateToFormat = scheduledDate || procedure.performedDateTime;
+
+    if (!dateToFormat) return 'Not scheduled';
+
+    return dayjs(dateToFormat).format('MMM D, YYYY');
+  }, []);
+
+  // Format time from scheduled date
+  const formatTime = useCallback((procedure: Procedure): string => {
+    const scheduledDate = procedure.extension?.find(
+      e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
+    )?.valueDateTime;
+
+    if (!scheduledDate) return '';
+
+    return dayjs(scheduledDate).format('h:mm A');
   }, []);
 
   if (loading) {
     return (
-      <Paper p="xl">
-        <Text ta="center">Loading treatments...</Text>
-      </Paper>
+      <Box p="md">
+        <Paper p="xl">
+          <Text ta="center">Loading treatments...</Text>
+        </Paper>
+      </Box>
     );
   }
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between" align="center">
-        <Title order={4}>Treatments</Title>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          onClick={handleNewTreatment}
-        >
-          New Treatment
-        </Button>
-      </Group>
+    <Box p="md">
+      <Stack gap="md">
+        <Group justify="space-between" align="center">
+          <Title order={4}>Treatments</Title>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={handleNewTreatment}
+          >
+            New Treatment
+          </Button>
+        </Group>
 
-      {treatments.length === 0 ? (
-        <Paper p="xl" withBorder>
-          <Text ta="center" c="dimmed">
-            No treatments yet. Click &quot;New Treatment&quot; to create the first one.
-          </Text>
-        </Paper>
-      ) : (
-        <Paper withBorder>
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Date</Table.Th>
-                <Table.Th>Areas</Table.Th>
-                <Table.Th>Units</Table.Th>
-                <Table.Th>Photos</Table.Th>
-                <Table.Th>Actions</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {treatments.map(({ procedure, beforePhotoCount, afterPhotoCount }) => {
-                const status = procedure.status || 'unknown';
-                const statusInfo = statusConfig[status] || { color: 'gray', label: status };
-                
-                return (
-                  <Table.Tr key={procedure.id}>
-                    <Table.Td>
-                      <Badge color={statusInfo.color} variant="light">
-                        {statusInfo.label}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>{formatDate(procedure.performedDateTime)}</Table.Td>
-                    <Table.Td>{getTreatmentAreas(procedure)}</Table.Td>
-                    <Table.Td>
-                      {getTotalUnits(procedure) > 0 ? `${getTotalUnits(procedure)} units` : '-'}
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap="xs">
-                        {beforePhotoCount > 0 && (
-                          <Badge size="sm" color="gray" variant="light" leftSection={<IconPhoto size={12} />}>
-                            {beforePhotoCount} before
-                          </Badge>
-                        )}
-                        {afterPhotoCount > 0 && (
-                          <Badge size="sm" color="green" variant="light" leftSection={<IconPhoto size={12} />}>
-                            {afterPhotoCount} after
-                          </Badge>
-                        )}
-                        {beforePhotoCount === 0 && afterPhotoCount === 0 && (
+        {treatments.length === 0 ? (
+          <Paper p="xl" withBorder>
+            <Text ta="center" c="dimmed">
+              No treatments yet. Click &quot;New Treatment&quot; to schedule the first one.
+            </Text>
+          </Paper>
+        ) : (
+          <Paper withBorder>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Service</Table.Th>
+                  <Table.Th>Date</Table.Th>
+                  <Table.Th>Time</Table.Th>
+                  <Table.Th>Areas</Table.Th>
+                  <Table.Th>Units</Table.Th>
+                  <Table.Th>Photos</Table.Th>
+                  <Table.Th>Actions</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {treatments.map(({ procedure, beforePhotoCount, afterPhotoCount }) => {
+                  const status = procedure.status || 'unknown';
+                  const statusInfo = statusConfig[status] || { color: 'gray', label: status };
+
+                  return (
+                    <Table.Tr key={procedure.id}>
+                      <Table.Td>
+                        <Text size="sm" fw={500}>
+                          {getServiceDisplayName(procedure)}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>{formatDate(procedure)}</Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">
+                          {formatTime(procedure)}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" lineClamp={2} style={{ maxWidth: 150 }}>
+                          {getTreatmentAreas(procedure)}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {getTotalUnits(procedure) > 0 ? (
+                          <Text size="sm" fw={500}>{getTotalUnits(procedure)} units</Text>
+                        ) : (
                           <Text size="sm" c="dimmed">-</Text>
                         )}
-                      </Group>
-                    </Table.Td>
-                    <Table.Td>
-                      <Tooltip label="Open treatment">
-                        <ActionIcon
-                          variant="light"
-                          onClick={() => handleOpenTreatment(procedure.id as string)}
-                        >
-                          <IconEye size={16} />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Table.Td>
-                  </Table.Tr>
-                );
-              })}
-            </Table.Tbody>
-          </Table>
-        </Paper>
-      )}
-    </Stack>
+                      </Table.Td>
+                      <Table.Td>
+                        <Group gap="xs">
+                          {beforePhotoCount > 0 && (
+                            <Badge size="sm" color="gray" variant="light" leftSection={<IconPhoto size={12} />}>
+                              {beforePhotoCount}
+                            </Badge>
+                          )}
+                          {afterPhotoCount > 0 && (
+                            <Badge size="sm" color="green" variant="light" leftSection={<IconPhoto size={12} />}>
+                              {afterPhotoCount}
+                            </Badge>
+                          )}
+                          {beforePhotoCount === 0 && afterPhotoCount === 0 && (
+                            <Text size="sm" c="dimmed">-</Text>
+                          )}
+                        </Group>
+                      </Table.Td>
+                      <Table.Td>
+                        <Tooltip label="Open treatment">
+                          <ActionIcon
+                            variant="light"
+                            onClick={() => handleOpenTreatment(procedure.id as string)}
+                          >
+                            <IconEye size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge color={statusInfo.color} variant="light">
+                          {statusInfo.label}
+                        </Badge>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </Paper>
+        )}
+      </Stack>
+    </Box>
   );
 }

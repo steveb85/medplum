@@ -33,6 +33,7 @@ import { OAuthPage } from './OAuthPage';
 import { RegisterPage } from './RegisterPage';
 import { ResetPasswordPage } from './ResetPasswordPage';
 import { BotoxTreatmentPage } from './nurse-mel/BotoxTreatmentPage';
+import { NotificationsPage } from './notifications';
 import { AccountsPage } from './resource/AccountsPage';
 import { ApplyPage } from './resource/ApplyPage';
 import { AppsPage } from './resource/AppsPage';
@@ -90,10 +91,11 @@ export function AppRoutes(): JSX.Element {
         <Route path="/setpassword/:id/:secret" element={<SetPasswordPage />} />
         <Route path="/verifyemail/:id/:secret" element={<VerifyEmailPage />} />
         <Route path="/register" element={<RegisterPage />} />
-<Route path="/changepassword" element={<ChangePasswordPage />} />
+      <Route path="/changepassword" element={<ChangePasswordPage />} />
       <Route path="/calendar" element={<CalendarPage />} />
+      <Route path="/notifications" element={<NotificationsPage />} />
       <Route path="/security" element={<SecurityPage />} />
-        <Route path="/mfa" element={<MfaPage />} />
+      <Route path="/mfa" element={<MfaPage />} />
       {/* Batch/Bulk operations - Admin only */}
       <Route
         path="/batch"

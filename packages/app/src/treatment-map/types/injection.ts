@@ -73,8 +73,20 @@ export interface InjectionMap {
   /** Body region being treated */
   bodyRegion: BodyRegion;
 
-  /** View angle of the photo */
+  /** View angle of the photo/template */
   view: ViewAngle;
+
+  /** Background type: SVG template or patient photo */
+  backgroundType: 'template' | 'photo';
+
+  /** Template gender (for SVG templates) */
+  templateGender?: 'male' | 'female' | 'unknown';
+
+  /** Template view (for SVG templates): front, left, or right */
+  templateView: 'front' | 'left' | 'right';
+
+  /** Photo Media resource ID (for patient photos) */
+  photoMediaId?: string;
 
   /** Patient photo attachment (optional - can use SVG templates instead) */
   patientPhoto?: Attachment;
