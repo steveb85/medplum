@@ -387,13 +387,12 @@ export function CreateAppointmentModal({
           <Text size="sm" fw={500} mb="xs">
             Main Provider
           </Text>
-<ResourceInput
-              resourceType="Practitioner"
-              name="mainProvider"
-              placeholder="Select main provider (optional)..."
-              onChange={(value) => setMainProvider(value as Practitioner | null)}
-              defaultValue={mainProvider ?? undefined}
-            />
+          <ResourceInput
+            resourceType="Practitioner"
+            name="mainProvider"
+            placeholder="Select main provider (optional)..."
+            onChange={(value) => setMainProvider(value as Practitioner | null)}
+          />
         </div>
 
         {/* Assistant Provider (Optional) */}
