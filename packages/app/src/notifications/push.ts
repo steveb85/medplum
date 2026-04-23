@@ -102,6 +102,20 @@ export function resetPrompts(): void {
 }
 
 /**
+ * Get push subscription data from localStorage
+ * Returns null if not subscribed
+ */
+export function getPushSubscriptionData(): PushSubscriptionData | null {
+  const data = localStorage.getItem(PUSH_SUBSCRIPTION_DATA_KEY);
+  if (!data) return null;
+  try {
+    return JSON.parse(data) as PushSubscriptionData;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Register service worker
  */
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {

@@ -6,6 +6,17 @@ import type { Communication, Practitioner, Reference } from '@medplum/fhirtypes'
 import type { MedplumClient } from '@medplum/core';
 import type { NotificationData, NotificationType } from './templates';
 import { formatNotification } from './templates';
+import { getPushSubscriptionData, type PushSubscriptionData } from './push';
+
+/**
+ * Gets push subscription data for the current user from localStorage
+ * Since we can't search Subscription resources (403 Forbidden), we store locally
+ */
+function getCurrentUserPushSubscription(): Array<{ endpoint: string; keys: any }> | null {
+  const data = getPushSubscriptionData();
+  if (!data) return null;
+  return [data];
+}
 
 /**
  * Determines who should receive a notification based on event type and data
