@@ -996,9 +996,10 @@ exports.handler = async function(medplum, event) {
     console.log('[Push Bot] Practitioner ID:', practitionerId);
 
     try {
-      // Get push subscriptions from FHIR Subscriptions
-      console.log('[Push Bot] Searching for push subscriptions...');
-      const subscriptions = await getPushSubscriptions(medplum, practitionerId);
+      // Get push subscriptions from Communication extension
+      // This is pre-fetched by createNotification() in the frontend
+      console.log('[Push Bot] Getting push subscriptions from Communication...');
+      const subscriptions = await getPushSubscriptions(communication, practitionerId);
       console.log('[Push Bot] Found', subscriptions.length, 'subscriptions');
 
       if (subscriptions.length === 0) {
@@ -1039,41 +1040,36 @@ exports.handler = async function(medplum, event) {
   console.log('[Push Bot] ===================');
 };
 
-async function getPushSubscriptions(medplum, practitionerId) {
-  console.log('[Push Bot] Searching FHIR Subscriptions with reason="Push notifications"');
+async function getPushSubscriptions(communication, practitionerId) {
+  console.log('[Push Bot] Getting push subscriptions for practitioner:', practitionerId);
 
-  const bundle = await medplum.search('Subscription', {
-    reason: 'Push notifications',
-    _count: '100',
-  });
+  // Get push subscriptions from the Communication extension
+  // This is set by createNotification() in the frontend when the notification is created
+  const pushSubsExtension = communication.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/push-subscriptions'
+  );
 
-  console.log('[Push Bot] FHIR search returned', bundle.entry?.length || 0, 'total Subscriptions');
-
-  const subscriptions = [];
-  for (const entry of bundle.entry || []) {
-    const sub = entry.resource;
-    console.log('[Push Bot] Checking Subscription:', sub.id);
-    console.log('[Push Bot] - Reason:', sub.reason);
-    console.log('[Push Bot] - Status:', sub.status);
-    console.log('[Push Bot] - Has payload:', !!sub.channel?.payload);
-
-    if (sub.channel?.payload) {
-      try {
-        const pushSub = JSON.parse(sub.channel.payload);
-        console.log('[Push Bot] - Parsed payload endpoint:', pushSub.endpoint ? 'YES' : 'NO');
-        console.log('[Push Bot] - Parsed payload keys:', pushSub.keys ? 'YES' : 'NO');
-        if (pushSub.endpoint && pushSub.keys) {
-          subscriptions.push(pushSub);
-          console.log('[Push Bot] ✓ Valid push subscription found');
-        } else {
-          console.log('[Push Bot] ✗ Invalid push subscription (missing endpoint or keys)');
-        }
-      } catch (err) {
-        console.log('[Push Bot] ✗ Failed to parse payload:', err);
-      }
-    }
+  if (!pushSubsExtension?.valueString) {
+    console.log('[Push Bot] No push subscriptions extension found in Communication');
+    return [];
   }
-  return subscriptions;
+
+  try {
+    const pushSubscriptions = JSON.parse(pushSubsExtension.valueString);
+    console.log('[Push Bot] Found push subscriptions for practitioners:', Object.keys(pushSubscriptions));
+
+    const subscriptions = pushSubscriptions[practitionerId];
+    if (subscriptions && subscriptions.length > 0) {
+      console.log('[Push Bot] Found', subscriptions.length, 'push subscription(s) for this practitioner');
+      return subscriptions;
+    } else {
+      console.log('[Push Bot] No push subscriptions found for this practitioner');
+      return [];
+    }
+  } catch (err) {
+    console.log('[Push Bot] Failed to parse push subscriptions:', err);
+    return [];
+  }
 }
 
 async function sendPushNotification(subscription, payload) {

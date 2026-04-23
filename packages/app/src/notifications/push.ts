@@ -198,10 +198,13 @@ async function sendSubscriptionToServer(
   subscription: PushSubscription
 ): Promise<void> {
   console.log('[Push] Storing subscription:', subscription);
+  console.log('[Push] Subscription endpoint:', subscription.endpoint);
+  console.log('[Push] Subscription keys:', subscription.toJSON().keys);
 
   try {
     // Check for existing subscription ID in localStorage
     const existingSubId = localStorage.getItem(PUSH_SUBSCRIPTION_ID_KEY);
+    console.log('[Push] Existing subscription ID from localStorage:', existingSubId);
     if (existingSubId) {
       try {
         await medplum.deleteResource('Subscription', existingSubId);
@@ -211,6 +214,11 @@ async function sendSubscriptionToServer(
         console.log('[Push] Could not delete old subscription:', err);
       }
     }
+
+    // Get current user info for author tracking
+    const profile = medplum.getProfile();
+    console.log('[Push] Current user profile:', profile);
+    console.log('[Push] Creating Subscription with author:', profile?.id);
 
     // Create new Subscription resource to store push data
     // The bot will read this and send push notifications
@@ -229,8 +237,12 @@ async function sendSubscriptionToServer(
       },
     };
 
+    console.log('[Push] Subscription resource to create:', JSON.stringify(pushSubscription, null, 2));
+
     const created = await medplum.createResource(pushSubscription);
     console.log('[Push] Subscription stored:', created.id);
+    console.log('[Push] Created subscription full resource:', JSON.stringify(created, null, 2));
+    console.log('[Push] Created subscription meta:', JSON.stringify(created.meta, null, 2));
 
     // Store the subscription ID so we can clean it up later
     localStorage.setItem(PUSH_SUBSCRIPTION_ID_KEY, created.id as string);

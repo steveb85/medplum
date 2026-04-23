@@ -2,9 +2,11 @@
 
 > **Purpose**: Living document providing context for AI agents working on this project. Updated after each session with current status, recent changes, and architectural decisions.
 
-**Last Updated**: April 23, 2026  
-**Current Phase**: Phase 1 - Data Model Validation (Complete)  
-**Next Phase**: Phase 2 - Patient Portal & Integrations  
+**Last Updated**: April 23, 2026
+**Current Phase**: Phase 1 - Data Model Validation (Complete)
+**Next Phase**: Phase 2 - Patient Portal & Integrations
+
+**Build Plan**: See [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) for complete implementation plan
 
 ---
 

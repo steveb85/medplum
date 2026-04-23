@@ -77,6 +77,46 @@ export function getNotificationRecipients(
 }
 
 /**
+ * Gets push subscriptions for a practitioner
+ * Searches for FHIR Subscriptions with push notification data
+ */
+async function getPushSubscriptionsForPractitioner(
+  medplum: MedplumClient,
+  practitionerId: string
+): Promise<Array<{ endpoint: string; keys: any }> | null> {
+  try {
+    // Search for subscriptions with push notification data for this practitioner
+    const bundle = await medplum.search('Subscription', {
+      reason: 'Push notifications',
+      status: 'active',
+      _count: '100',
+    });
+
+    const pushSubs: Array<{ endpoint: string; keys: any }> = [];
+
+    for (const entry of bundle.entry || []) {
+      const sub = entry.resource as any;
+      // Check if this subscription belongs to the practitioner
+      const authorRef = sub.meta?.author?.reference || '';
+      if (authorRef.includes(practitionerId) && sub.channel?.payload) {
+        try {
+          const pushData = JSON.parse(sub.channel.payload);
+          if (pushData.endpoint && pushData.keys) {
+            pushSubs.push(pushData);
+          }
+        } catch {
+          // Invalid payload, skip
+        }
+      }
+    }
+
+    return pushSubs.length > 0 ? pushSubs : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Creates a Communication resource for a notification
  */
 export async function createNotification(
@@ -147,6 +187,29 @@ export async function createNotification(
     url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-category',
     valueString: category,
   });
+
+  // Fetch push subscriptions for each recipient and add to Communication
+  // This allows the Bot to send push notifications without searching
+  const pushSubscriptions: Record<string, any> = {};
+  for (const recipient of recipients) {
+    const practitionerRef = recipient.reference;
+    if (practitionerRef?.startsWith('Practitioner/')) {
+      const practitionerId = practitionerRef.split('/')[1];
+      const subs = await getPushSubscriptionsForPractitioner(medplum, practitionerId);
+      if (subs) {
+        pushSubscriptions[practitionerId] = subs;
+      }
+    }
+  }
+
+  // Add push subscriptions as extension if any found
+  if (Object.keys(pushSubscriptions).length > 0) {
+    communication.extension?.push({
+      url: 'http://melissaknudson.com/fhir/StructureDefinition/push-subscriptions',
+      valueString: JSON.stringify(pushSubscriptions),
+    });
+    console.log('[Notification] Added push subscriptions for', Object.keys(pushSubscriptions).length, 'recipients');
+  }
 
   return await medplum.createResource(communication);
 }
