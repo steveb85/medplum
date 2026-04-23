@@ -271,19 +271,53 @@ export async function createBroadcastNotification(
 
     console.log(`[Broadcast] Sending to ${practitioners.length} practitioners`);
 
-    // Create a notification for each practitioner
+    // Create a notification for each practitioner directly
     for (const practitioner of practitioners) {
-      const comm = await createNotification(
-        medplum,
-        'broadcast',
-        { message },
-        currentUser
-      );
-      if (comm) {
-        createdCommunications.push(comm);
+      const recipientRef = createReference(practitioner);
+
+      // Create Communication resource directly
+      const communication: Communication = {
+        resourceType: 'Communication',
+        status: 'completed',
+        category: [
+          {
+            coding: [
+              {
+                system: 'http://melissaknudson.com/notification-type',
+                code: 'broadcast',
+                display: 'Broadcast',
+              },
+            ],
+          },
+        ],
+        priority: 'urgent',
+        recipient: [recipientRef],
+        sender: currentUser ? createReference(currentUser) : undefined,
+        sent: new Date().toISOString(),
+        payload: [
+          {
+            contentString: message,
+          },
+        ],
+        extension: [
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-read',
+            valueBoolean: false,
+          },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-category',
+            valueString: 'general',
+          },
+        ],
+      };
+
+      const created = await medplum.createResource(communication);
+      if (created) {
+        createdCommunications.push(created);
       }
     }
 
+    console.log(`[Broadcast] Successfully created ${createdCommunications.length} notifications`);
     return createdCommunications;
   } catch (err) {
     console.error('[Broadcast] Error creating broadcast notification:', err);

@@ -80,8 +80,8 @@ function parseServiceConfig(activity: ActivityDefinition): ServiceConfig {
     numbingTime: ext?.extension?.find((e) => e.url === 'numbingTime')?.valueInteger ?? 0,
     defaultRoom: ext?.extension?.find((e) => e.url === 'defaultRoom')?.valueString ?? 'room-1',
     roomMovable: ext?.extension?.find((e) => e.url === 'roomMovable')?.valueBoolean ?? true,
-    minPrice: ext?.extension?.find((e) => e.url === 'minPrice')?.valueMoney?.value ?? 0,
-    maxPrice: ext?.extension?.find((e) => e.url === 'maxPrice')?.valueMoney?.value ?? 0,
+    minPrice: ext?.extension?.find((e) => e.url === 'minPrice')?.valueInteger ?? 0,
+    maxPrice: ext?.extension?.find((e) => e.url === 'maxPrice')?.valueInteger ?? 0,
     pricePerUnit: ext?.extension?.find((e) => e.url === 'pricePerUnit')?.valueBoolean ?? false,
     unitType: ext?.extension?.find((e) => e.url === 'unitType')?.valueString ?? 'unit',
     gfeCategory: ext?.extension?.find((e) => e.url === 'gfeCategory')?.valueString ?? '',
@@ -93,23 +93,31 @@ function parseServiceConfig(activity: ActivityDefinition): ServiceConfig {
 }
 
 function buildExtensions(config: ServiceConfig): ActivityDefinition['extension'] {
+  const extensions: Array<{ url: string; [key: string]: unknown }> = [
+    { url: 'numbingTime', valueInteger: config.numbingTime },
+    { url: 'defaultRoom', valueString: config.defaultRoom },
+    { url: 'roomMovable', valueBoolean: config.roomMovable },
+    { url: 'minPrice', valueInteger: config.minPrice },
+    { url: 'maxPrice', valueInteger: config.maxPrice },
+    { url: 'pricePerUnit', valueBoolean: config.pricePerUnit },
+    { url: 'unitType', valueString: config.unitType },
+    { url: 'requiresConsult', valueBoolean: config.requiresConsult },
+    { url: 'color', valueString: config.color },
+    { url: 'category', valueString: config.category },
+  ];
+
+  // Only add optional fields if they have values
+  if (config.gfeCategory) {
+    extensions.push({ url: 'gfeCategory', valueString: config.gfeCategory });
+  }
+  if (config.icon) {
+    extensions.push({ url: 'icon', valueString: config.icon });
+  }
+
   return [
     {
       url: 'http://melissaknudson.com/fhir/StructureDefinition/service-config',
-      extension: [
-        { url: 'numbingTime', valueInteger: config.numbingTime },
-        { url: 'defaultRoom', valueString: config.defaultRoom },
-        { url: 'roomMovable', valueBoolean: config.roomMovable },
-        { url: 'minPrice', valueMoney: { value: config.minPrice, currency: 'USD' } },
-        { url: 'maxPrice', valueMoney: { value: config.maxPrice, currency: 'USD' } },
-        { url: 'pricePerUnit', valueBoolean: config.pricePerUnit },
-        { url: 'unitType', valueString: config.unitType },
-        { url: 'gfeCategory', valueString: config.gfeCategory },
-        { url: 'requiresConsult', valueBoolean: config.requiresConsult },
-        { url: 'icon', valueString: config.icon },
-        { url: 'color', valueString: config.color },
-        { url: 'category', valueString: config.category },
-      ],
+      extension: extensions,
     },
   ];
 }
@@ -163,8 +171,8 @@ export function ServiceCatalogPage(): JSX.Element {
     window.location.reload();
   }, []);
 
-  const activeServices = useMemo(() => {
-    return services?.filter((s) => s.status === 'active') ?? [];
+  const allServices = useMemo(() => {
+    return services ?? [];
   }, [services]);
 
   const handleEdit = useCallback((service: ActivityDefinition) => {
@@ -311,7 +319,7 @@ export function ServiceCatalogPage(): JSX.Element {
                   <Text ta="center">Loading...</Text>
                 </Table.Td>
               </Table.Tr>
-            ) : activeServices.length === 0 ? (
+            ) : allServices.length === 0 ? (
               <Table.Tr>
                 <Table.Td colSpan={9}>
                   <Text ta="center" c="dimmed">
@@ -320,7 +328,7 @@ export function ServiceCatalogPage(): JSX.Element {
                 </Table.Td>
               </Table.Tr>
             ) : (
-              activeServices.map((service) => {
+              allServices.map((service) => {
                 const config = parseServiceConfig(service);
                 const priceText = config.pricePerUnit
                   ? `$${config.minPrice}-$${config.maxPrice} per ${config.unitType}`

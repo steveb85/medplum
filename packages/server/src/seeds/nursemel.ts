@@ -1450,6 +1450,27 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       continue;
     }
 
+    const extensions: Array<{ url: string; [key: string]: unknown }> = [
+      { url: 'numbingTime', valueInteger: svc.numbingTime },
+      { url: 'defaultRoom', valueString: svc.defaultRoom },
+      { url: 'roomMovable', valueBoolean: true },
+      { url: 'minPrice', valueInteger: svc.minPrice },
+      { url: 'maxPrice', valueInteger: svc.maxPrice },
+      { url: 'pricePerUnit', valueBoolean: svc.pricePerUnit },
+      { url: 'unitType', valueString: svc.unitType },
+      { url: 'requiresConsult', valueBoolean: svc.requiresConsult },
+      { url: 'color', valueString: svc.color },
+      { url: 'category', valueString: svc.category },
+    ];
+
+    // Only add optional fields if they have values
+    if (svc.gfeCategory) {
+      extensions.push({ url: 'gfeCategory', valueString: svc.gfeCategory });
+    }
+    if (svc.icon) {
+      extensions.push({ url: 'icon', valueString: svc.icon });
+    }
+
     await systemRepo.createResource<ActivityDefinition>({
       resourceType: 'ActivityDefinition',
       id: svc.id,
@@ -1475,20 +1496,7 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       extension: [
         {
           url: 'http://melissaknudson.com/fhir/StructureDefinition/service-config',
-          extension: [
-            { url: 'numbingTime', valueInteger: svc.numbingTime },
-            { url: 'defaultRoom', valueString: svc.defaultRoom },
-            { url: 'roomMovable', valueBoolean: true },
-            { url: 'minPrice', valueMoney: { value: svc.minPrice, currency: 'USD' } },
-            { url: 'maxPrice', valueMoney: { value: svc.maxPrice, currency: 'USD' } },
-            { url: 'pricePerUnit', valueBoolean: svc.pricePerUnit },
-            { url: 'unitType', valueString: svc.unitType },
-            { url: 'gfeCategory', valueString: svc.gfeCategory },
-            { url: 'requiresConsult', valueBoolean: svc.requiresConsult },
-            { url: 'icon', valueString: svc.icon },
-            { url: 'color', valueString: svc.color },
-            { url: 'category', valueString: svc.category },
-          ],
+          extension: extensions,
         },
       ],
     });
