@@ -88,60 +88,12 @@ export function getNotificationRecipients(
 }
 
 /**
- * Gets push subscriptions for a practitioner
- * Searches for FHIR Subscriptions with push notification data
+ * Gets push subscription data for the current user from localStorage
+ * We can't search for Subscription resources due to 403 Forbidden permissions,
+ * so we store the data locally when subscribing
  */
-async function getPushSubscriptionsForPractitioner(
-  medplum: MedplumClient,
-  practitionerId: string
-): Promise<Array<{ endpoint: string; keys: any }> | null> {
-  console.log('[NotificationUtils] Getting push subscriptions for practitioner:', practitionerId);
-  try {
-    // Search for subscriptions with push notification data for this practitioner
-    const bundle = await medplum.search('Subscription', {
-      reason: 'Push notifications',
-      status: 'active',
-      _count: '100',
-    });
-
-    console.log('[NotificationUtils] Found', bundle.entry?.length || 0, 'total push subscriptions');
-
-    const pushSubs: Array<{ endpoint: string; keys: any }> = [];
-
-    for (const entry of bundle.entry || []) {
-      const sub = entry.resource as any;
-      console.log('[NotificationUtils] Checking subscription:', sub.id);
-      console.log('[NotificationUtils] Subscription meta:', JSON.stringify(sub.meta, null, 2));
-      console.log('[NotificationUtils] Subscription channel:', JSON.stringify(sub.channel, null, 2));
-
-      // Check if this subscription belongs to the practitioner
-      const authorRef = sub.meta?.author?.reference || '';
-      console.log('[NotificationUtils] Author ref:', authorRef, 'Looking for:', practitionerId);
-      if (authorRef.includes(practitionerId) && sub.channel?.payload) {
-        console.log('[NotificationUtils] Found subscription belonging to practitioner');
-        try {
-          const pushData = JSON.parse(sub.channel.payload);
-          console.log('[NotificationUtils] Parsed push data:', JSON.stringify(pushData, null, 2));
-          if (pushData.endpoint && pushData.keys) {
-            pushSubs.push(pushData);
-            console.log('[NotificationUtils] Added push subscription');
-          } else {
-            console.log('[NotificationUtils] Push data missing endpoint or keys');
-          }
-        } catch (err) {
-          console.log('[NotificationUtils] Failed to parse payload:', err);
-        }
-      } else {
-        console.log('[NotificationUtils] Subscription does not match practitioner');
-      }
-    }
-
-    console.log('[NotificationUtils] Total push subscriptions found:', pushSubs.length);
-    return pushSubs.length > 0 ? pushSubs : null;
-  } catch (err) {
-    console.error('[NotificationUtils] Error getting push subscriptions:', err);
-    return null;
-  }
+function getCurrentUserPushSubscription(): PushSubscriptionData | null {
+  return getPushSubscriptionData();
 }
 
 /**
