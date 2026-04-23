@@ -219,17 +219,13 @@ function userConfigToMenu(
   // Filter out empty menus (no visible links)
   const nonEmptyMenus = filteredResult.filter((menu) => menu.links.length > 0);
 
-  // Add Admin menu (visible to coordinators and providers)
-  if (role === 'coordinator' || role === 'provider') {
-    nonEmptyMenus.push({
-      title: 'Admin',
-      links: [
-        {
-          label: 'Service Catalog',
-          href: '/admin/services',
-          icon: <IconBuilding />,
-        },
-      ],
+  // Find Organization menu and add Services link to it
+  const orgMenu = nonEmptyMenus.find((menu) => menu.title === 'Organization');
+  if (orgMenu && (role === 'coordinator' || role === 'provider')) {
+    orgMenu.links.unshift({
+      label: 'Services',
+      href: '/admin/services',
+      icon: <IconBuilding />,
     });
   }
 
