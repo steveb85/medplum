@@ -36,11 +36,13 @@
 ### Competitive Landscape
 
 **Current Market:**
+
 - Dominant players: Large med spas, dermatology practices
 - Common patient complaints: Overdone results, pushy upselling, rushed appointments
 - **Mel's Differentiation**: "No-filler filler look", conservative approach, personalized care
 
 **Technology Gap:**
+
 - Most competitors use generic booking systems (Acuity, Squarespace)
 - No sophisticated patient portals with treatment history visualization
 - Before/after galleries often poorly organized or not patient-accessible
@@ -55,6 +57,7 @@
 ### Current Status
 
 **Pre-Launch Phase**:
+
 - ✅ Website built (see [Current Repository Context](#current-repository-context))
 - ✅ EMR platform selected (Medplum)
 - 🔄 EMR customization in progress (this document)
@@ -74,6 +77,7 @@ Use **Medplum Self-Hosted** on AWS (~$150-200/mo) as the EMR backend, with custo
 **Original consideration**: Aesthetic Record is purpose-built for aesthetic practices with before/after galleries and treatment-specific workflows.
 
 **Decision to NOT use AR**:
+
 - ❌ Limited API access (widget-only integration)
 - ❌ No custom patient portal possible
 - ❌ Vendor lock-in (proprietary system)
@@ -83,11 +87,13 @@ Use **Medplum Self-Hosted** on AWS (~$150-200/mo) as the EMR backend, with custo
 ### Why Not OpenEMR (Alternative Considered)
 
 **Advantages**:
+
 - ✅ Lower cost (~$50-150/mo)
 - ✅ Mature, 20+ year track record
 - ✅ Large community
 
 **Disadvantages**:
+
 - ❌ Dated PHP/Smarty UI
 - ❌ Heavy customization required
 - ❌ Longer development timeline
@@ -107,11 +113,11 @@ Use **Medplum Self-Hosted** on AWS (~$150-200/mo) as the EMR backend, with custo
 
 ### Cost Comparison
 
-| Platform | Monthly | Setup Time | Customization | Status |
-|----------|---------|------------|---------------|--------|
-| **Medplum (Selected)** | ~$150-200 | Days | Full | 🟢 Primary |
-| Aesthetic Record | ~$300-500 | Hours | Limited | 🔴 Rejected |
-| OpenEMR (Backup) | ~$50-150 | Weeks | Requires PHP | 🟡 Fallback |
+| Platform               | Monthly   | Setup Time | Customization | Status      |
+| ---------------------- | --------- | ---------- | ------------- | ----------- |
+| **Medplum (Selected)** | ~$150-200 | Days       | Full          | 🟢 Primary  |
+| Aesthetic Record       | ~$300-500 | Hours      | Limited       | 🔴 Rejected |
+| OpenEMR (Backup)       | ~$50-150  | Weeks      | Requires PHP  | 🟡 Fallback |
 
 ---
 
@@ -134,11 +140,13 @@ Patient Journey:
 ### Component Breakdown
 
 #### Marketing Website (Existing)
+
 **Status**: ✅ Built and deployed  
 **Stack**: Next.js + TinaCMS + Vercel  
 **URL**: melissaknudson.com
 
 **Purpose**:
+
 - SEO-driven content (Home, About, Treatments, Blog)
 - Lead generation
 - Links to Patient Portal
@@ -149,11 +157,13 @@ Patient Journey:
 ---
 
 #### Patient Portal (Custom Build - Phase 2)
+
 **Status**: 🔄 Phase 2 (not started)  
 **Stack**: Next.js + Medplum React SDK + Medplum API  
 **URL**: portal.melissaknudson.com
 
 **Features**:
+
 - Authentication (SMS-based login)
 - Treatment timeline
 - Photo upload (before/after)
@@ -166,6 +176,7 @@ Patient Journey:
 ---
 
 #### Staff Interface (Medplum Provider App - Customized)
+
 **Status**: 🔄 Phase 1 (customization in progress)  
 **Stack**: Medplum Provider App (forked) + React + TypeScript  
 **URL**: staff.melissaknudson.com
@@ -174,6 +185,7 @@ Patient Journey:
 **Customization**: Remove unused features (Labs, Medications if not needed), add aesthetic treatment forms
 
 **Why Fork**: Medplum Provider App is production-ready. Forking allows:
+
 - Branding customization
 - Feature hiding (remove Labs/Meds if not used)
 - Custom aesthetic workflow additions
@@ -182,10 +194,12 @@ Patient Journey:
 ---
 
 #### Backend (Medplum Self-Hosted)
+
 **Status**: 🔄 Phase 1 (local Docker) → Phase 3 (AWS)  
 **Stack**: Medplum Server (Node.js + TypeScript) + PostgreSQL + Redis + S3
 
 **Components**:
+
 - **Medplum Server**: FHIR API, authentication, audit logging
 - **PostgreSQL**: Patient data, FHIR resources
 - **Redis**: Session cache, background jobs
@@ -193,6 +207,7 @@ Patient Journey:
 - **CloudFront**: CDN for fast photo delivery
 
 **Self-Hosting Rationale**:
+
 - Cost: $150-200/mo vs $2,000/mo Medplum Cloud
 - Control: Full access to logs, backups, customization
 - Compliance: Direct AWS BAA, no third-party BAA chain
@@ -200,10 +215,12 @@ Patient Journey:
 ---
 
 #### Automation Layer (Cloudflare Workers)
+
 **Status**: 🔄 Phase 2 (not started)  
 **Stack**: Cloudflare Workers + KV + Queues
 
 **Responsibilities**:
+
 - API proxy to Medplum (rate limiting, auth)
 - SMS reminders (Twilio integration)
 - Email automation (Resend integration)
@@ -211,6 +228,7 @@ Patient Journey:
 - Session caching (KV)
 
 **Why Cloudflare**:
+
 - Edge deployment = low latency globally
 - Free tier sufficient for startup
 - Workers = serverless, no maintenance
@@ -229,17 +247,18 @@ Patient Journey:
 
 **Deliverables**:
 
-| Step | FHIR Resource | Description | Status |
-|------|---------------|---------------|--------|
-| 1 | Patient + Appointment | Book Botox appointment | 🔄 In Progress |
-| 2 | Questionnaire + QuestionnaireResponse | Custom intake form (aesthetic history) | 🔄 In Progress |
-| 3 | DocumentReference + Binary | Digital consent form | 🔄 In Progress |
-| 4 | Media | Before photo upload | 🔄 In Progress |
-| 5 | Procedure + Observation | Document treatment (units, area, product) | 🔄 In Progress |
-| 6 | Media | After photo upload | 🔄 In Progress |
-| 7 | Invoice (future) | Payment reference (Phase 2) | ⏭️ Phase 2 |
+| Step | FHIR Resource                         | Description                               | Status         |
+| ---- | ------------------------------------- | ----------------------------------------- | -------------- |
+| 1    | Patient + Appointment                 | Book Botox appointment                    | 🔄 In Progress |
+| 2    | Questionnaire + QuestionnaireResponse | Custom intake form (aesthetic history)    | 🔄 In Progress |
+| 3    | DocumentReference + Binary            | Digital consent form                      | 🔄 In Progress |
+| 4    | Media                                 | Before photo upload                       | 🔄 In Progress |
+| 5    | Procedure + Observation               | Document treatment (units, area, product) | 🔄 In Progress |
+| 6    | Media                                 | After photo upload                        | 🔄 In Progress |
+| 7    | Invoice (future)                      | Payment reference (Phase 2)               | ⏭️ Phase 2     |
 
 **Success Criteria**:
+
 - [ ] Complete Botox workflow works end-to-end
 - [ ] Photos uploaded and retrievable via API
 - [ ] Custom Questionnaire renders correctly
@@ -247,6 +266,7 @@ Patient Journey:
 - [ ] Mel approves the Provider App interface
 
 **Failure Criteria** (triggers OpenEMR fallback):
+
 - Cannot customize Provider App without excessive work
 - FHIR extensions too complex for aesthetic data
 - Photo workflow too slow or cumbersome
@@ -290,6 +310,7 @@ Patient Journey:
    - ⏭️ Can defer to Phase 3 if time-constrained
 
 **Success Criteria**:
+
 - [ ] Patient can book appointment without staff intervention
 - [ ] Intake form completed before visit
 - [ ] Before photos uploaded automatically
@@ -338,6 +359,7 @@ Patient Journey:
    - Staff training materials
 
 **Success Criteria**:
+
 - [ ] Production deployment passes security audit
 - [ ] HIPAA compliance documentation complete
 - [ ] Backup/recovery tested
@@ -347,6 +369,15 @@ Patient Journey:
 ---
 
 ## Development Workflow
+
+### IMPORTANT Tunnel access
+
+in two seperate terminals from the root folder run
+
+cloudflared tunnel --config .cloudflared/medplum-app.yml run
+cloudflared tunnel --config .cloudflared/medplum-api.yml run
+
+to set up tunnels
 
 ### Phase 1: Local Development Setup
 
@@ -395,10 +426,10 @@ For Phase 1, we'll use **Docker volume mounts** for hot reload:
 # In docker-compose.full-stack.yml, add volumes to medplum-app:
 medplum-app:
   volumes:
-    - ./packages/app/src:/usr/src/app/src:ro  # Mount local source
-    - /usr/src/app/node_modules                # Preserve container deps
+    - ./packages/app/src:/usr/src/app/src:ro # Mount local source
+    - /usr/src/app/node_modules # Preserve container deps
   environment:
-    - CHOKIDAR_USEPOLLING=true                # Enable hot reload
+    - CHOKIDAR_USEPOLLING=true # Enable hot reload
 ```
 
 Then edit files locally, changes reflect in browser automatically.
@@ -406,6 +437,7 @@ Then edit files locally, changes reflect in browser automatically.
 **Alternative: Hybrid Local Dev**
 
 If Docker hot reload is too slow, can run:
+
 - Postgres + Redis in Docker
 - Medplum Server locally (Node.js)
 - Provider App locally (Vite dev server)
@@ -426,11 +458,13 @@ npm run dev  # Local dev server
 ```
 
 **Custom Components to Build**:
+
 - `PhotoComparison.tsx` - Before/after slider
 - `TreatmentTimeline.tsx` - Visual timeline of treatments
 - `BookingForm.tsx` - Custom booking flow
 
 **Integration with Medplum**:
+
 - Use `@medplum/react` hooks: `useResource`, `useSearch`
 - Use `@medplum/core` SDK for API calls
 - Authentication via Medplum's OAuth2
@@ -449,6 +483,7 @@ cd deploy  # Deploys to your AWS account
 ```
 
 This sets up:
+
 - VPC + subnets
 - ECS/Fargate clusters
 - RDS PostgreSQL
@@ -481,42 +516,47 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
 ### Core Resources for Aesthetic Practice
 
 #### Patient
+
 ```json
 {
   "resourceType": "Patient",
   "id": "patient-001",
-  "identifier": [{
-    "system": "http://melissaknudson.com/patient-id",
-    "value": "NM001"
-  }],
-  "name": [{"family": "Smith", "given": ["Jane"]}],
+  "identifier": [
+    {
+      "system": "http://melissaknudson.com/patient-id",
+      "value": "NM001"
+    }
+  ],
+  "name": [{ "family": "Smith", "given": ["Jane"] }],
   "telecom": [
-    {"system": "phone", "value": "212-555-0100", "use": "mobile"},
-    {"system": "email", "value": "jane@email.com"}
+    { "system": "phone", "value": "212-555-0100", "use": "mobile" },
+    { "system": "email", "value": "jane@email.com" }
   ],
   "gender": "female",
   "birthDate": "1985-03-15",
-  "photo": [{"url": "Binary/photo-001"}]
+  "photo": [{ "url": "Binary/photo-001" }]
 }
 ```
 
 #### Appointment
+
 ```json
 {
   "resourceType": "Appointment",
   "id": "appt-001",
   "status": "booked",
-  "serviceType": [{"text": "Botox Consultation"}],
+  "serviceType": [{ "text": "Botox Consultation" }],
   "start": "2024-05-15T14:00:00Z",
   "end": "2024-05-15T14:30:00Z",
   "participant": [
-    {"actor": {"reference": "Patient/patient-001"}},
-    {"actor": {"reference": "Practitioner/melissa-001"}}
+    { "actor": { "reference": "Patient/patient-001" } },
+    { "actor": { "reference": "Practitioner/melissa-001" } }
   ]
 }
 ```
 
 #### Procedure (Treatment Documentation)
+
 ```json
 {
   "resourceType": "Procedure",
@@ -524,16 +564,16 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
   "status": "completed",
   "code": {
     "text": "Botox - Forehead",
-    "coding": [{"system": "http://melissaknudson.com/treatments", "code": "botox-forehead"}]
+    "coding": [{ "system": "http://melissaknudson.com/treatments", "code": "botox-forehead" }]
   },
-  "subject": {"reference": "Patient/patient-001"},
-  "encounter": {"reference": "Encounter/visit-001"},
+  "subject": { "reference": "Patient/patient-001" },
+  "encounter": { "reference": "Encounter/visit-001" },
   "performedDateTime": "2024-05-15",
   "extension": [
     {
       "url": "http://melissaknudson.com/fhir/StructureDefinition/treatment-area",
       "valueCodeableConcept": {
-        "coding": [{"code": "forehead", "display": "Forehead"}]
+        "coding": [{ "code": "forehead", "display": "Forehead" }]
       }
     },
     {
@@ -546,27 +586,28 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
     },
     {
       "url": "http://melissaknudson.com/fhir/StructureDefinition/before-photo-id",
-      "valueReference": {"reference": "Media/before-001"}
+      "valueReference": { "reference": "Media/before-001" }
     },
     {
       "url": "http://melissaknudson.com/fhir/StructureDefinition/after-photo-id",
-      "valueReference": {"reference": "Media/after-001"}
+      "valueReference": { "reference": "Media/after-001" }
     }
   ]
 }
 ```
 
 #### Media (Photos)
+
 ```json
 {
   "resourceType": "Media",
   "id": "media-before-001",
   "status": "completed",
-  "type": {"coding": [{"system": "http://melissaknudson.com/photo-type", "code": "before"}]},
-  "subject": {"reference": "Patient/patient-001"},
-  "encounter": {"reference": "Encounter/visit-001"},
+  "type": { "coding": [{ "system": "http://melissaknudson.com/photo-type", "code": "before" }] },
+  "subject": { "reference": "Patient/patient-001" },
+  "encounter": { "reference": "Encounter/visit-001" },
   "created": "2024-05-15T13:45:00Z",
-  "operator": {"reference": "Practitioner/melissa-001"},
+  "operator": { "reference": "Practitioner/melissa-001" },
   "content": {
     "contentType": "image/jpeg",
     "url": "Binary/photo-before-001",
@@ -576,6 +617,7 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
 ```
 
 #### Questionnaire (Intake Form)
+
 ```json
 {
   "resourceType": "Questionnaire",
@@ -593,8 +635,8 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
       "text": "What are your primary concerns?",
       "type": "choice",
       "answerOption": [
-        {"valueCoding": {"code": "wrinkles", "display": "Fine lines/wrinkles"}},
-        {"valueCoding": {"code": "volume", "display": "Volume loss"}}
+        { "valueCoding": { "code": "wrinkles", "display": "Fine lines/wrinkles" } },
+        { "valueCoding": { "code": "volume", "display": "Volume loss" } }
       ]
     },
     {
@@ -612,23 +654,24 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
 
 ### Estimated Monthly Costs (Production)
 
-| Service | Cost | Notes |
-|---------|------|-------|
-| ECS Fargate (2 tasks) | ~$60 | Medplum Server + Provider App |
-| RDS PostgreSQL (db.t3.medium) | ~$50 | Encrypted, automated backups |
-| ElastiCache Redis | ~$15 | Session cache |
-| S3 | ~$10-20 | Photo storage (depends on volume) |
-| CloudFront | ~$5 | CDN for photos |
-| ALB | ~$20 | Load balancer |
-| Route 53 | ~$1 | DNS |
-| Cloudflare Workers | ~$0-5 | Free tier likely sufficient |
-| Twilio SMS | ~$50-100 | Depends on volume |
-| Resend Email | ~$0-20 | Free tier + overages |
-| **Total** | **~$200-300/mo** | Scales with usage |
+| Service                       | Cost             | Notes                             |
+| ----------------------------- | ---------------- | --------------------------------- |
+| ECS Fargate (2 tasks)         | ~$60             | Medplum Server + Provider App     |
+| RDS PostgreSQL (db.t3.medium) | ~$50             | Encrypted, automated backups      |
+| ElastiCache Redis             | ~$15             | Session cache                     |
+| S3                            | ~$10-20          | Photo storage (depends on volume) |
+| CloudFront                    | ~$5              | CDN for photos                    |
+| ALB                           | ~$20             | Load balancer                     |
+| Route 53                      | ~$1              | DNS                               |
+| Cloudflare Workers            | ~$0-5            | Free tier likely sufficient       |
+| Twilio SMS                    | ~$50-100         | Depends on volume                 |
+| Resend Email                  | ~$0-20           | Free tier + overages              |
+| **Total**                     | **~$200-300/mo** | Scales with usage                 |
 
 ### HIPAA Compliance Checklist
 
 **Technical Safeguards**:
+
 - [x] Encryption at rest (AWS RDS encryption)
 - [x] Encryption in transit (TLS 1.2+)
 - [x] Access controls (Medplum RBAC)
@@ -637,24 +680,26 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
 - [ ] Password complexity requirements (configure)
 
 **Administrative Safeguards**:
+
 - [ ] Risk assessment
 - [ ] Staff training documentation
 - [ ] Incident response plan
 - [ ] Business Associate Agreements (AWS, Twilio, Stripe, etc.)
 
 **Physical Safeguards**:
+
 - [x] AWS data center security (automatic)
 - [ ] Device encryption policy (for Mel's devices)
 
 ### Required BAAs
 
-| Vendor | Service | Action |
-|--------|---------|--------|
-| AWS | Infrastructure | Sign AWS BAA (free) |
-| Twilio | SMS | HIPAA plan (included) |
-| Stripe | Payments | Included in service |
-| Resend | Email | Request BAA |
-| Cloudflare | Edge/CDN | Request BAA |
+| Vendor     | Service        | Action                |
+| ---------- | -------------- | --------------------- |
+| AWS        | Infrastructure | Sign AWS BAA (free)   |
+| Twilio     | SMS            | HIPAA plan (included) |
+| Stripe     | Payments       | Included in service   |
+| Resend     | Email          | Request BAA           |
+| Cloudflare | Edge/CDN       | Request BAA           |
 
 ---
 
@@ -668,6 +713,7 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
 **Stack**: Next.js 15 + TinaCMS 3.7 + React 18 + Tailwind v4
 
 **Contents**:
+
 - Marketing website (Home, About, Treatments, Blog, Contact)
 - 14 block components (Hero, Features, Testimonials, etc.)
 - TinaCMS integration for content management
@@ -675,6 +721,7 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
 - Responsive, SEO-optimized
 
 **Relationship to EMR Project**:
+
 - **Separate**: Marketing site stays in SMEL repo, continues as-is
 - **Links**: CTAs on marketing site point to Patient Portal (separate domain)
 - **No overlap**: EMR project is entirely separate codebase
@@ -682,18 +729,21 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
 ### Why Separate Repositories?
 
 **SMEL Repo**:
+
 - Marketing-focused
 - TinaCMS for content team
 - Static site generation
 - No patient data (PHI)
 
 **Medplum EMR Repo** (to be created):
+
 - Healthcare-focused
 - Real-time patient data
 - HIPAA compliance required
 - Dynamic, API-driven
 
 **Benefits of Separation**:
+
 - Security: PHI only in healthcare repo
 - Compliance: Clear data boundaries
 - Team: Marketing team can edit SMEL without touching EMR
@@ -750,35 +800,35 @@ MEDPLUM_BINARY_STORAGE: 's3://medplum-photos-bucket'
 
 The following were considered but **NOT selected** for the current architecture:
 
-<!-- 
+<!--
 DEPRECATED: Aesthetic Record Integration
 - Widget-only approach lacked API flexibility
 - Could not build custom patient portal
 - Cost: $300-500/mo with no customization option
 -->
 
-<!-- 
+<!--
 DEPRECATED: OpenEMR as Primary
 - Dated PHP/Smarty UI required heavy customization
 - Longer development timeline
 - Kept as fallback only if Medplum fails
 -->
 
-<!-- 
+<!--
 DEPRECATED: Full Custom Patient Portal in SMEL Repo
 - Patient portal will be separate repo (nurse-mel-medplum)
 - SMEL repo remains marketing-only
 - Separation of concerns: PHI only in healthcare repo
 -->
 
-<!-- 
+<!--
 DEPRECATED: Cloudflare D1 for PHI Storage
 - D1 not HIPAA compliant
 - All PHI stays in Medplum (PostgreSQL)
 - D1/KV only for non-PHI: session cache, rate limiting
 -->
 
-<!-- 
+<!--
 DEPRECATED: Knack/AppSheet as EMR
 - Not real EMRs, would need to build everything from scratch
 - Insufficient for healthcare compliance

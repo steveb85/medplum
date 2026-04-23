@@ -34,6 +34,10 @@ export async function main(configName: string): Promise<void> {
   globalLogger.info('Starting Medplum Server...', { configName, version: getServerVersion() });
 
   const config = await loadConfig(configName);
+  globalLogger.info('Config loaded', {
+    vmContextBotsEnabled: config.vmContextBotsEnabled,
+    vmContextBotsEnabledType: typeof config.vmContextBotsEnabled,
+  });
 
   const app = await initApp(express(), config);
   const server = app.listen(config.port);

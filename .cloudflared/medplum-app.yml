@@ -1,0 +1,7 @@
+tunnel: c0f02d28-9817-4909-a156-975690d56660
+credentials-file: /Users/stephenbartlett/.cloudflared/c0f02d28-9817-4909-a156-975690d56660.json
+
+ingress:
+  - hostname: app-dev.studioassistant.io
+    service: http://localhost:3000
+  - service: http_status:404

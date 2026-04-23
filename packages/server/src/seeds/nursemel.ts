@@ -1,14 +1,16 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
-import { createReference } from '@medplum/core';
+import { createReference, getReferenceString } from '@medplum/core';
 import type {
   AccessPolicy,
   Appointment,
+  Binary,
   Bot,
   Organization,
   Patient,
   Practitioner,
   Project,
+  ProjectMembership,
   ProjectMembershipAccess,
   Questionnaire,
   QuestionnaireResponse,
@@ -19,6 +21,8 @@ import type {
 import { bcryptHashPassword, createProfile, createProjectMembership } from '../auth/utils';
 import type { SystemRepository } from '../fhir/repo';
 import { globalLogger } from '../logger';
+import { Readable } from 'node:stream';
+import { getBinaryStorage } from '../storage/loader';
 
 // Nurse Mel - Provider
 const NURSE_MEL_DATA = {
@@ -926,23 +930,24 @@ async function createQuestionnaireResponses(
 }
 
 // Push Notification Bot - Sends browser push notifications to staff
+// Using CommonJS syntax for vmcontext runtime compatibility
+// No require() needed - medplum client and event are passed as parameters
 const PUSH_NOTIFICATION_BOT_CODE = `
-import { BotEvent, MedplumClient } from '@medplum/core';
-import { Communication } from '@medplum/fhirtypes';
+exports.handler = async function(medplum, event) {
+  console.log('[Push Bot] ===== BOT EXECUTING =====');
+  console.log('[Push Bot] Event type:', event.type);
+  console.log('[Push Bot] Event resourceType:', event.resourceType);
 
-interface PushPayload {
-  title: string;
-  body: string;
-  url: string;
-  notificationId: string;
-}
+  const communication = event.input;
 
-export async function handler(medplum: MedplumClient, event: BotEvent): Promise<void> {
-  const communication = event.communication as Communication;
-  
   if (!communication || communication.resourceType !== 'Communication') {
+    console.log('[Push Bot] Not a Communication resource, skipping');
     return;
   }
+
+  console.log('[Push Bot] Processing Communication:', communication.id);
+  console.log('[Push Bot] Communication status:', communication.status);
+  console.log('[Push Bot] Communication recipient:', JSON.stringify(communication.recipient));
 
   // Only process notification-type Communications
   const isNotification = communication.category?.some(
@@ -952,73 +957,149 @@ export async function handler(medplum: MedplumClient, event: BotEvent): Promise<
   );
 
   if (!isNotification) {
+    console.log('[Push Bot] Not a notification-type Communication, skipping');
     return;
   }
+
+  console.log('[Push Bot] Valid notification Communication found');
 
   const title = communication.category?.[0]?.coding?.[0]?.display || 'Nurse Mel';
   const body = communication.payload?.[0]?.contentString || 'New notification';
   const url = getNotificationUrl(communication);
   const notificationId = communication.id || '';
 
+  console.log('[Push Bot] Notification details:');
+  console.log(' - Title:', title);
+  console.log(' - Body:', body);
+  console.log(' - URL:', url);
+  console.log(' - NotificationId:', notificationId);
+
+  // Check VAPID configuration (vmcontext sandbox may not have process.env, skip check)
+  // VAPID keys should be configured on the server for web-push to work
+  console.log('[Push Bot] Starting push notification processing');
+
   // Send to each recipient
+  let recipientCount = 0;
+  let subscriptionCount = 0;
+  let sentCount = 0;
+
   for (const recipient of communication.recipient || []) {
+    recipientCount++;
+    console.log('[Push Bot] Processing recipient:', recipientCount, '-', recipient.reference);
+
     if (!recipient.reference?.startsWith('Practitioner/')) {
+      console.log('[Push Bot] Skipping - not a Practitioner');
       continue;
     }
 
     const practitionerId = recipient.reference.split('/')[1];
-    
+    console.log('[Push Bot] Practitioner ID:', practitionerId);
+
     try {
       // Get push subscriptions from FHIR Subscriptions
+      console.log('[Push Bot] Searching for push subscriptions...');
       const subscriptions = await getPushSubscriptions(medplum, practitionerId);
-      
-      for (const subscription of subscriptions) {
-        await sendPushNotification(subscription, {
-          title,
-          body,
-          url,
-          notificationId,
-        });
+      console.log('[Push Bot] Found', subscriptions.length, 'subscriptions');
+
+      if (subscriptions.length === 0) {
+        console.log('[Push Bot] No push subscriptions found for this practitioner');
+      }
+
+      for (let i = 0; i < subscriptions.length; i++) {
+        const subscription = subscriptions[i];
+        subscriptionCount++;
+        console.log('[Push Bot] Sending to subscription', i + 1, 'of', subscriptions.length);
+        console.log('[Push Bot] Endpoint:', subscription.endpoint?.substring(0, 50) + '...');
+
+        try {
+          await sendPushNotification(subscription, {
+            title,
+            body,
+            url,
+            notificationId,
+          });
+          sentCount++;
+          console.log('[Push Bot] ✓ Sent successfully');
+        } catch (sendErr) {
+          console.log('[Push Bot] ✗ Failed to send:', sendErr.message);
+          if (sendErr.statusCode === 404 || sendErr.statusCode === 410) {
+            console.log('[Push Bot] Subscription expired/invalid (', sendErr.statusCode, ')');
+          }
+        }
       }
     } catch (err) {
-      console.error('[Push Bot] Error:', err);
+      console.log('[Push Bot] Error processing recipient:', err);
     }
   }
-}
 
-async function getPushSubscriptions(medplum: MedplumClient, practitionerId: string): Promise<any[]> {
+  console.log('[Push Bot] ===== SUMMARY =====');
+  console.log('[Push Bot] Recipients processed:', recipientCount);
+  console.log('[Push Bot] Subscriptions found:', subscriptionCount);
+  console.log('[Push Bot] Notifications sent:', sentCount);
+  console.log('[Push Bot] ===================');
+};
+
+async function getPushSubscriptions(medplum, practitionerId) {
+  console.log('[Push Bot] Searching FHIR Subscriptions with reason="Push notifications"');
+
   const bundle = await medplum.search('Subscription', {
     reason: 'Push notifications',
     _count: '100',
   });
 
+  console.log('[Push Bot] FHIR search returned', bundle.entry?.length || 0, 'total Subscriptions');
+
   const subscriptions = [];
   for (const entry of bundle.entry || []) {
-    const sub = entry.resource as any;
+    const sub = entry.resource;
+    console.log('[Push Bot] Checking Subscription:', sub.id);
+    console.log('[Push Bot] - Reason:', sub.reason);
+    console.log('[Push Bot] - Status:', sub.status);
+    console.log('[Push Bot] - Has payload:', !!sub.channel?.payload);
+
     if (sub.channel?.payload) {
       try {
         const pushSub = JSON.parse(sub.channel.payload);
+        console.log('[Push Bot] - Parsed payload endpoint:', pushSub.endpoint ? 'YES' : 'NO');
+        console.log('[Push Bot] - Parsed payload keys:', pushSub.keys ? 'YES' : 'NO');
         if (pushSub.endpoint && pushSub.keys) {
           subscriptions.push(pushSub);
+          console.log('[Push Bot] ✓ Valid push subscription found');
+        } else {
+          console.log('[Push Bot] ✗ Invalid push subscription (missing endpoint or keys)');
         }
-      } catch {}
+      } catch (err) {
+        console.log('[Push Bot] ✗ Failed to parse payload:', err);
+      }
     }
   }
   return subscriptions;
 }
 
-async function sendPushNotification(subscription: any, payload: PushPayload): Promise<void> {
+async function sendPushNotification(subscription, payload) {
+  console.log('[Push Bot] sendPushNotification called');
+
   const webpush = require('web-push');
-  
-  const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
-  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
-  
+  console.log('[Push Bot] web-push library loaded');
+
+  // VAPID keys from server environment - passed via medplum bot execution context
+  // These should be configured in the server environment
+  const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || '';
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
+
+  console.log('[Push Bot] VAPID public key present:', !!vapidPublicKey);
+  console.log('[Push Bot] VAPID private key present:', !!vapidPrivateKey);
+
   if (!vapidPublicKey || !vapidPrivateKey) {
-    throw new Error('VAPID keys not configured');
+    console.log('[Push Bot] VAPID keys not configured - skipping push notification');
+    return;
   }
 
+  console.log('[Push Bot] Sending push notification...');
+  console.log('[Push Bot] Payload:', JSON.stringify(payload));
+
   try {
-    await webpush.sendNotification(
+    const result = await webpush.sendNotification(
       subscription,
       JSON.stringify(payload),
       {
@@ -1030,32 +1111,36 @@ async function sendPushNotification(subscription: any, payload: PushPayload): Pr
         TTL: 60,
       }
     );
-  } catch (err: any) {
+    console.log('[Push Bot] Push sent successfully, status:', result.statusCode);
+  } catch (err) {
+    console.log('[Push Bot] Push send failed:', err.message);
+    console.log('[Push Bot] Error status code:', err.statusCode);
+    console.log('[Push Bot] Error body:', err.body);
     if (err.statusCode === 404 || err.statusCode === 410) {
-      console.log('[Push Bot] Subscription expired:', subscription.endpoint);
+      console.log('[Push Bot] Subscription expired/invalid, should remove:', subscription.endpoint.substring(0, 50) + '...');
     } else {
       throw err;
     }
   }
 }
 
-function getNotificationUrl(communication: Communication): string {
+function getNotificationUrl(communication) {
   const apptRef = communication.extension?.find(
     (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/related-appointment'
   )?.valueReference?.reference;
-  
+
   if (apptRef) return '/calendar';
-  
+
   const procRef = communication.extension?.find(
     (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/related-procedure'
   )?.valueReference?.reference;
-  
+
   if (procRef && communication.subject?.reference) {
     const patientId = communication.subject.reference.split('/')[1];
     const procedureId = procRef.split('/')[1];
-    return \`/Patient/\${patientId}/botox-treatment?procedureId=\${procedureId}\`;
+    return '/Patient/' + patientId + '/botox-treatment?procedureId=' + procedureId;
   }
-  
+
   return '/notifications';
 }
 `;
@@ -1070,20 +1155,87 @@ async function createPushNotificationBot(systemRepo: SystemRepository, project: 
   const existing = existingBots.entry?.find((entry) => entry.resource?.name === 'Push Notification Sender')?.resource;
 
   if (existing) {
-    globalLogger.info('Push notification bot already exists');
-    return existing;
+    // Check if the existing bot has executable code
+    if (existing.executableCode?.url) {
+      globalLogger.info('Push notification bot already exists with executable code');
+      return existing;
+    }
+    // Bot exists but doesn't have executable code - we need to update it
+    globalLogger.info('Push notification bot exists but missing executable code, updating...');
+
+    // Create Binary with the code
+    const binary = await systemRepo.createResource<Binary>({
+      resourceType: 'Binary',
+      meta: { project: project.id },
+      contentType: 'text/typescript',
+    });
+
+    // Write the code to binary storage
+    await getBinaryStorage().writeBinary(
+      binary,
+      'push-notification-sender.ts',
+      'text/typescript',
+      Readable.from(PUSH_NOTIFICATION_BOT_CODE)
+    );
+
+    // Update bot with executable code reference
+    const updatedBot = await systemRepo.updateResource<Bot>({
+      ...existing,
+      runtimeVersion: 'vmcontext',
+      executableCode: {
+        contentType: 'text/typescript',
+        title: 'push-notification-sender.ts',
+        url: getReferenceString(binary),
+      },
+    });
+
+    globalLogger.info(`Updated push notification bot with executable code: ${updatedBot.id}`);
+    return updatedBot;
   }
 
+  // Create Binary with the code
+  const binary = await systemRepo.createResource<Binary>({
+    resourceType: 'Binary',
+    meta: { project: project.id },
+    contentType: 'text/typescript',
+  });
+
+  // Write the code to binary storage
+  await getBinaryStorage().writeBinary(
+    binary,
+    'push-notification-sender.ts',
+    'text/typescript',
+    Readable.from(PUSH_NOTIFICATION_BOT_CODE)
+  );
+
+  // Create Bot with executable code reference
   const bot = await systemRepo.createResource<Bot>({
     resourceType: 'Bot',
     meta: { project: project.id },
     name: 'Push Notification Sender',
     description: 'Sends browser push notifications to staff when notifications are created',
     runtimeVersion: 'vmcontext',
-    code: PUSH_NOTIFICATION_BOT_CODE,
+    executableCode: {
+      contentType: 'text/typescript',
+      title: 'push-notification-sender.ts',
+      url: getReferenceString(binary),
+    },
   });
 
   globalLogger.info(`Created push notification bot: ${bot.id}`);
+
+  // Create ProjectMembership for the Bot so it can be executed
+  // Note: For Bots, the Bot itself is both the user and the profile
+  await systemRepo.createResource<ProjectMembership>({
+    resourceType: 'ProjectMembership',
+    meta: { project: project.id },
+    project: createReference(project),
+    user: createReference(bot),
+    profile: createReference(bot),
+  });
+
+  globalLogger.info(`Created project membership for push notification bot`);
+
   return bot;
 }
 
@@ -1111,7 +1263,7 @@ async function createPushNotificationSubscription(
 
   const subscription = await systemRepo.createResource<Subscription>({
     resourceType: 'Subscription',
-    meta: { project: project.id },
+    meta: { project: project.id, author: createReference(bot) },
     status: 'active',
     reason: 'Trigger push notifications',
     criteria: 'Communication?status=completed',

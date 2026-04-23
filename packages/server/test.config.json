@@ -7,7 +7,7 @@
   "authorizeUrl": "http://localhost:8104/oauth2/authorize",
   "tokenUrl": "http://localhost:8104/oauth2/token",
   "userInfoUrl": "http://localhost:8104/oauth2/userinfo",
-  "appBaseUrl": "http://localhost:3000/",
+  "appBaseUrl": "https://app-dev.studioassistant.io/",
   "binaryStorage": "file:./binary/",
   "storageBaseUrl": "http://localhost:8104/storage/",
   "supportEmail": "\"Medplum\" <support@medplum.com>",

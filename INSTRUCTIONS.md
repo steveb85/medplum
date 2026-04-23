@@ -15,6 +15,15 @@
 
 ## Quick Start
 
+### IMPORTANT Tunnel access
+
+in two seperate terminals from the root folder run
+
+cloudflared tunnel --config .cloudflared/medplum-app.yml run
+cloudflared tunnel --config .cloudflared/medplum-api.yml run
+
+to set up tunnels
+
 ### Step 1: Set Node.js Version
 
 ```bash
@@ -33,6 +42,7 @@ docker-compose up
 ```
 
 This starts:
+
 - PostgreSQL on port `5432`
 - Redis on port `6379`
 
@@ -69,6 +79,7 @@ MEDPLUM_SEED_DATA=false
 ```
 
 **Seeding behavior**:
+
 - `MEDPLUM_SEED_DATA=true` or **not set** → Seeds Nurse Mel test data
 - `MEDPLUM_SEED_DATA=false` → No test data, only Super Admin created
 
@@ -82,11 +93,13 @@ npm run dev
 ```
 
 **Wait for**:
+
 - "Server running on port 8103"
 - "Database seeded successfully" (includes Nurse Mel data)
 - **Look for the login credentials in the console output**
 
 **What happens automatically**:
+
 1. Server connects to Postgres/Redis
 2. Database is seeded with:
    - Super Admin user (admin@example.com / medplum_admin)
@@ -116,58 +129,64 @@ npm run dev
 
 ## Access Points
 
-| Service | URL | Description |
-|---------|-----|-------------|
+| Service      | URL                   | Description        |
+| ------------ | --------------------- | ------------------ |
 | Provider App | http://localhost:3000 | Main web interface |
-| API Server | http://localhost:8103 | FHIR API endpoint |
+| API Server   | http://localhost:8103 | FHIR API endpoint  |
 
 ---
 
 ## Login Credentials
 
-| User | Email | Password | Role | Permissions |
-|------|-------|----------|------|-------------|
-| **Super Admin** | admin@example.com | medplum_admin | Full system access | Everything |
-| **Nurse Mel** | melissa@melissaknudson.com | medplum_provider | Clinical Provider | Patient records, treatments, clinical notes |
-| **Coordinator** | coordinator@melissaknudson.com | medplum_coord | Operations | Scheduling, billing, read-only patient view |
+| User            | Email                          | Password         | Role               | Permissions                                 |
+| --------------- | ------------------------------ | ---------------- | ------------------ | ------------------------------------------- |
+| **Super Admin** | admin@example.com              | medplum_admin    | Full system access | Everything                                  |
+| **Nurse Mel**   | melissa@melissaknudson.com     | medplum_provider | Clinical Provider  | Patient records, treatments, clinical notes |
+| **Coordinator** | coordinator@melissaknudson.com | medplum_coord    | Operations         | Scheduling, billing, read-only patient view |
 
 ---
 
 ## Seeded Test Data
 
 ### Organization
+
 - **Name**: Nurse Mel Aesthetics
 - **Location**: 116 Chambers St, New York, NY 10007
 
 ### Practitioners
-| Name | Email | Role |
-|------|-------|------|
+
+| Name                | Email                      | Role     |
+| ------------------- | -------------------------- | -------- |
 | Melissa Knudson, RN | melissa@melissaknudson.com | Provider |
 
 ### Staff (Coordinators)
-| Name | Email | Role |
-|------|-------|------|
+
+| Name        | Email                          | Role        |
+| ----------- | ------------------------------ | ----------- |
 | Alice Smith | coordinator@melissaknudson.com | Coordinator |
 
 ### Patients
-| Name | Patient ID | Email | Has Previous Botox |
-|------|------------|-------|-------------------|
-| Sarah Chen | NM001 | sarah.chen@email.com | Yes |
-| Jessica Rodriguez | NM002 | jessica.r@email.com | No |
-| Amanda Thompson | NM003 | amanda.t@email.com | Yes |
+
+| Name              | Patient ID | Email                | Has Previous Botox |
+| ----------------- | ---------- | -------------------- | ------------------ |
+| Sarah Chen        | NM001      | sarah.chen@email.com | Yes                |
+| Jessica Rodriguez | NM002      | jessica.r@email.com  | No                 |
+| Amanda Thompson   | NM003      | amanda.t@email.com   | Yes                |
 
 ### Appointments
-| Patient | Date | Service | Status |
-|---------|------|---------|--------|
-| Sarah Chen | 2025-03-15 | Botox - Forehead & Crows Feet | Completed |
-| Sarah Chen | Tomorrow | Botox Touch-up | Booked |
-| Jessica Rodriguez | Tomorrow | Botox Consultation | Booked |
-| Amanda Thompson | 2025-04-25 | Botox - Crows Feet & Brow Lift | Booked |
+
+| Patient           | Date       | Service                        | Status    |
+| ----------------- | ---------- | ------------------------------ | --------- |
+| Sarah Chen        | 2025-03-15 | Botox - Forehead & Crows Feet  | Completed |
+| Sarah Chen        | Tomorrow   | Botox Touch-up                 | Booked    |
+| Jessica Rodriguez | Tomorrow   | Botox Consultation             | Booked    |
+| Amanda Thompson   | 2025-04-25 | Botox - Crows Feet & Brow Lift | Booked    |
 
 ### Access Policies
-| Policy | Role | Description |
-|--------|------|-------------|
-| MedSpa Provider Policy | Provider | Full clinical access |
+
+| Policy                    | Role        | Description                           |
+| ------------------------- | ----------- | ------------------------------------- |
+| MedSpa Provider Policy    | Provider    | Full clinical access                  |
 | MedSpa Coordinator Policy | Coordinator | Operations access, read-only clinical |
 
 ---
@@ -283,6 +302,7 @@ npm run build
 ### Check Server Logs
 
 Look for:
+
 - "Database seeded successfully"
 - "Seeding Nurse Mel test data..."
 - "Created Nurse Mel practitioner: [id]"
@@ -313,12 +333,12 @@ Look for:
 
 ### Commands
 
-| Terminal | Command | Purpose |
-|----------|---------|---------|
-| 1 | `docker-compose up` | Database infrastructure |
-| 2 | `cd packages/server && npm run dev` | API server + auto-seeding |
-| 3 | `cd packages/app && npm run dev` | Provider UI |
-| 4 | `git status`, etc. | Development utilities |
+| Terminal | Command                             | Purpose                   |
+| -------- | ----------------------------------- | ------------------------- |
+| 1        | `docker-compose up`                 | Database infrastructure   |
+| 2        | `cd packages/server && npm run dev` | API server + auto-seeding |
+| 3        | `cd packages/app && npm run dev`    | Provider UI               |
+| 4        | `git status`, etc.                  | Development utilities     |
 
 ---
 

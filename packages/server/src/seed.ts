@@ -52,14 +52,33 @@ export async function seedDatabase(config: MedplumServerConfig): Promise<void> {
     if (shouldSeedNurseMelData) {
       globalLogger.info('MEDPLUM_SEED_DATA is enabled, seeding Nurse Mel test data...');
       
-      // Create a dedicated project for Nurse Mel's practice
-      // This is NOT a super admin project - it's a regular project
-      const nurseMelProject = await systemRepo.createResource<Project>({
+    // Create or update a dedicated project for Nurse Mel's practice
+    // This is NOT a super admin project - it's a regular project
+    const existingProject = await systemRepo.searchOne<Project>({
+      resourceType: 'Project',
+      filters: [{ code: 'name', operator: 'eq', value: 'Nurse Mel Aesthetics' }],
+    });
+
+    let nurseMelProject: Project;
+    if (existingProject) {
+      // Update existing project to ensure bots feature is enabled
+      const updatedFeatures = new Set(existingProject.features || []);
+      updatedFeatures.add('bots');
+      updatedFeatures.add('websocket-subscriptions');
+      nurseMelProject = await systemRepo.updateResource<Project>({
+        ...existingProject,
+        features: Array.from(updatedFeatures),
+      });
+      globalLogger.info(`Updated Nurse Mel project: ${nurseMelProject.id} with features: ${Array.from(updatedFeatures).join(', ')}`);
+    } else {
+      nurseMelProject = await systemRepo.createResource<Project>({
         resourceType: 'Project',
         name: 'Nurse Mel Aesthetics',
         strictMode: true,
+        features: ['bots', 'websocket-subscriptions'],
       });
       globalLogger.info(`Created Nurse Mel project: ${nurseMelProject.id}`);
+    }
       
       // Super Admin gets a membership in this project with admin privileges
       const superAdmin = await systemRepo.searchOne<User>({

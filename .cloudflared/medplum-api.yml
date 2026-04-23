@@ -1,0 +1,7 @@
+tunnel: 2cf9b388-9b56-4a91-a2d4-a532d28114bb
+credentials-file: /Users/stephenbartlett/.cloudflared/2cf9b388-9b56-4a91-a2d4-a532d28114bb.json
+
+ingress:
+  - hostname: api-dev.studioassistant.io
+    service: http://localhost:8103
+  - service: http_status:404

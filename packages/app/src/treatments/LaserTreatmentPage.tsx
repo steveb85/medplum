@@ -5,7 +5,9 @@ import { Alert, Badge, Button, Divider, Group, Paper, Select, Stack, Text, Texta
 
 import { showNotification } from '@mantine/notifications';
 import { normalizeErrorString } from '@medplum/core';
-import { Document, Loading } from '@medplum/react';
+import { Document, Loading, useMedplum } from '@medplum/react';
+import type { Appointment } from '@medplum/fhirtypes';
+import { IconEdit } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router';
@@ -13,6 +15,7 @@ import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
+import { CreateAppointmentModal } from '../components/CreateAppointmentModal';
 
 // Laser types
 const LASER_TYPES = [
@@ -63,7 +66,8 @@ interface LaserSession {
 export function LaserTreatmentPage(): JSX.Element {
   const [searchParams] = useSearchParams();
   const procedureId = searchParams.get('procedureId');
-  
+  const medplum = useMedplum();
+
   const {
     patient,
     procedure,
@@ -71,20 +75,26 @@ export function LaserTreatmentPage(): JSX.Element {
     afterPhotos,
     loading,
     saving,
-    role,
     user,
     handleBeginTreatment,
     handleCompleteTreatment,
-    reloadPhotos,
+    handleBeforePhotoUpload,
+    handleAfterPhotoUpload,
+    handleBeforePhotoRemove,
+    handleAfterPhotoRemove,
     canBeginTreatment,
     canCompleteTreatment,
     canEdit,
+    canUploadBeforePhotos,
+    canUploadAfterPhotos,
   } = useTreatmentData();
 
   // Local state
   const [sessions, setSessions] = useState<LaserSession[]>([]);
   const [generalNotes, setGeneralNotes] = useState('');
   const [recommendedSessions, setRecommendedSessions] = useState(4);
+  const [appointment, setAppointment] = useState<Appointment | undefined>();
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Load existing data
   useEffect(() => {
@@ -99,7 +109,7 @@ export function LaserTreatmentPage(): JSX.Element {
           setSessions([]);
         }
       }
-      
+
       const notesExt = procedure.extension?.find(
         (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/treatment-notes'
       );
@@ -113,8 +123,19 @@ export function LaserTreatmentPage(): JSX.Element {
       if (recommendedExt?.valueInteger) {
         setRecommendedSessions(recommendedExt.valueInteger);
       }
+
+      // Load linked appointment
+      const linkedAppointmentRef = procedure.extension?.find(
+        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment'
+      )?.valueReference?.reference;
+      if (linkedAppointmentRef?.startsWith('Appointment/')) {
+        const appointmentId = linkedAppointmentRef.split('/')[1];
+        medplum.readResource('Appointment', appointmentId)
+          .then((apt) => setAppointment(apt))
+          .catch((err) => console.error('Error loading appointment:', err));
+      }
     }
-  }, [procedure]);
+  }, [procedure, medplum]);
 
   // Must have a procedureId
   if (!procedureId) {
@@ -184,7 +205,20 @@ export function LaserTreatmentPage(): JSX.Element {
   return (
     <Document>
       <Stack gap="md" p="md">
-        <Title order={3}>Laser Treatment</Title>
+        <Group justify="space-between" align="flex-start">
+          <Title order={3}>Laser Treatment</Title>
+          <Group>
+            {procedure?.status === 'preparation' && (
+              <Button
+                variant="light"
+                leftSection={<IconEdit size={16} />}
+                onClick={() => setIsEditModalOpen(true)}
+              >
+                Edit Booking
+              </Button>
+            )}
+          </Group>
+        </Group>
 
         <TreatmentHeader
           procedure={procedure}
@@ -323,11 +357,12 @@ export function LaserTreatmentPage(): JSX.Element {
       {/* Photos */}
       <Divider />
       <PhotoUploadSection
-        patientId={patient?.id}
-        procedureId={procedureId || undefined}
         beforePhotos={beforePhotos}
         afterPhotos={afterPhotos}
-        onPhotosUpdated={reloadPhotos}
+        onBeforePhotoUpload={canUploadBeforePhotos() ? handleBeforePhotoUpload : undefined}
+        onAfterPhotoUpload={canUploadAfterPhotos() ? handleAfterPhotoUpload : undefined}
+        onBeforePhotoRemove={canUploadBeforePhotos() ? handleBeforePhotoRemove : undefined}
+        onAfterPhotoRemove={canUploadAfterPhotos() ? handleAfterPhotoRemove : undefined}
         readOnly={!canEdit()}
         isSaving={saving}
       />

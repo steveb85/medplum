@@ -32,6 +32,10 @@ interface CreateAppointmentModalProps {
   initialDate?: Date;
   initialTime?: string;
   initialDuration?: number;
+  // Edit mode props
+  mode?: 'create' | 'edit';
+  appointment?: Appointment;
+  procedure?: Procedure;
 }
 
 // Service types - extendable in future
@@ -105,6 +109,9 @@ export function CreateAppointmentModal({
   initialDate = new Date(),
   initialTime = '09:00',
   initialDuration = 30,
+  mode = 'create',
+  appointment,
+  procedure,
 }: CreateAppointmentModalProps): JSX.Element {
   const medplum = useMedplum();
   const role = getMedSpaRole(medplum);
@@ -133,13 +140,80 @@ export function CreateAppointmentModal({
   // Track previous isOpen state to detect transitions
   const prevIsOpenRef = useRef(isOpen);
 
-  // Reset form when modal opens (isOpen transitions from false to true)
+  // Track when prefilled data is loaded (for forcing remount of inputs)
+  const [prefillKey, setPrefillKey] = useState(0);
+
+  // Load existing data in edit mode
+  useEffect(() => {
+    if (mode === 'edit' && isOpen && appointment && procedure) {
+      const loadData = async (): Promise<void> => {
+        const promises: Promise<unknown>[] = [];
+
+        // Load patient
+        const patientRef = procedure.subject;
+        if (patientRef?.reference?.startsWith('Patient/')) {
+          const patientId = patientRef.reference.split('/')[1];
+          promises.push(
+            medplum.readResource('Patient', patientId).then(setPatient).catch(console.error)
+          );
+        }
+
+        // Load providers
+        const performers = procedure.performer || [];
+        performers.forEach((p, index) => {
+          if (p.actor?.reference?.startsWith('Practitioner/')) {
+            const providerId = p.actor.reference.split('/')[1];
+            promises.push(
+              medplum.readResource('Practitioner', providerId).then((practitioner) => {
+                if (index === 0) {
+                  setMainProvider(practitioner);
+                } else {
+                  setAssistantProvider(practitioner);
+                }
+              }).catch(console.error)
+            );
+          }
+        });
+
+        // Wait for all async data to load
+        await Promise.all(promises);
+
+        // Parse date/time from appointment
+        if (appointment.start) {
+          const startDate = dayjs(appointment.start);
+          setDate(normalizeDate(startDate.toDate()));
+          setTime(startDate.format('HH:mm'));
+
+          // Calculate duration
+          if (appointment.end) {
+            const durationMinutes = dayjs(appointment.end).diff(startDate, 'minute');
+            setDuration(durationMinutes);
+          }
+        }
+
+        // Load service type
+        const serviceName = procedure.code?.text || appointment.serviceType?.[0]?.text || 'Botox Cosmetic';
+        setServiceType(serviceName);
+
+        // Load notes
+        const noteText = procedure.note?.[0]?.text || appointment.description || '';
+        setNotes(noteText);
+
+        // Force remount of inputs with prefilled values
+        setPrefillKey((prev) => prev + 1);
+      };
+
+      loadData().catch(console.error);
+    }
+  }, [mode, isOpen, appointment, procedure, medplum, normalizeDate]);
+
+  // Reset form when modal opens in create mode (isOpen transitions from false to true)
   useEffect(() => {
     const wasOpen = prevIsOpenRef.current;
     prevIsOpenRef.current = isOpen;
 
-    // Only reset when modal transitions from closed to open
-    if (isOpen && !wasOpen) {
+    // Only reset when modal transitions from closed to open in create mode
+    if (isOpen && !wasOpen && mode === 'create') {
       setDate(normalizeDate(initialDate));
       setTime(initialTime);
       setDuration(initialDuration);
@@ -150,7 +224,7 @@ export function CreateAppointmentModal({
       setNotes('');
       setServiceType('Botox Cosmetic');
     }
-  }, [isOpen, initialDate, initialTime, initialDuration, normalizeDate]);
+  }, [isOpen, initialDate, initialTime, initialDuration, normalizeDate, mode]);
 
   // Validation
   const validateForm = useCallback((): boolean => {
@@ -242,8 +316,15 @@ export function CreateAppointmentModal({
         ],
       },
       subject: createReference(patient),
-      // Set main provider as performer so they can transition status later
-      performer: mainProvider ? [{ actor: createReference(mainProvider) }] : undefined,
+      // Set providers as performers - main provider first, assistant second
+      // This allows checking assignments for status transitions
+      performer:
+        mainProvider || assistantProvider
+          ? [
+              ...(mainProvider ? [{ actor: createReference(mainProvider) }] : []),
+              ...(assistantProvider ? [{ actor: createReference(assistantProvider) }] : []),
+            ]
+          : undefined,
       // Note: performedPeriod is NOT set here - it will be set when treatment starts
       extension: [
           {
@@ -330,6 +411,160 @@ export function CreateAppointmentModal({
     onSuccess,
   ]);
 
+  // Handle update in edit mode
+  const handleUpdate = useCallback(async (): Promise<void> => {
+    if (!validateForm()) { return; }
+    if (!patient || !date || !time || !appointment || !procedure) { return; }
+    if (procedure.status !== 'preparation') {
+      showNotification({
+        title: 'Cannot Edit',
+        message: 'Only scheduled treatments can be edited',
+        color: 'red',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Calculate start and end times
+      const [hours, minutes] = time.split(':').map(Number);
+      const startDateTime = dayjs(date).hour(hours).minute(minutes).second(0);
+      const endDateTime = startDateTime.add(duration, 'minute');
+
+      const serviceCode = getServiceCode(serviceType);
+      const oldServiceType = procedure.code?.text || '';
+      const serviceTypeChanged = oldServiceType !== serviceType;
+
+      // 1. Update Appointment
+      const updatedAppointment: Appointment = {
+        ...appointment,
+        serviceType: [{ text: serviceType }],
+        description: notes || undefined,
+        start: startDateTime.toISOString(),
+        end: endDateTime.toISOString(),
+        participant: [
+          {
+            actor: createReference(patient),
+            status: 'accepted',
+          },
+        ],
+      };
+
+      // Add main provider if selected
+      if (mainProvider) {
+        updatedAppointment.participant.push({
+          actor: createReference(mainProvider),
+          status: 'accepted',
+        });
+      }
+
+      // Add assistant provider if selected
+      if (assistantProvider) {
+        updatedAppointment.participant.push({
+          actor: createReference(assistantProvider),
+          status: 'accepted',
+        });
+      }
+
+      const savedAppointment = await medplum.updateResource(updatedAppointment);
+
+      // 2. Update Procedure (Treatment)
+      const updatedProcedure: Procedure = {
+        ...procedure,
+        code: {
+          text: serviceType,
+          coding: [
+            {
+              system: 'http://melissaknudson.com/treatments',
+              code: serviceCode,
+              display: serviceType,
+            },
+          ],
+        },
+      subject: createReference(patient),
+      performer:
+        mainProvider || assistantProvider
+          ? [
+              ...(mainProvider ? [{ actor: createReference(mainProvider) }] : []),
+              ...(assistantProvider ? [{ actor: createReference(assistantProvider) }] : []),
+            ]
+          : undefined,
+      extension: [
+          // Keep existing extensions
+          ...(procedure.extension?.filter(e => 
+            !['http://melissaknudson.com/fhir/StructureDefinition/linked-appointment',
+              'http://melissaknudson.com/fhir/StructureDefinition/treatment-status',
+              'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
+            ].includes(e.url)
+          ) || []),
+          { url: 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment', valueReference: createReference(savedAppointment) },
+          { url: 'http://melissaknudson.com/fhir/StructureDefinition/treatment-status', valueString: 'preparation' },
+          // Add edit history
+          ...(procedure.extension?.filter(e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/edit-history').length ? [] : []),
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/last-edited',
+            valueDateTime: new Date().toISOString(),
+          },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/edited-by',
+            valueReference: medplum.getProfile() ? createReference(medplum.getProfile() as Practitioner) : undefined,
+          },
+          { url: 'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime', valueDateTime: startDateTime.toISOString() },
+        ],
+        note: notes
+          ? [
+              {
+                text: notes,
+                time: new Date().toISOString(),
+              },
+            ]
+          : undefined,
+      };
+
+      const savedProcedure = await medplum.updateResource(updatedProcedure);
+
+      // Show toast notification
+      showNotification({
+        title: 'Booking Updated',
+        message: `${serviceType} appointment updated for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} on ${startDateTime.format('MMM D, YYYY')} at ${startDateTime.format('h:mm A')}`,
+        color: 'green',
+      });
+
+      // Check if service type changed - if so, redirect to new treatment page
+      if (serviceTypeChanged) {
+        onSuccess();
+        // Let the parent component handle navigation
+        return;
+      }
+
+      onSuccess();
+    } catch (err) {
+      showNotification({
+        title: 'Error updating appointment',
+        message: normalizeErrorString(err),
+        color: 'red',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [
+    validateForm,
+    patient,
+    date,
+    time,
+    duration,
+    serviceType,
+    mainProvider,
+    assistantProvider,
+    notes,
+    getServiceCode,
+    medplum,
+    onSuccess,
+    appointment,
+    procedure,
+  ]);
+
   // Clear form errors when modal closes (transition end)
   const handleCloseTransition = useCallback(() => {
     // Just clear errors, actual reset happens when modal opens
@@ -340,7 +575,7 @@ export function CreateAppointmentModal({
     <Modal
       opened={isOpen}
       onClose={onClose}
-      title="New Appointment"
+      title={mode === 'edit' ? 'Edit Booking' : 'New Appointment'}
       size="lg"
       onExitTransitionEnd={handleCloseTransition}
     >
@@ -351,8 +586,10 @@ export function CreateAppointmentModal({
             Patient <span style={{ color: 'red' }}>*</span>
           </Text>
           <ResourceInput
+            key={`patient-${prefillKey}`}
             resourceType="Patient"
             name="patient"
+            defaultValue={patient ?? undefined}
             placeholder="Search for patient..."
             onChange={(value) => setPatient(value as Patient | null)}
           />
@@ -423,8 +660,10 @@ export function CreateAppointmentModal({
             Main Provider
           </Text>
           <AsyncAutocomplete<Practitioner>
+            key={`mainProvider-${prefillKey}`}
             name="mainProvider"
             placeholder="Select main provider (optional)..."
+            defaultValue={mainProvider ?? undefined}
             toOption={(p) => ({ value: p.id ?? '', label: getPractitionerDisplay(p), resource: p })}
             loadOptions={async (input, signal) => {
               const searchParams = new URLSearchParams({
@@ -446,8 +685,10 @@ export function CreateAppointmentModal({
             Assistant Provider
           </Text>
           <AsyncAutocomplete<Practitioner>
+            key={`assistantProvider-${prefillKey}`}
             name="assistantProvider"
             placeholder="Select assistant provider (optional)..."
+            defaultValue={assistantProvider ?? undefined}
             toOption={(p) => ({ value: p.id ?? '', label: getPractitionerDisplay(p), resource: p })}
             loadOptions={async (input, signal) => {
               const searchParams = new URLSearchParams({
@@ -476,15 +717,19 @@ export function CreateAppointmentModal({
           />
         </div>
 
-        {/* Action Buttons */}
-        <Group justify="space-between" mt="md">
-          <Button variant="light" color="gray" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} loading={isSubmitting} disabled={!patient || !date || !time}>
-            Book Appointment
-          </Button>
-        </Group>
+      {/* Action Buttons */}
+      <Group justify="space-between" mt="md">
+        <Button variant="light" color="gray" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button 
+          onClick={mode === 'edit' ? handleUpdate : handleSubmit} 
+          loading={isSubmitting} 
+          disabled={!patient || !date || !time}
+        >
+          {mode === 'edit' ? 'Save Changes' : 'Book Appointment'}
+        </Button>
+      </Group>
       </Stack>
     </Modal>
   );

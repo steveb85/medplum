@@ -64,6 +64,13 @@ export function getNotificationRecipients(
         recipients.push(createReference(data.provider));
       }
       break;
+
+    case 'general':
+      // For general/test notifications, notify the current user if no specific recipients
+      if (currentUser) {
+        recipients.push(createReference(currentUser));
+      }
+      break;
   }
 
   return recipients;

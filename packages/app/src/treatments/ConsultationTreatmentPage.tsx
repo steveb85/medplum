@@ -5,7 +5,8 @@ import { Alert, Button, Divider, Group, Paper, Stack, Text, Textarea, Title } fr
 import { showNotification } from '@mantine/notifications';
 import { normalizeErrorString } from '@medplum/core';
 import { Document, Loading } from '@medplum/react';
-
+import { IconCamera, IconEdit } from '@tabler/icons-react';
+import type { Appointment } from '@medplum/fhirtypes';
 import type { JSX } from 'react';
 import { useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router';
@@ -13,6 +14,7 @@ import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
+import { CreateAppointmentModal } from '../components/CreateAppointmentModal';
 
 export function ConsultationTreatmentPage(): JSX.Element {
   const [searchParams] = useSearchParams();
@@ -35,12 +37,16 @@ export function ConsultationTreatmentPage(): JSX.Element {
     canBeginTreatment,
     canCompleteTreatment,
     canEdit,
+    canUploadBeforePhotos,
+    canUploadAfterPhotos,
   } = useTreatmentData();
 
   // Local state for consultation notes
   const [notes, setNotes] = useState('');
   const [recommendations, setRecommendations] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
+  const [appointment, setAppointment] = useState<Appointment | undefined>();
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Must have a procedureId
   if (!procedureId) {
@@ -86,7 +92,20 @@ export function ConsultationTreatmentPage(): JSX.Element {
   return (
     <Document>
       <Stack gap="md" p="md">
-        <Title order={3}>Consultation</Title>
+        <Group justify="space-between" align="flex-start">
+          <Title order={3}>Consultation</Title>
+          <Group>
+            {procedure?.status === 'preparation' && (
+              <Button
+                variant="light"
+                leftSection={<IconEdit size={16} />}
+                onClick={() => setIsEditModalOpen(true)}
+              >
+                Edit Booking
+              </Button>
+            )}
+          </Group>
+        </Group>
 
         <TreatmentHeader
           procedure={procedure}
@@ -145,11 +164,12 @@ export function ConsultationTreatmentPage(): JSX.Element {
       {/* Photos */}
       <Divider />
       <PhotoUploadSection
-        patientId={patient?.id}
-        procedureId={procedureId || undefined}
         beforePhotos={beforePhotos}
         afterPhotos={afterPhotos}
-        onPhotosUpdated={reloadPhotos}
+        onBeforePhotoUpload={canUploadBeforePhotos() ? handleBeforePhotoUpload : undefined}
+        onAfterPhotoUpload={canUploadAfterPhotos() ? handleAfterPhotoUpload : undefined}
+        onBeforePhotoRemove={canUploadBeforePhotos() ? handleBeforePhotoRemove : undefined}
+        onAfterPhotoRemove={canUploadAfterPhotos() ? handleAfterPhotoRemove : undefined}
         readOnly={!canEdit()}
         isSaving={saving}
       />

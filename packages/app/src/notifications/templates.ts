@@ -15,7 +15,8 @@ export type NotificationType =
   | 'treatment-started'
   | 'treatment-completed'
   | 'photos-uploaded'
-  | 'notes-added';
+  | 'notes-added'
+  | 'general';
 
 /**
  * Notification Priority
@@ -47,6 +48,7 @@ export interface NotificationData {
   time?: string;
   notes?: string;
   serviceType?: string;
+  message?: string;
 }
 
 /**
@@ -137,6 +139,15 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
     },
     priority: 'routine',
     category: 'notes',
+  },
+  general: {
+    type: 'general',
+    title: 'Notification',
+    getMessage: (data) => {
+      return data.message || 'You have a new notification';
+    },
+    priority: 'routine',
+    category: 'general',
   },
 };
 

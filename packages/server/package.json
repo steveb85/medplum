@@ -52,7 +52,7 @@
     "@medplum/ccda": "5.1.8",
     "@medplum/core": "5.1.8",
     "@medplum/definitions": "5.1.8",
-    "@medplum/fhir-router": "5.1.8",
+    "@medplum/fhir-router": "^5.1.8",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@opentelemetry/exporter-metrics-otlp-proto": "0.214.0",
     "@opentelemetry/exporter-trace-otlp-proto": "0.214.0",

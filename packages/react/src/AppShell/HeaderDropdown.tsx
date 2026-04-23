@@ -23,7 +23,7 @@ export function HeaderDropdown(props: HeaderDropdownProps): JSX.Element {
   const { medplum, profile, navigate } = context;
   const logins = medplum.getLogins();
   const { colorScheme, setColorScheme } = useMantineColorScheme();
-  const [layoutVersion] = useState((localStorage['appShellLayoutVersion'] as 'v1' | 'v2' | undefined) ?? 'v1');
+  const [layoutVersion] = useState((localStorage['appShellLayoutVersion'] as 'v1' | 'v2' | undefined) ?? 'v2');
   const showLayoutToggle = props.showLayoutVersionToggle ?? true;
 
   function setAppShellVersion(version: 'v1' | 'v2'): void {

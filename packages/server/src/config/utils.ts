@@ -161,7 +161,6 @@ const booleanKeys = new Set([
   'database.ssl.rejectUnauthorized',
   'database.ssl.require',
   'database.disableConnectionConfiguration',
-  'database.disableRunPostDeployMigrations',
   'database.runMigrations',
   'readonlyDatabase.ssl.rejectUnauthorized',
   'readonlyDatabase.ssl.require',
@@ -174,6 +173,7 @@ const booleanKeys = new Set([
   'rejectUnauthorized',
   'fhirSearchDiscourageSeqScan',
   'redactAuditEvents',
+  'vmContextBotsEnabled',
 ]);
 
 export function isBooleanConfig(key: string): boolean {

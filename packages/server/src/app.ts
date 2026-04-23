@@ -245,9 +245,9 @@ export async function initAppServices(config: MedplumServerConfig): Promise<void
   initRedis(config);
   await initDatabase(config);
   initWorkers(config);
+  initBinaryStorage(config.binaryStorage);
   await seedDatabase(config);
   await initKeys(config);
-  initBinaryStorage(config.binaryStorage);
   initHeartbeat(config);
   initOtelHeartbeat();
   initServerRegistryHeartbeatListener();

@@ -90,8 +90,9 @@ export async function runInVmContext(request: BotExecutionContext): Promise<BotE
 
   (async () => {
     const { bot, baseUrl, accessToken, requester, contentType, secrets, traceId, headers, defaultHeaders, responseStream } = event;
+    // Use internal baseUrl (localhost) instead of public URL to avoid Cloudflare challenges
     const medplum = new MedplumClient({
-      baseUrl,
+      baseUrl: '${config.baseUrl}',
       defaultHeaders,
       fetch: function(url, options = {}) {
         options.headers ||= {};

@@ -40,7 +40,7 @@ export interface UseInjectionMapReturn {
   updateMarker: (marker: InjectionMarker) => void;
   deleteMarker: (markerId: string) => void;
   selectMarker: (marker: InjectionMarker | null) => void;
-  saveTreatment: (background: BackgroundConfig) => Promise<InjectionMap | null>;
+  saveTreatment: (background: BackgroundConfig, markersToSave?: InjectionMarker[]) => Promise<InjectionMap | null>;
   reset: () => void;
 
   // Computed
@@ -166,8 +166,11 @@ export function useInjectionMap(
     setSelectedMarker(marker);
   }, []);
 
-const saveTreatment = useCallback(async (background: BackgroundConfig): Promise<InjectionMap | null> => {
-    if (markers.length === 0) {
+  const saveTreatment = useCallback(async (background: BackgroundConfig, markersToSave?: InjectionMarker[]): Promise<InjectionMap | null> => {
+    // Use provided markers or fall back to current state
+    const markersArray = markersToSave ?? markers;
+
+    if (markersArray.length === 0) {
       showNotification({
         title: 'No Injections',
         message: 'Please mark at least one injection point',
@@ -193,7 +196,7 @@ const saveTreatment = useCallback(async (background: BackgroundConfig): Promise<
           url: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"><!-- ${background.templateView} view template --></svg>`)}`,
           title: `Face Template (${background.templateView} view)`,
         },
-        markers,
+        markers: markersArray,
         createdAt: new Date().toISOString(),
         createdBy: profile ? { reference: `Practitioner/${profile.id}` } : undefined,
       };

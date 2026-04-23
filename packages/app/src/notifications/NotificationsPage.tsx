@@ -18,6 +18,7 @@ import {
   ScrollArea,
   Switch,
 } from '@mantine/core';
+import { showNotification } from '@mantine/notifications';
 import { useMedplum } from '@medplum/react';
 import type { Communication, Practitioner } from '@medplum/fhirtypes';
 import { useState, useEffect, useCallback } from 'react';
@@ -32,6 +33,7 @@ import {
   IconBell,
   IconX,
   IconList,
+  IconSend,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router';
 import {
@@ -40,6 +42,7 @@ import {
   isNotificationRead,
   getRelatedResource,
   getNotificationCategory,
+  createNotification,
 } from './utils';
 
 // Category icons
@@ -158,6 +161,29 @@ export function NotificationsPage(): JSX.Element {
 
   const readCount = notifications.length - unreadCount;
 
+  // Send test notification
+  const handleSendTestNotification = useCallback(async () => {
+    try {
+      await createNotification(medplum, 'general', {
+        message: 'This is a test notification to verify push notifications are working!',
+      }, user);
+      showNotification({
+        title: 'Test Notification Sent',
+        message: 'Check your browser notifications and refresh the page to see it',
+        color: 'green',
+      });
+      // Reload notifications after a brief delay
+      setTimeout(loadNotifications, 1000);
+    } catch (err) {
+      console.error('Error sending test notification:', err);
+      showNotification({
+        title: 'Error',
+        message: 'Failed to send test notification',
+        color: 'red',
+      });
+    }
+  }, [medplum, user, loadNotifications]);
+
   // Format date
   const formatDate = (dateString: string | undefined): string => {
     if (!dateString) return 'Unknown';
@@ -199,21 +225,29 @@ export function NotificationsPage(): JSX.Element {
               </Badge>
             )}
           </Group>
-          <Group>
-            {readCount > 0 && (
-              <Switch
-                label={showAll ? 'Showing all' : `Hide ${readCount} read`}
-                checked={showAll}
-                onChange={(e) => setShowAll(e.currentTarget.checked)}
-              />
-            )}
-            {unreadCount > 0 && (
-              <Button variant="light" size="sm" onClick={handleMarkAllAsRead}>
-                Mark all as read
-              </Button>
-            )}
-          </Group>
+        <Group>
+          <Button
+            variant="light"
+            size="sm"
+            leftSection={<IconSend size={16} />}
+            onClick={handleSendTestNotification}
+          >
+            Send Test Push
+          </Button>
+          {readCount > 0 && (
+            <Switch
+              label={showAll ? 'Showing all' : `Hide ${readCount} read`}
+              checked={showAll}
+              onChange={(e) => setShowAll(e.currentTarget.checked)}
+            />
+          )}
+          {unreadCount > 0 && (
+            <Button variant="light" size="sm" onClick={handleMarkAllAsRead}>
+              Mark all as read
+            </Button>
+          )}
         </Group>
+      </Group>
 
         <Divider />
 

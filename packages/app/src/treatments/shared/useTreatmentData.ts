@@ -36,6 +36,8 @@ export interface TreatmentActions {
   canBeginTreatment: () => boolean;
   canCompleteTreatment: () => boolean;
   canEdit: () => boolean;
+  canUploadBeforePhotos: () => boolean;
+  canUploadAfterPhotos: () => boolean;
 }
 
 export function useTreatmentData(): TreatmentData & TreatmentActions {
@@ -256,6 +258,19 @@ export function useTreatmentData(): TreatmentData & TreatmentActions {
     return role !== 'coordinator' && procedure?.status !== 'completed';
   };
 
+  const canUploadBeforePhotos = (): boolean => {
+    if (!procedure) return true;
+    return procedure.status === 'preparation' || procedure.status === 'in-progress';
+  };
+
+  const canUploadAfterPhotos = (): boolean => {
+    if (!procedure) return true;
+    const isScheduled = procedure.status === 'preparation';
+    const isClosed = procedure.status === 'completed' || procedure.status === 'stopped';
+    const isCancelled = procedure.status === 'entered-in-error';
+    return !isScheduled && !isClosed && !isCancelled;
+  };
+
   // Upload a before photo
   const handleBeforePhotoUpload = useCallback(
     async (attachment: Attachment): Promise<void> => {
@@ -372,5 +387,7 @@ export function useTreatmentData(): TreatmentData & TreatmentActions {
     canBeginTreatment,
     canCompleteTreatment,
     canEdit,
+    canUploadBeforePhotos,
+    canUploadAfterPhotos,
   };
 }

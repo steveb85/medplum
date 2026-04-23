@@ -60,7 +60,7 @@ export function TreatmentMap({
 
   // Update background when patient gender loads
   useEffect(() => {
-    if (gender && background.type === 'template' && !background.templateGender) {
+    if (gender && background.type === 'template' && (!background.templateGender || background.templateGender === 'unknown')) {
       setBackground((prev) => ({
         ...prev,
         templateGender: gender,
@@ -102,16 +102,21 @@ export function TreatmentMap({
   // Handle save marker and immediately persist to parent
   const handleSaveMarker = useCallback(
     async (updatedMarker: InjectionMarker): Promise<void> => {
-      // First update local state
+      // Create updated markers array immediately (before state update)
+      const updatedMarkers = markers.map((m) =>
+        m.id === updatedMarker.id ? updatedMarker : m
+      );
+
+      // Update local state for UI
       updateMarker(updatedMarker);
 
-      // Build complete injection map and save immediately
-      const injectionMap = await saveTreatment(background);
+      // Build complete injection map with updated markers and save immediately
+      const injectionMap = await saveTreatment(background, updatedMarkers);
       if (injectionMap && onSave) {
         await onSave(injectionMap);
       }
     },
-    [updateMarker, saveTreatment, background, onSave]
+    [markers, updateMarker, saveTreatment, background, onSave]
   );
 
   // Legacy handleSave (for any direct save buttons, though we removed them)
