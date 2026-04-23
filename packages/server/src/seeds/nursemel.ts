@@ -20,10 +20,10 @@ import type {
   User,
   UserConfiguration,
 } from '@medplum/fhirtypes';
+import { Readable } from 'node:stream';
 import { bcryptHashPassword, createProfile, createProjectMembership } from '../auth/utils';
 import type { SystemRepository } from '../fhir/repo';
 import { globalLogger } from '../logger';
-import { Readable } from 'node:stream';
 import { getBinaryStorage } from '../storage/loader';
 
 // Nurse Mel - Provider
@@ -974,6 +974,17 @@ exports.handler = async function(medplum, event) {
 
   console.log('[Push Bot] Valid notification Communication found');
 
+  // Check if this is a broadcast notification
+  const isBroadcast = communication.category?.some(
+    (cat) => cat.coding?.some(
+      (coding) => coding.code === 'broadcast'
+    )
+  );
+
+  if (isBroadcast) {
+    console.log('[Push Bot] BROADCAST MODE - Will send to all active push subscriptions');
+  }
+
   const title = communication.category?.[0]?.coding?.[0]?.display || 'Nurse Mel';
   const body = communication.payload?.[0]?.contentString || 'New notification';
   const url = getNotificationUrl(communication);
@@ -984,6 +995,7 @@ exports.handler = async function(medplum, event) {
   console.log(' - Body:', body);
   console.log(' - URL:', url);
   console.log(' - NotificationId:', notificationId);
+  console.log(' - Is Broadcast:', isBroadcast);
 
   // Check VAPID configuration (vmcontext sandbox may not have process.env, skip check)
   // VAPID keys should be configured on the server for web-push to work
@@ -993,6 +1005,15 @@ exports.handler = async function(medplum, event) {
   let recipientCount = 0;
   let subscriptionCount = 0;
   let sentCount = 0;
+
+  // For broadcasts, get ALL push subscriptions from FHIR
+  // For regular notifications, get from Communication extension
+  let allPushSubscriptions = null;
+  if (isBroadcast) {
+    console.log('[Push Bot] Querying ALL active push subscriptions...');
+    allPushSubscriptions = await getAllPushSubscriptions(medplum);
+    console.log('[Push Bot] Found', Object.keys(allPushSubscriptions).length, 'practitioners with push subscriptions');
+  }
 
   for (const recipient of communication.recipient || []) {
     recipientCount++;
@@ -1007,14 +1028,22 @@ exports.handler = async function(medplum, event) {
     console.log('[Push Bot] Practitioner ID:', practitionerId);
 
     try {
-      // Get push subscriptions from Communication extension
-      // This is pre-fetched by createNotification() in the frontend
-      console.log('[Push Bot] Getting push subscriptions from Communication...');
-      const subscriptions = await getPushSubscriptions(communication, practitionerId);
-      console.log('[Push Bot] Found', subscriptions.length, 'subscriptions');
+      let subscriptions = [];
+
+      if (isBroadcast && allPushSubscriptions) {
+        // For broadcasts, use subscriptions from the query
+        subscriptions = allPushSubscriptions[practitionerId] || [];
+        console.log('[Push Bot] Found', subscriptions.length, 'subscriptions for this practitioner (from query)');
+      } else {
+        // For regular notifications, get from Communication extension
+        console.log('[Push Bot] Getting push subscriptions from Communication...');
+        subscriptions = await getPushSubscriptions(communication, practitionerId);
+        console.log('[Push Bot] Found', subscriptions.length, 'subscriptions (from Communication)');
+      }
 
       if (subscriptions.length === 0) {
         console.log('[Push Bot] No push subscriptions found for this practitioner');
+        continue;
       }
 
       for (let i = 0; i < subscriptions.length; i++) {
@@ -1080,6 +1109,100 @@ async function getPushSubscriptions(communication, practitionerId) {
   } catch (err) {
     console.log('[Push Bot] Failed to parse push subscriptions:', err);
     return [];
+  }
+}
+
+// Cache for push subscriptions to avoid querying on every notification
+let pushSubscriptionsCache = null;
+let pushSubscriptionsCacheTime = 0;
+const CACHE_TTL_MS = 60000; // 1 minute cache
+
+async function getAllPushSubscriptions(medplum) {
+  console.log('[Push Bot] Querying all active push subscriptions from FHIR...');
+
+  // Check cache
+  const now = Date.now();
+  if (pushSubscriptionsCache && (now - pushSubscriptionsCacheTime) < CACHE_TTL_MS) {
+    console.log('[Push Bot] Using cached push subscriptions');
+    return pushSubscriptionsCache;
+  }
+
+  const subscriptionsByPractitioner = {};
+
+  try {
+    // Search for ALL active FHIR Subscriptions
+    // Note: 'reason' is not a searchable parameter, so we filter in code
+    const bundle = await medplum.search('Subscription', {
+      status: 'active',
+      _count: '100',
+    });
+
+    console.log('[Push Bot] Found', bundle.entry?.length || 0, 'total FHIR Subscriptions');
+
+    for (const entry of bundle.entry || []) {
+      const sub = entry.resource;
+      if (!sub) continue;
+
+      console.log('[Push Bot] Checking subscription:', sub.id);
+      console.log('[Push Bot] Subscription reason:', sub.reason);
+      console.log('[Push Bot] Subscription author:', sub.meta?.author?.reference);
+      console.log('[Push Bot] Subscription has payload:', !!sub.channel?.payload);
+
+      // Filter for push notification subscriptions by reason
+      if (sub.reason !== 'Push notifications') {
+        console.log('[Push Bot] Skipping - reason does not match');
+        continue;
+      }
+
+      // Get the practitioner ID from the subscription's author
+      const authorRef = sub.meta?.author?.reference || '';
+      console.log('[Push Bot] Author reference:', authorRef);
+
+      // Extract practitioner ID using string operations (vmcontext-safe)
+      let practitionerId = null;
+      if (authorRef.startsWith('Practitioner/')) {
+        practitionerId = authorRef.substring('Practitioner/'.length);
+      }
+      if (!practitionerId) {
+        console.log('[Push Bot] Skipping subscription without practitioner author:', sub.id);
+        continue;
+      }
+
+      console.log('[Push Bot] Found practitioner ID:', practitionerId);
+
+      // Parse the push subscription data from the channel payload
+      if (sub.channel?.payload) {
+        console.log('[Push Bot] Payload present, parsing...');
+        try {
+          const pushData = JSON.parse(sub.channel.payload);
+          console.log('[Push Bot] Parsed push data:', JSON.stringify(pushData, null, 2));
+          if (pushData.endpoint && pushData.keys) {
+            if (!subscriptionsByPractitioner[practitionerId]) {
+              subscriptionsByPractitioner[practitionerId] = [];
+            }
+            subscriptionsByPractitioner[practitionerId].push(pushData);
+            console.log('[Push Bot] Found push subscription for practitioner:', practitionerId);
+          } else {
+            console.log('[Push Bot] Push data missing endpoint or keys');
+          }
+        } catch (parseErr) {
+          console.log('[Push Bot] Failed to parse subscription payload for:', sub.id, parseErr);
+        }
+      } else {
+        console.log('[Push Bot] No payload found for subscription:', sub.id);
+      }
+    }
+
+    // Update cache
+    pushSubscriptionsCache = subscriptionsByPractitioner;
+    pushSubscriptionsCacheTime = now;
+
+    console.log('[Push Bot] Total practitioners with push subscriptions:', Object.keys(subscriptionsByPractitioner).length);
+    return subscriptionsByPractitioner;
+
+  } catch (err) {
+    console.log('[Push Bot] Error querying push subscriptions:', err);
+    return {};
   }
 }
 
@@ -1354,7 +1477,7 @@ async function createTreatmentRoom(
  * @param project - The project
  */
 async function createServiceCatalog(systemRepo: SystemRepository, project: Project): Promise<void> {
-  const services: Array<{
+  const services: {
     id: string;
     name: string;
     duration: number;
@@ -1369,7 +1492,7 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
     icon: string;
     color: string;
     category: string;
-  }> = [
+  }[] = [
     {
       id: 'botox-cosmetic',
       name: 'Botox Cosmetic',
@@ -1450,7 +1573,7 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       continue;
     }
 
-    const extensions: Array<{ url: string; [key: string]: unknown }> = [
+    const extensions: { url: string; [key: string]: unknown }[] = [
       { url: 'numbingTime', valueInteger: svc.numbingTime },
       { url: 'defaultRoom', valueString: svc.defaultRoom },
       { url: 'roomMovable', valueBoolean: true },

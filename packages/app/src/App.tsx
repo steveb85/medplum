@@ -6,6 +6,7 @@ import type { UserConfiguration } from '@medplum/fhirtypes';
 import type { NavbarMenu } from '@medplum/react';
 import { AppShell, Loading, Logo, useMedplum } from '@medplum/react';
 import {
+  IconBell,
   IconBrandAsana,
   IconBuilding,
   IconCalendar,
@@ -22,22 +23,17 @@ import {
   IconReportMedical,
   IconStar,
   IconWebhook,
-  IconBell,
 } from '@tabler/icons-react';
 import type { FunctionComponent, JSX } from 'react';
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
 import { AppRoutes } from './AppRoutes';
-import { filterMenuLinks, getMedSpaRole, type MedSpaRole } from './auth/role';
-import { getUnreadNotificationCount } from './notifications/utils';
-import {
-  shouldShowInstallPrompt,
-  shouldShowPushPrompt,
-  isMobile,
-  isIOS,
-} from './notifications/push';
-import { PwaInstallPrompt } from './components/PwaInstallPrompt';
+import type { MedSpaRole } from './auth/role';
+import { filterMenuLinks, getMedSpaRole } from './auth/role';
 import { PushNotificationPrompt } from './components/PushNotificationPrompt';
+import { PwaInstallPrompt } from './components/PwaInstallPrompt';
+import { isIOS, isMobile, shouldShowInstallPrompt, shouldShowPushPrompt } from './notifications/push';
+import { getUnreadNotificationCount } from './notifications/utils';
 
 import './App.css';
 
@@ -52,9 +48,11 @@ export function App(): JSX.Element {
 
   // Check for prompts on mount (for logged-in users)
   useEffect(() => {
-    const checkPrompts = () => {
+    const checkPrompts = (): void => {
       const profile = medplum.getProfile();
-      if (!profile) return; // Only show prompts to logged-in users
+      if (!profile) {
+        return;
+      } // Only show prompts to logged-in users
 
       // Mobile iOS: Show install prompt first
       if (isMobile() && isIOS()) {
@@ -78,7 +76,7 @@ export function App(): JSX.Element {
 
   // Poll for unread notifications on navigation
   useEffect(() => {
-    const checkNotifications = async () => {
+    const checkNotifications = async (): Promise<void> => {
       const user = medplum.getProfile();
       if (user?.id) {
         try {
@@ -90,7 +88,7 @@ export function App(): JSX.Element {
       }
     };
 
-    checkNotifications();
+    // checkNotifications();
     // Check every 30 seconds while on any page
     const interval = setInterval(checkNotifications, 30000);
     return () => clearInterval(interval);
@@ -103,7 +101,7 @@ export function App(): JSX.Element {
   // Get user's MedSpa role for UI filtering
   const role = getMedSpaRole(medplum);
 
-  const handleInstallDismiss = () => {
+  const handleInstallDismiss = (): void => {
     setShowInstallPrompt(false);
     // After dismissing install prompt, check if we should show push prompt
     if (shouldShowPushPrompt()) {
@@ -127,12 +125,7 @@ export function App(): JSX.Element {
       </AppShell>
 
       {/* Mobile iOS Install Prompt */}
-      {showInstallPrompt && (
-        <PwaInstallPrompt
-          onDismiss={handleInstallDismiss}
-          onInstall={handleInstallDismiss}
-        />
-      )}
+      {showInstallPrompt && <PwaInstallPrompt onDismiss={handleInstallDismiss} onInstall={handleInstallDismiss} />}
 
       {/* Push Notification Prompt (Desktop or iOS Home Screen) */}
       {showPushPrompt && !showInstallPrompt && (
@@ -171,11 +164,7 @@ function NotificationIcon({ unreadCount }: { unreadCount: number }): JSX.Element
   );
 }
 
-function userConfigToMenu(
-  config: UserConfiguration | undefined,
-  role: MedSpaRole,
-  unreadCount: number
-): NavbarMenu[] {
+function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRole, unreadCount: number): NavbarMenu[] {
   // Build the menu from user configuration
   const result =
     config?.menu?.map((menu) => ({
@@ -220,12 +209,17 @@ function userConfigToMenu(
   const nonEmptyMenus = filteredResult.filter((menu) => menu.links.length > 0);
 
   // Find Organization menu and add Services link to it
-  const orgMenu = nonEmptyMenus.find((menu) => menu.title === 'Organization');
-  if (orgMenu && (role === 'coordinator' || role === 'provider')) {
-    orgMenu.links.unshift({
-      label: 'Services',
-      href: '/admin/services',
-      icon: <IconBuilding />,
+
+  if (role !== 'coordinator' && role !== 'provider' && role !== 'assistant') {
+    nonEmptyMenus.push({
+      title: 'Services',
+      links: [
+        {
+          label: 'Services',
+          href: '/admin/services',
+          icon: <IconBuilding />,
+        },
+      ],
     });
   }
 

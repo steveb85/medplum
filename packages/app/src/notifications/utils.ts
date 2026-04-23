@@ -1,15 +1,19 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { createReference, getReferenceString } from '@medplum/core';
-import type { Communication, Practitioner, Reference } from '@medplum/fhirtypes';
 import type { MedplumClient } from '@medplum/core';
+import { createReference } from '@medplum/core';
+import type { Communication, Practitioner, Reference } from '@medplum/fhirtypes';
+import { getPushSubscriptionData } from './push';
 import type { NotificationData, NotificationType } from './templates';
 import { formatNotification } from './templates';
-import { getPushSubscriptionData } from './push';
 
 /**
  * Determines who should receive a notification based on event type and data
+ * @param type - The type of notification (e.g. appointment-created, treatment-updated)
+ * @param data - The data related to the event (e.g. appointment, procedure, patient)
+ * @param currentUser - The current user (to avoid sending notifications to self)
+ * @returns Array of Practitioner references to receive the notification
  */
 export function getNotificationRecipients(
   type: NotificationType,
@@ -79,10 +83,10 @@ export function getNotificationRecipients(
 
 /**
  * Gets all practitioners for broadcast notifications
+ * @param medplum - Medplum client instance
+ * @returns Array of Practitioner references for all practitioners in the system
  */
-export async function getAllPractitioners(
-  medplum: MedplumClient
-): Promise<Reference<Practitioner>[]> {
+export async function getAllPractitioners(medplum: MedplumClient): Promise<Reference<Practitioner>[]> {
   const recipients: Reference<Practitioner>[] = [];
   try {
     const bundle = await medplum.search('Practitioner', { _count: '100' });
@@ -99,6 +103,11 @@ export async function getAllPractitioners(
 
 /**
  * Creates a Communication resource for a notification
+ * @param medplum - medplum client instance
+ * @param type - The type of notification (e.g. appointment-created, treatment-updated)
+ * @param data - The data related to the event (e.g. appointment, procedure, patient)
+ * @param currentUser - The current user (to set as sender and avoid sending to self)
+ * @returns The created Communication resource or null if no recipients
  */
 export async function createNotification(
   medplum: MedplumClient,
@@ -186,26 +195,29 @@ export async function createNotification(
     });
   }
 
-  return await medplum.createResource(communication);
+  return medplum.createResource(communication);
 }
 
 /**
  * Marks a notification as read
+ * @param medplum - Medplum client instance
+ * @param communicationId - The ID of the Communication resource to mark as read
+ * @returns void
  */
-export async function markNotificationAsRead(
-  medplum: MedplumClient,
-  communicationId: string
-): Promise<void> {
+export async function markNotificationAsRead(medplum: MedplumClient, communicationId: string): Promise<void> {
   const communication = await medplum.readResource('Communication', communicationId);
 
-  const updatedExtension = communication.extension?.map((ext) =>
-    ext.url === 'http://melissaknudson.com/fhir/StructureDefinition/notification-read'
-      ? { ...ext, valueBoolean: true }
-      : ext
-  ) || [];
+  const updatedExtension =
+    communication.extension?.map((ext) =>
+      ext.url === 'http://melissaknudson.com/fhir/StructureDefinition/notification-read'
+        ? { ...ext, valueBoolean: true }
+        : ext
+    ) || [];
 
   // Add read extension if not present
-  if (!updatedExtension.some((ext) => ext.url === 'http://melissaknudson.com/fhir/StructureDefinition/notification-read')) {
+  if (
+    !updatedExtension.some((ext) => ext.url === 'http://melissaknudson.com/fhir/StructureDefinition/notification-read')
+  ) {
     updatedExtension.push({
       url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-read',
       valueBoolean: true,
@@ -220,11 +232,11 @@ export async function markNotificationAsRead(
 
 /**
  * Gets unread notification count for a user
+ * @param medplum - Medplum client instance
+ * @param userId - The ID of the user (Practitioner) to get notifications for
+ * @returns number of unread notifications for the user
  */
-export async function getUnreadNotificationCount(
-  medplum: MedplumClient,
-  userId: string
-): Promise<number> {
+export async function getUnreadNotificationCount(medplum: MedplumClient, userId: string): Promise<number> {
   try {
     const bundle = await medplum.search('Communication', {
       recipient: `Practitioner/${userId}`,
@@ -251,6 +263,12 @@ export async function getUnreadNotificationCount(
 /**
  * Creates a broadcast notification sent to all practitioners
  * Used for testing - sends to all staff members
+ * Creates ONE Communication with all practitioners as recipients
+ * The Bot will query for push subscriptions and send to all
+ * @param medplum - Medplum client instance
+ * @param message  - The message to include in the notification
+ * @param currentUser - The current user (to set as sender and avoid sending to self)
+ * @returns Array of created Communication resources (should be 1) or empty array if no practitioners
  */
 export async function createBroadcastNotification(
   medplum: MedplumClient,
@@ -269,55 +287,53 @@ export async function createBroadcastNotification(
       return createdCommunications;
     }
 
-    console.log(`[Broadcast] Sending to ${practitioners.length} practitioners`);
+    console.log(`[Broadcast] Creating broadcast for ${practitioners.length} practitioners`);
 
-    // Create a notification for each practitioner directly
-    for (const practitioner of practitioners) {
-      const recipientRef = createReference(practitioner);
+    // Create ONE Communication with ALL practitioners as recipients
+    // The Bot will handle querying and sending to each
+    const recipients: Reference<Practitioner>[] = practitioners.map((p) => createReference(p));
 
-      // Create Communication resource directly
-      const communication: Communication = {
-        resourceType: 'Communication',
-        status: 'completed',
-        category: [
-          {
-            coding: [
-              {
-                system: 'http://melissaknudson.com/notification-type',
-                code: 'broadcast',
-                display: 'Broadcast',
-              },
-            ],
-          },
-        ],
-        priority: 'urgent',
-        recipient: [recipientRef],
-        sender: currentUser ? createReference(currentUser) : undefined,
-        sent: new Date().toISOString(),
-        payload: [
-          {
-            contentString: message,
-          },
-        ],
-        extension: [
-          {
-            url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-read',
-            valueBoolean: false,
-          },
-          {
-            url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-category',
-            valueString: 'general',
-          },
-        ],
-      };
+    const communication: Communication = {
+      resourceType: 'Communication',
+      status: 'completed',
+      category: [
+        {
+          coding: [
+            {
+              system: 'http://melissaknudson.com/notification-type',
+              code: 'broadcast',
+              display: 'Broadcast',
+            },
+          ],
+        },
+      ],
+      priority: 'urgent',
+      recipient: recipients,
+      sender: currentUser ? createReference(currentUser) : undefined,
+      sent: new Date().toISOString(),
+      payload: [
+        {
+          contentString: message,
+        },
+      ],
+      extension: [
+        {
+          url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-read',
+          valueBoolean: false,
+        },
+        {
+          url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-category',
+          valueString: 'general',
+        },
+      ],
+    };
 
-      const created = await medplum.createResource(communication);
-      if (created) {
-        createdCommunications.push(created);
-      }
+    const created = await medplum.createResource(communication);
+    if (created) {
+      createdCommunications.push(created);
+      console.log(`[Broadcast] Successfully created broadcast notification: ${created.id}`);
     }
 
-    console.log(`[Broadcast] Successfully created ${createdCommunications.length} notifications`);
     return createdCommunications;
   } catch (err) {
     console.error('[Broadcast] Error creating broadcast notification:', err);
@@ -327,12 +343,12 @@ export async function createBroadcastNotification(
 
 /**
  * Gets notifications for a user
+ * @param medplum - Medplum client instance
+ * @param userId - The ID of the user (Practitioner) to get notifications for
+ * @param limit - The maximum number of notifications to retrieve (default 20)
+ * @returns Array of Communication resources representing the notifications for the user
  */
-export async function getNotifications(
-  medplum: MedplumClient,
-  userId: string,
-  limit = 20
-): Promise<Communication[]> {
+export async function getNotifications(medplum: MedplumClient, userId: string, limit = 20): Promise<Communication[]> {
   try {
     const bundle = await medplum.search('Communication', {
       recipient: `Practitioner/${userId}`,
@@ -349,10 +365,10 @@ export async function getNotifications(
 
 /**
  * Gets the related resource reference from a notification
+ * @param communication -  The Communication resource representing the notification
+ * @returns Reference to the related resource (e.g. Appointment, Procedure) or null if not found
  */
-export function getRelatedResource(
-  communication: Communication
-): { type: string; id: string } | null {
+export function getRelatedResource(communication: Communication): { type: string; id: string } | null {
   // Check for appointment
   const appointmentRef = communication.extension?.find(
     (ext) => ext.url === 'http://melissaknudson.com/fhir/StructureDefinition/related-appointment'
@@ -384,6 +400,8 @@ export function getRelatedResource(
 
 /**
  * Checks if a notification is read
+ * @param communication - The Communication resource representing the notification
+ * @returns true if the notification is marked as read, false otherwise
  */
 export function isNotificationRead(communication: Communication): boolean {
   return (
@@ -395,6 +413,8 @@ export function isNotificationRead(communication: Communication): boolean {
 
 /**
  * Gets notification category
+ * @param communication - The Communication resource representing the notification
+ * @returns The category of the notification (e.g. appointment, treatment, general)
  */
 export function getNotificationCategory(communication: Communication): string {
   return (
