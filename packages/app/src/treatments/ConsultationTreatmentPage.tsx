@@ -14,7 +14,7 @@ import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
-import { CreateAppointmentModal } from '../components/CreateAppointmentModal';
+// NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
 
 export function ConsultationTreatmentPage(): JSX.Element {
   const [searchParams] = useSearchParams();

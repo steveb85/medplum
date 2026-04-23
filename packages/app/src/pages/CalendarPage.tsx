@@ -15,7 +15,7 @@ import 'moment-timezone';
 import dayjs from 'dayjs';
 import { IconPlus } from '@tabler/icons-react';
 import type { JSX } from 'react';
-import { CreateAppointmentModal } from '../components/CreateAppointmentModal';
+// NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
 
 // Set moment to use local timezone
 moment.tz.setDefault(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -241,12 +241,14 @@ export function CalendarPage(): JSX.Element {
             ]}
             w={120}
           />
+          {/* NOTE: New Appointment button removed - Phase 2 will implement multi-service booking
           <Button
             leftSection={<IconPlus size={16} />}
             onClick={handleOpenModal}
           >
             New Appointment
           </Button>
+          */}
         </Group>
       </Group>
 
@@ -272,14 +274,16 @@ export function CalendarPage(): JSX.Element {
         />
       </Paper>
 
+      {/* NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
       <CreateAppointmentModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleModalSuccess}
         initialDate={selectedSlot?.start}
-          initialTime={selectedSlot ? moment(selectedSlot.start).format('HH:mm') : undefined}
-          initialDuration={selectedSlot ? Math.max(15, moment(selectedSlot.end).diff(moment(selectedSlot.start), 'minutes')) : undefined}
+        initialTime={selectedSlot ? moment(selectedSlot.start).format('HH:mm') : undefined}
+        initialDuration={selectedSlot ? Math.max(15, moment(selectedSlot.end).diff(moment(selectedSlot.start), 'minutes')) : undefined}
       />
+      */}
     </Stack>
   );
 }

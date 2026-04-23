@@ -11,7 +11,7 @@ import type { JSX } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { getMedSpaRole } from '../auth/role';
-import { CreateAppointmentModal } from '../components/CreateAppointmentModal';
+// NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
 import type { NotificationData } from '../notifications/templates';
 import { createNotification } from '../notifications/utils';
 import type { InjectionMap } from '../treatment-map';
@@ -720,23 +720,25 @@ export function BotoxTreatmentPage(): JSX.Element {
                 {statusInfo.label}
               </Badge>
             )}
-            {/* Action buttons - top right corner */}
-            {procedure?.status === 'preparation' && (
-              <>
-                <Button variant="light" leftSection={<IconEdit size={16} />} onClick={() => setIsEditModalOpen(true)}>
-                  Edit Booking
-                </Button>
-                <Button
-                  leftSection={<IconPlayerPlay size={16} />}
-                  onClick={canBeginTreatment() ? handleStartTreatment : undefined}
-                  disabled={!canBeginTreatment()}
-                  loading={saving}
-                  color="blue"
-                >
-                  Begin Treatment
-                </Button>
-              </>
-            )}
+  {/* Action buttons - top right corner */}
+      {procedure?.status === 'preparation' && (
+        <>
+          {/* NOTE: Edit Booking button removed - Phase 2 will implement multi-service booking editing
+          <Button variant="light" leftSection={<IconEdit size={16} />} onClick={() => setIsEditModalOpen(true)}>
+            Edit Booking
+          </Button>
+          */}
+          <Button
+            leftSection={<IconPlayerPlay size={16} />}
+            onClick={canBeginTreatment() ? handleStartTreatment : undefined}
+            disabled={!canBeginTreatment()}
+            loading={saving}
+            color="blue"
+          >
+            Begin Treatment
+          </Button>
+        </>
+      )}
             {procedure?.status === 'in-progress' && (
               <Button
                 leftSection={<IconCircleCheck size={16} />}
@@ -805,32 +807,20 @@ export function BotoxTreatmentPage(): JSX.Element {
           />
         )}
 
-        {/* Photo Upload Sections */}
-        <PhotoUploadSection
-          beforePhotos={beforePhotos}
-          afterPhotos={procedure?.status !== 'preparation' ? afterPhotos : []}
-          onBeforePhotoUpload={canUploadBeforePhotos() ? handleBeforePhotoUpload : undefined}
-          onAfterPhotoUpload={canUploadAfterPhotos() ? handleAfterPhotoUpload : undefined}
-          onBeforePhotoRemove={canUploadBeforePhotos() ? handleBeforePhotoRemove : undefined}
-          onAfterPhotoRemove={canUploadAfterPhotos() ? handleAfterPhotoRemove : undefined}
-          readOnly={!canUploadBeforePhotos() && !canUploadAfterPhotos()}
-          isSaving={saving}
-        />
+  {/* Photo Upload Sections */}
+      <PhotoUploadSection
+        beforePhotos={beforePhotos}
+        afterPhotos={procedure?.status !== 'preparation' ? afterPhotos : []}
+        onBeforePhotoUpload={canUploadBeforePhotos() ? handleBeforePhotoUpload : undefined}
+        onAfterPhotoUpload={canUploadAfterPhotos() ? handleAfterPhotoUpload : undefined}
+        onBeforePhotoRemove={canUploadBeforePhotos() ? handleBeforePhotoRemove : undefined}
+        onAfterPhotoRemove={canUploadAfterPhotos() ? handleAfterPhotoRemove : undefined}
+        readOnly={!canUploadBeforePhotos() && !canUploadAfterPhotos()}
+        isSaving={saving}
+      />
 
-        {/* Edit Modal */}
-        <CreateAppointmentModal
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          onSuccess={() => {
-            setIsEditModalOpen(false);
-            // Reload the page to show updated data
-            window.location.reload();
-          }}
-          mode="edit"
-          appointment={appointment}
-          procedure={procedure}
-        />
-      </Stack>
-    </Document>
-  );
+      {/* NOTE: Edit Modal removed - Phase 2 will implement unified multi-service treatment page */}
+    </Stack>
+  </Document>
+);
 }

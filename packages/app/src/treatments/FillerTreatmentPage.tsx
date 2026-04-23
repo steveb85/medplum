@@ -15,7 +15,7 @@ import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
-import { CreateAppointmentModal } from '../components/CreateAppointmentModal';
+// NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
 
 // Filler areas
 const FILLER_AREAS = [
@@ -322,23 +322,12 @@ export function FillerTreatmentPage(): JSX.Element {
       onAfterPhotoUpload={canUploadAfterPhotos() ? handleAfterPhotoUpload : undefined}
       onBeforePhotoRemove={canUploadBeforePhotos() ? handleBeforePhotoRemove : undefined}
       onAfterPhotoRemove={canUploadAfterPhotos() ? handleAfterPhotoRemove : undefined}
-      readOnly={!canEdit()}
-      isSaving={saving}
-    />
+  readOnly={!canEdit()}
+        isSaving={saving}
+      />
 
-    {/* Edit Modal */}
-    <CreateAppointmentModal
-      isOpen={isEditModalOpen}
-      onClose={() => setIsEditModalOpen(false)}
-      onSuccess={() => {
-        setIsEditModalOpen(false);
-        window.location.reload();
-      }}
-      mode="edit"
-      appointment={appointment}
-      procedure={procedure}
-    />
-  </Stack>
-</Document>
-  );
+      {/* NOTE: Edit Modal removed - Phase 2 will implement unified treatment page */}
+    </Stack>
+  </Document>
+);
 }

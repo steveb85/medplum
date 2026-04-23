@@ -10,6 +10,8 @@
   "recaptchaSiteKey": "6LfHdsYdAAAAAC0uLnnRrDrhcXnziiUwKd8VtLNq",
   "recaptchaSecretKey": "6LfHdsYdAAAAAH9dN154jbJ3zpQife3xaiTvPChL",
   "adminClientId": "2a4b77f2-4d4e-43c6-9b01-330eb5ca772f",
+  "VAPID_PUBLIC_KEY": "BG0--3ToODybCLHXg5-Mb2NjbsXmKestdGaDablbVWXJRFM5ZkdMnQX0o2Alv4kAw01zBQhnsdgBHXBs80J3en0",
+  "VAPID_PRIVATE_KEY": "fZEWHHDXWPeiojAVwLrC5XhTTELVYhV4fRdbHDf12AI",
   "maxJsonSize": "1mb",
   "maxBatchSize": "50mb",
   "botLambdaRoleArn": "",

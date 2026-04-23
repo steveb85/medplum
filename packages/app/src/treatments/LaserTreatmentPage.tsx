@@ -15,7 +15,7 @@ import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
-import { CreateAppointmentModal } from '../components/CreateAppointmentModal';
+// NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
 
 // Laser types
 const LASER_TYPES = [
@@ -207,17 +207,19 @@ export function LaserTreatmentPage(): JSX.Element {
       <Stack gap="md" p="md">
         <Group justify="space-between" align="flex-start">
           <Title order={3}>Laser Treatment</Title>
-          <Group>
-            {procedure?.status === 'preparation' && (
-              <Button
-                variant="light"
-                leftSection={<IconEdit size={16} />}
-                onClick={() => setIsEditModalOpen(true)}
-              >
-                Edit Booking
-              </Button>
-            )}
-          </Group>
+      <Group>
+        {/* NOTE: Edit Booking removed - Phase 2 will implement unified treatment page
+        {procedure?.status === 'preparation' && (
+          <Button
+            variant="light"
+            leftSection={<IconEdit size={16} />}
+            onClick={() => setIsEditModalOpen(true)}
+          >
+            Edit Booking
+          </Button>
+        )}
+        */}
+      </Group>
         </Group>
 
         <TreatmentHeader

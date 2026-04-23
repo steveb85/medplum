@@ -6,17 +6,7 @@ import type { Communication, Practitioner, Reference } from '@medplum/fhirtypes'
 import type { MedplumClient } from '@medplum/core';
 import type { NotificationData, NotificationType } from './templates';
 import { formatNotification } from './templates';
-import { getPushSubscriptionData, type PushSubscriptionData } from './push';
-
-/**
- * Gets push subscription data for the current user from localStorage
- * Since we can't search Subscription resources (403 Forbidden), we store locally
- */
-function getCurrentUserPushSubscription(): Array<{ endpoint: string; keys: any }> | null {
-  const data = getPushSubscriptionData();
-  if (!data) return null;
-  return [data];
-}
+import { getPushSubscriptionData } from './push';
 
 /**
  * Determines who should receive a notification based on event type and data
@@ -88,15 +78,6 @@ export function getNotificationRecipients(
 }
 
 /**
- * Gets push subscription data for the current user from localStorage
- * We can't search for Subscription resources due to 403 Forbidden permissions,
- * so we store the data locally when subscribing
- */
-function getCurrentUserPushSubscription(): PushSubscriptionData | null {
-  return getPushSubscriptionData();
-}
-
-/**
  * Creates a Communication resource for a notification
  */
 export async function createNotification(
@@ -105,20 +86,14 @@ export async function createNotification(
   data: NotificationData,
   currentUser: Practitioner | undefined
 ): Promise<Communication | null> {
-  console.log('[createNotification] Starting notification creation for type:', type);
-  console.log('[createNotification] Current user:', currentUser?.id);
-
   const recipients = getNotificationRecipients(type, data, currentUser);
-  console.log('[createNotification] Recipients:', JSON.stringify(recipients, null, 2));
 
   // Don't create notification if no recipients
   if (recipients.length === 0) {
-    console.log('[createNotification] No recipients, returning null');
     return null;
   }
 
   const { title, message, priority, category } = formatNotification(type, data);
-  console.log('[createNotification] Formatted notification:', { title, message, priority, category });
 
   const communication: Communication = {
     resourceType: 'Communication',
@@ -176,23 +151,12 @@ export async function createNotification(
 
   // Fetch push subscriptions for each recipient and add to Communication
   // This allows the Bot to send push notifications without searching
+  // NOTE: We read from localStorage since we can't search Subscription resources (403 Forbidden)
   const pushSubscriptions: Record<string, any> = {};
-  console.log('[createNotification] Fetching push subscriptions for recipients...');
-  for (const recipient of recipients) {
-    const practitionerRef = recipient.reference;
-    console.log('[createNotification] Checking recipient:', practitionerRef);
-    if (practitionerRef?.startsWith('Practitioner/')) {
-      const practitionerId = practitionerRef.split('/')[1];
-      console.log('[createNotification] Fetching subscriptions for practitioner:', practitionerId);
-      const subs = await getPushSubscriptionsForPractitioner(medplum, practitionerId);
-      console.log('[createNotification] Found subscriptions:', subs);
-      if (subs) {
-        pushSubscriptions[practitionerId] = subs;
-      }
-    }
+  const currentUserSub = getPushSubscriptionData();
+  if (currentUserSub && currentUser?.id) {
+    pushSubscriptions[currentUser.id] = [currentUserSub];
   }
-
-  console.log('[createNotification] All push subscriptions:', JSON.stringify(pushSubscriptions, null, 2));
 
   // Add push subscriptions as extension if any found
   if (Object.keys(pushSubscriptions).length > 0) {
@@ -200,16 +164,9 @@ export async function createNotification(
       url: 'http://melissaknudson.com/fhir/StructureDefinition/push-subscriptions',
       valueString: JSON.stringify(pushSubscriptions),
     });
-    console.log('[createNotification] Added push subscriptions extension for', Object.keys(pushSubscriptions).length, 'recipients');
-  } else {
-    console.log('[createNotification] No push subscriptions found, no extension added');
   }
 
-  console.log('[createNotification] Final Communication resource:', JSON.stringify(communication, null, 2));
-
-  const created = await medplum.createResource(communication);
-  console.log('[createNotification] Created Communication:', created.id);
-  return created;
+  return await medplum.createResource(communication);
 }
 
 /**
