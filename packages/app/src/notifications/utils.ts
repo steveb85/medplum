@@ -84,6 +84,7 @@ async function getPushSubscriptionsForPractitioner(
   medplum: MedplumClient,
   practitionerId: string
 ): Promise<Array<{ endpoint: string; keys: any }> | null> {
+  console.log('[NotificationUtils] Getting push subscriptions for practitioner:', practitionerId);
   try {
     // Search for subscriptions with push notification data for this practitioner
     const bundle = await medplum.search('Subscription', {
@@ -92,26 +93,42 @@ async function getPushSubscriptionsForPractitioner(
       _count: '100',
     });
 
+    console.log('[NotificationUtils] Found', bundle.entry?.length || 0, 'total push subscriptions');
+
     const pushSubs: Array<{ endpoint: string; keys: any }> = [];
 
     for (const entry of bundle.entry || []) {
       const sub = entry.resource as any;
+      console.log('[NotificationUtils] Checking subscription:', sub.id);
+      console.log('[NotificationUtils] Subscription meta:', JSON.stringify(sub.meta, null, 2));
+      console.log('[NotificationUtils] Subscription channel:', JSON.stringify(sub.channel, null, 2));
+
       // Check if this subscription belongs to the practitioner
       const authorRef = sub.meta?.author?.reference || '';
+      console.log('[NotificationUtils] Author ref:', authorRef, 'Looking for:', practitionerId);
       if (authorRef.includes(practitionerId) && sub.channel?.payload) {
+        console.log('[NotificationUtils] Found subscription belonging to practitioner');
         try {
           const pushData = JSON.parse(sub.channel.payload);
+          console.log('[NotificationUtils] Parsed push data:', JSON.stringify(pushData, null, 2));
           if (pushData.endpoint && pushData.keys) {
             pushSubs.push(pushData);
+            console.log('[NotificationUtils] Added push subscription');
+          } else {
+            console.log('[NotificationUtils] Push data missing endpoint or keys');
           }
-        } catch {
-          // Invalid payload, skip
+        } catch (err) {
+          console.log('[NotificationUtils] Failed to parse payload:', err);
         }
+      } else {
+        console.log('[NotificationUtils] Subscription does not match practitioner');
       }
     }
 
+    console.log('[NotificationUtils] Total push subscriptions found:', pushSubs.length);
     return pushSubs.length > 0 ? pushSubs : null;
-  } catch {
+  } catch (err) {
+    console.error('[NotificationUtils] Error getting push subscriptions:', err);
     return null;
   }
 }
@@ -125,14 +142,20 @@ export async function createNotification(
   data: NotificationData,
   currentUser: Practitioner | undefined
 ): Promise<Communication | null> {
+  console.log('[createNotification] Starting notification creation for type:', type);
+  console.log('[createNotification] Current user:', currentUser?.id);
+
   const recipients = getNotificationRecipients(type, data, currentUser);
+  console.log('[createNotification] Recipients:', JSON.stringify(recipients, null, 2));
 
   // Don't create notification if no recipients
   if (recipients.length === 0) {
+    console.log('[createNotification] No recipients, returning null');
     return null;
   }
 
   const { title, message, priority, category } = formatNotification(type, data);
+  console.log('[createNotification] Formatted notification:', { title, message, priority, category });
 
   const communication: Communication = {
     resourceType: 'Communication',
@@ -191,16 +214,22 @@ export async function createNotification(
   // Fetch push subscriptions for each recipient and add to Communication
   // This allows the Bot to send push notifications without searching
   const pushSubscriptions: Record<string, any> = {};
+  console.log('[createNotification] Fetching push subscriptions for recipients...');
   for (const recipient of recipients) {
     const practitionerRef = recipient.reference;
+    console.log('[createNotification] Checking recipient:', practitionerRef);
     if (practitionerRef?.startsWith('Practitioner/')) {
       const practitionerId = practitionerRef.split('/')[1];
+      console.log('[createNotification] Fetching subscriptions for practitioner:', practitionerId);
       const subs = await getPushSubscriptionsForPractitioner(medplum, practitionerId);
+      console.log('[createNotification] Found subscriptions:', subs);
       if (subs) {
         pushSubscriptions[practitionerId] = subs;
       }
     }
   }
+
+  console.log('[createNotification] All push subscriptions:', JSON.stringify(pushSubscriptions, null, 2));
 
   // Add push subscriptions as extension if any found
   if (Object.keys(pushSubscriptions).length > 0) {
@@ -208,10 +237,16 @@ export async function createNotification(
       url: 'http://melissaknudson.com/fhir/StructureDefinition/push-subscriptions',
       valueString: JSON.stringify(pushSubscriptions),
     });
-    console.log('[Notification] Added push subscriptions for', Object.keys(pushSubscriptions).length, 'recipients');
+    console.log('[createNotification] Added push subscriptions extension for', Object.keys(pushSubscriptions).length, 'recipients');
+  } else {
+    console.log('[createNotification] No push subscriptions found, no extension added');
   }
 
-  return await medplum.createResource(communication);
+  console.log('[createNotification] Final Communication resource:', JSON.stringify(communication, null, 2));
+
+  const created = await medplum.createResource(communication);
+  console.log('[createNotification] Created Communication:', created.id);
+  return created;
 }
 
 /**

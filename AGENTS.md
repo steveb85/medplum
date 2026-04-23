@@ -6,7 +6,9 @@
 **Current Phase**: Phase 1 - Data Model Validation (Complete)
 **Next Phase**: Phase 2 - Patient Portal & Integrations
 
-**Build Plan**: See [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) for complete implementation plan
+**Build Plan**: See [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) for architecture  
+**Migration**: See [MIGRATION_PLAN.md](./MIGRATION_PLAN.md) for Phase 1→2 transition  
+**Tasks**: See [PHASE_2A_TASKS.md](./PHASE_2A_TASKS.md) for implementation breakdown
 
 ---
 

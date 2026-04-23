@@ -9,40 +9,40 @@
 
 ## Quick Reference
 
-### ⚠️ CRITICAL: What Actually Exists (End of Phase 1)
+### ⚠️ COMPLETE REPLACEMENT STRATEGY
 
-**Current Implementation (SINGLE-SERVICE booking):**
-- ✅ Botox treatment workflow (before/after photos, injection mapping)
-- ✅ Edit booking for SINGLE service
-- ✅ Calendar with SINGLE-service booking (select ONE service per appointment)
+**Phase 1 booking system is INCOMPATIBLE with Phase 2 architecture. We are doing a complete replacement.**
+
+### What Gets PRESERVED (Working Well)
+- ✅ Botox treatment workflow (photos, injection mapping, status transitions)
+- ✅ Patient management (search, profiles)
 - ✅ Role-based access (Provider/Coordinator)
-- ✅ Treatment status: preparation → in-progress → completed
+- ✅ Calendar infrastructure (react-big-calendar, momentLocalizer)
+- ✅ Photo upload system (PhotoUploadSection, S3 storage)
 
-**What Does NOT Exist Yet:**
-- ❌ Multi-service booking (Botox + Filler in same appointment)
-- ❌ Service Catalog as ActivityDefinitions
-- ❌ Numbing Tasks (currently part of appointment duration)
-- ❌ Annual consult/GFE tracking
-- ❌ Patient Portal
-- ❌ SMS/Stripe integrations
+### What Gets REPLACED (Completely Rebuilt)
+- ❌ `CreateAppointmentModal` - Single-service booking
+- ❌ Booking creation logic - Creates Appointment + Procedure
+- ❌ Current `Appointment` model - No multi-service support
+- ❌ Current calendar event handling - No Task/numbing display
 
-### The Overhaul: Phase 2A-F
+### New Architecture (Phase 2)
 
-**We are completely rebuilding the booking system:**
-
-| Aspect | Current (Phase 1) | New (Phase 2) |
-|--------|-------------------|---------------|
-| Booking | Appointment = 1 Service | Appointment = Multiple Services |
-| Services | Single dropdown | Multi-select from catalog |
-| Numbing | Hidden in duration | Separate Task for Assistant |
-| Consult | Not tracked | Tracked per patient + GFE categories |
-| Room | Not assigned | Auto-assigned + override |
+| Aspect | Old (Being Deleted) | New (Being Built) |
+|--------|---------------------|-------------------|
+| Booking | Appointment = 1 Service | Appointment = Container + Multiple Services |
+| Services | Static array in code | ActivityDefinition catalog |
+| Creation | Creates Procedure directly | Creates ServiceRequests → Procedures later |
+| Numbing | Part of duration | Separate Task resource |
+| Room | Not tracked | Location/room assignment |
+| Consult | Not tracked | Patient extensions + GFE tracking |
 
 ### Phase 2A (Immediate Priority)
-1. Service Catalog as ActivityDefinitions
-2. Multi-service booking flow
-3. Annual consult/GFE tracking
-4. Numbing Task automation
+1. DELETE old booking code
+2. CREATE Service Catalog (ActivityDefinitions)
+3. BUILD new multi-service booking flow
+4. IMPLEMENT numbing Task automation
+5. ADD annual consult/GFE tracking
 
 ---
 

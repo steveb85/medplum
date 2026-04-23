@@ -7,8 +7,18 @@ import type { MedplumClient } from '@medplum/core';
 // Local storage keys
 const PUSH_SUBSCRIBED_KEY = 'nursemel-push-subscribed';
 const PUSH_SUBSCRIPTION_ID_KEY = 'nursemel-push-subscription-id';
+const PUSH_SUBSCRIPTION_DATA_KEY = 'nursemel-push-subscription-data';
 const INSTALL_PROMPT_DISMISSED_KEY = 'nursemel-install-prompt-dismissed';
 const PUSH_PROMPT_DISMISSED_KEY = 'nursemel-push-prompt-dismissed';
+
+/** Push subscription data stored in localStorage */
+export interface PushSubscriptionData {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
 
 /**
  * Check if running as standalone (Home Screen) app
@@ -241,11 +251,18 @@ async function sendSubscriptionToServer(
 
     const created = await medplum.createResource(pushSubscription);
     console.log('[Push] Subscription stored:', created.id);
-    console.log('[Push] Created subscription full resource:', JSON.stringify(created, null, 2));
-    console.log('[Push] Created subscription meta:', JSON.stringify(created.meta, null, 2));
 
     // Store the subscription ID so we can clean it up later
     localStorage.setItem(PUSH_SUBSCRIPTION_ID_KEY, created.id as string);
+
+    // Store the push subscription data for use when creating notifications
+    // (We can't search for Subscriptions due to permissions, so store locally)
+    const pushData: PushSubscriptionData = {
+      endpoint: subscription.endpoint,
+      keys: subscription.toJSON().keys,
+    };
+    localStorage.setItem(PUSH_SUBSCRIPTION_DATA_KEY, JSON.stringify(pushData));
+    console.log('[Push] Push subscription data stored in localStorage');
   } catch (err) {
     console.error('[Push] Failed to store subscription:', err);
     throw err;
@@ -277,6 +294,7 @@ export async function unsubscribeFromPush(medplum: MedplumClient): Promise<boole
 
     localStorage.removeItem(PUSH_SUBSCRIBED_KEY);
     localStorage.removeItem(PUSH_SUBSCRIPTION_ID_KEY);
+    localStorage.removeItem(PUSH_SUBSCRIPTION_DATA_KEY);
 
     showNotification({
       title: 'Notifications Disabled',
