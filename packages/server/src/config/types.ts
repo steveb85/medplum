@@ -191,7 +191,13 @@ export interface MedplumServerConfig {
    * For AWS ALB in "pass through" mode, this should be set to "x-amzn-mtls-clientcert".
    * For AWS ALB in "verify" mode, this should be set to "x-amzn-mtls-clientcert-leaf".
    */
-  mtlsCertHeader?: string;
+	mtlsCertHeader?: string;
+
+	/** VAPID public key for web push notifications */
+	VAPID_PUBLIC_KEY?: string;
+
+	/** VAPID private key for web push notifications */
+	VAPID_PRIVATE_KEY?: string;
 }
 
 export interface SubscriptionAutoDisableTrigger {

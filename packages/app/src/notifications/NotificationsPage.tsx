@@ -43,6 +43,7 @@ import {
   getRelatedResource,
   getNotificationCategory,
   createNotification,
+  createBroadcastNotification,
 } from './utils';
 
 // Category icons
@@ -184,6 +185,38 @@ export function NotificationsPage(): JSX.Element {
     }
   }, [medplum, user, loadNotifications]);
 
+  // Send broadcast notification to all practitioners
+  const handleSendBroadcastNotification = useCallback(async () => {
+    try {
+      showNotification({
+        title: 'Sending Broadcast',
+        message: 'Sending notifications to all practitioners...',
+        color: 'blue',
+      });
+
+      const result = await createBroadcastNotification(
+        medplum,
+        'This is a broadcast notification to all staff!',
+        user
+      );
+
+      showNotification({
+        title: 'Broadcast Sent',
+        message: `Sent ${result.length} notifications to all practitioners`,
+        color: 'green',
+      });
+      // Reload notifications after a brief delay
+      setTimeout(loadNotifications, 1000);
+    } catch (err) {
+      console.error('Error sending broadcast notification:', err);
+      showNotification({
+        title: 'Error',
+        message: 'Failed to send broadcast notification',
+        color: 'red',
+      });
+    }
+  }, [medplum, user, loadNotifications]);
+
   // Format date
   const formatDate = (dateString: string | undefined): string => {
     if (!dateString) return 'Unknown';
@@ -226,15 +259,24 @@ export function NotificationsPage(): JSX.Element {
             )}
           </Group>
         <Group>
-          <Button
-            variant="light"
-            size="sm"
-            leftSection={<IconSend size={16} />}
-            onClick={handleSendTestNotification}
-          >
-            Send Test Push
-          </Button>
-          {readCount > 0 && (
+        <Button
+          variant="light"
+          size="sm"
+          leftSection={<IconSend size={16} />}
+          onClick={handleSendTestNotification}
+        >
+          Send Test Push
+        </Button>
+        <Button
+          variant="filled"
+          color="orange"
+          size="sm"
+          leftSection={<IconSend size={16} />}
+          onClick={handleSendBroadcastNotification}
+        >
+          Broadcast to All
+        </Button>
+        {readCount > 0 && (
             <Switch
               label={showAll ? 'Showing all' : `Hide ${readCount} read`}
               checked={showAll}

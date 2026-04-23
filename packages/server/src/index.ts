@@ -39,6 +39,17 @@ export async function main(configName: string): Promise<void> {
     vmContextBotsEnabledType: typeof config.vmContextBotsEnabled,
   });
 
+  // Copy VAPID keys from config to process.env for Bot access
+  // This allows the push notification bot to access VAPID keys via process.env
+  if (config.VAPID_PUBLIC_KEY) {
+    process.env.VAPID_PUBLIC_KEY = config.VAPID_PUBLIC_KEY;
+    globalLogger.info('VAPID_PUBLIC_KEY loaded from config');
+  }
+  if (config.VAPID_PRIVATE_KEY) {
+    process.env.VAPID_PRIVATE_KEY = config.VAPID_PRIVATE_KEY;
+    globalLogger.info('VAPID_PRIVATE_KEY loaded from config');
+  }
+
   const app = await initApp(express(), config);
   const server = app.listen(config.port);
   server.keepAliveTimeout = config.keepAliveTimeout ?? 90000;

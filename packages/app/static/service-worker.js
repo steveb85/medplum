@@ -17,19 +17,49 @@ self.addEventListener('activate', (event) => {
 
 // Push event - handle incoming push notifications
 self.addEventListener('push', (event) => {
+  console.log('[SW] === PUSH HANDLER START ===');
   console.log('[SW] Push received:', event);
+  console.log('[SW] event.data:', event.data);
+  console.log('[SW] event.data type:', typeof event.data);
 
-  const data = event.data?.json() ?? {};
+  let data = {};
+  try {
+    if (event.data) {
+      console.log('[SW] Attempting to parse event.data.json()...');
+      data = event.data.json();
+      console.log('[SW] Parsed data:', data);
+    } else {
+      console.log('[SW] WARNING: event.data is null/undefined');
+    }
+  } catch (err) {
+    console.error('[SW] ERROR parsing push data:', err);
+    data = {};
+  }
+
+  console.log('[SW] Final data object:', data);
 
   const title = data.title || 'Nurse Mel';
+  const body = data.body || 'You have a new notification';
+  const icon = data.icon || '/favicon.ico';
+  const badge = data.badge || '/favicon.ico';
+  const url = data.url || '/notifications';
+
+  console.log('[SW] Notification details:');
+  console.log('[SW]   title:', title);
+  console.log('[SW]   body:', body);
+  console.log('[SW]   icon:', icon);
+  console.log('[SW]   badge:', badge);
+  console.log('[SW]   url:', url);
+  console.log('[SW]   notificationId:', data.notificationId);
+
   const options = {
-    body: data.body || 'You have a new notification',
-    icon: data.icon || '/favicon.ico',
-    badge: data.badge || '/favicon.ico',
+    body: body,
+    icon: icon,
+    badge: badge,
     tag: data.tag || 'nursemel-notification',
     requireInteraction: true,
     data: {
-      url: data.url || '/notifications',
+      url: url,
       notificationId: data.notificationId,
     },
     actions: [
@@ -44,7 +74,22 @@ self.addEventListener('push', (event) => {
     ],
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  console.log('[SW] Full notification options:', options);
+  console.log('[SW] Calling showNotification...');
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+      .then(() => {
+        console.log('[SW] showNotification succeeded');
+      })
+      .catch((err) => {
+        console.error('[SW] showNotification FAILED:', err);
+        console.error('[SW] Error name:', err.name);
+        console.error('[SW] Error message:', err.message);
+      })
+  );
+
+  console.log('[SW] === PUSH HANDLER END ===');
 });
 
 // Notification click event - handle user interaction

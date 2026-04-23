@@ -78,6 +78,26 @@ export function getNotificationRecipients(
 }
 
 /**
+ * Gets all practitioners for broadcast notifications
+ */
+export async function getAllPractitioners(
+  medplum: MedplumClient
+): Promise<Reference<Practitioner>[]> {
+  const recipients: Reference<Practitioner>[] = [];
+  try {
+    const bundle = await medplum.search('Practitioner', { _count: '100' });
+    for (const entry of bundle.entry || []) {
+      if (entry.resource) {
+        recipients.push(createReference(entry.resource as Practitioner));
+      }
+    }
+  } catch (err) {
+    console.error('Error getting practitioners:', err);
+  }
+  return recipients;
+}
+
+/**
  * Creates a Communication resource for a notification
  */
 export async function createNotification(
@@ -225,6 +245,49 @@ export async function getUnreadNotificationCount(
   } catch (err) {
     console.error('Error getting notification count:', err);
     return 0;
+  }
+}
+
+/**
+ * Creates a broadcast notification sent to all practitioners
+ * Used for testing - sends to all staff members
+ */
+export async function createBroadcastNotification(
+  medplum: MedplumClient,
+  message: string,
+  currentUser: Practitioner | undefined
+): Promise<Communication[]> {
+  const createdCommunications: Communication[] = [];
+
+  try {
+    // Get all practitioners
+    const bundle = await medplum.search('Practitioner', { _count: '100' });
+    const practitioners = (bundle.entry || []).map((e) => e.resource as Practitioner).filter(Boolean);
+
+    if (practitioners.length === 0) {
+      console.log('[Broadcast] No practitioners found');
+      return createdCommunications;
+    }
+
+    console.log(`[Broadcast] Sending to ${practitioners.length} practitioners`);
+
+    // Create a notification for each practitioner
+    for (const practitioner of practitioners) {
+      const comm = await createNotification(
+        medplum,
+        'broadcast',
+        { message },
+        currentUser
+      );
+      if (comm) {
+        createdCommunications.push(comm);
+      }
+    }
+
+    return createdCommunications;
+  } catch (err) {
+    console.error('[Broadcast] Error creating broadcast notification:', err);
+    return createdCommunications;
   }
 }
 

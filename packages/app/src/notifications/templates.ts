@@ -16,7 +16,8 @@ export type NotificationType =
   | 'treatment-completed'
   | 'photos-uploaded'
   | 'notes-added'
-  | 'general';
+  | 'general'
+  | 'broadcast';
 
 /**
  * Notification Priority
@@ -147,6 +148,15 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
       return data.message || 'You have a new notification';
     },
     priority: 'routine',
+    category: 'general',
+  },
+  broadcast: {
+    type: 'broadcast',
+    title: 'Broadcast',
+    getMessage: (data) => {
+      return data.message || 'Broadcast message to all staff';
+    },
+    priority: 'urgent',
     category: 'general',
   },
 };

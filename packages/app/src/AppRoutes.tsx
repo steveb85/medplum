@@ -13,6 +13,7 @@ import { ProjectAdminConfigPage } from './admin/ProjectAdminConfigPage';
 import { ProjectDetailsPage } from './admin/ProjectDetailsPage';
 import { ProjectPage } from './admin/ProjectPage';
 import { SecretsPage } from './admin/SecretsPage';
+import { ServiceCatalogPage } from './pages/admin/ServiceCatalogPage';
 import { SitesPage } from './admin/SitesPage';
 import { SuperAdminAsyncDashboardPage } from './admin/SuperAdminAsyncJobPage';
 import { SuperAdminPage } from './admin/SuperAdminPage';
@@ -151,8 +152,9 @@ export function AppRoutes(): JSX.Element {
           <Route path="users" element={<UsersPage />} />
           <Route path="project" element={<ProjectDetailsPage />} />
           <Route path="secrets" element={<SecretsPage />} />
-          <Route path="sites" element={<SitesPage />} />
-        </Route>
+            <Route path="sites" element={<SitesPage />} />
+            <Route path="services" element={<ServiceCatalogPage />} />
+          </Route>
       {/* Lab routes - Admin only */}
       <Route
         path="/lab/assays"

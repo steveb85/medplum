@@ -3,9 +3,11 @@
 import { createReference, getReferenceString } from '@medplum/core';
 import type {
   AccessPolicy,
+  ActivityDefinition,
   Appointment,
   Binary,
   Bot,
+  Location,
   Organization,
   Patient,
   Practitioner,
@@ -110,6 +112,15 @@ export async function seedNurseMelData(systemRepo: SystemRepository, project: Pr
 
   // Create Organization
   const organization = await createOrganization(systemRepo, project);
+
+  // Create Locations (Rooms)
+  const room1 = await createTreatmentRoom(systemRepo, project, 'room-1', 'Treatment Room 1', false);
+  const room2 = await createTreatmentRoom(systemRepo, project, 'room-2', 'Treatment Room 2', true);
+  globalLogger.info(`Created treatment rooms: Room 1 (id: ${room1.id}), Room 2 (id: ${room2.id})`);
+
+  // Create Service Catalog (ActivityDefinitions)
+  await createServiceCatalog(systemRepo, project);
+  globalLogger.info('Created service catalog (ActivityDefinitions)');
 
   // Create AccessPolicies
   const providerPolicy = await createProviderAccessPolicy(systemRepo, project);
@@ -1272,4 +1283,216 @@ async function createPushNotificationSubscription(
 
   globalLogger.info(`Created push notification subscription: ${subscription.id}`);
   return subscription;
+}
+
+// ============================================================================
+// PHASE 2: Service Catalog and Room Management
+// ============================================================================
+
+/**
+ * Create a treatment room location
+ * @param systemRepo - The system repository
+ * @param project - The project
+ * @param id - Room ID
+ * @param name - Room name
+ * @param hasLaser - Whether room has laser equipment
+ * @returns The created Location
+ */
+async function createTreatmentRoom(
+  systemRepo: SystemRepository,
+  project: Project,
+  id: string,
+  name: string,
+  hasLaser: boolean
+): Promise<Location> {
+  const existing = await systemRepo.searchOne<Location>({
+    resourceType: 'Location',
+    filters: [
+      { code: '_id', operator: 'eq', value: id },
+      { code: '_project', operator: 'eq', value: project.id as string },
+    ],
+  });
+
+  if (existing) {
+    globalLogger.info(`Location ${name} already exists: ${existing.id}`);
+    return existing;
+  }
+
+  return systemRepo.createResource<Location>({
+    resourceType: 'Location',
+    id,
+    meta: { project: project.id },
+    status: 'active',
+    name,
+    mode: 'instance',
+    type: [
+      {
+        coding: [
+          {
+            system: 'http://melissaknudson.com/location-type',
+            code: 'treatment-room',
+            display: 'Treatment Room',
+          },
+        ],
+      },
+    ],
+    physicalType: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/location-physical-type', code: 'ro', display: 'Room' }],
+    },
+    extension: [
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/has-laser',
+        valueBoolean: hasLaser,
+      },
+    ],
+  });
+}
+
+/**
+ * Create service catalog with ActivityDefinitions
+ * @param systemRepo - The system repository
+ * @param project - The project
+ */
+async function createServiceCatalog(systemRepo: SystemRepository, project: Project): Promise<void> {
+  const services: Array<{
+    id: string;
+    name: string;
+    duration: number;
+    numbingTime: number;
+    defaultRoom: string;
+    minPrice: number;
+    maxPrice: number;
+    pricePerUnit: boolean;
+    unitType: string;
+    gfeCategory: string;
+    requiresConsult: boolean;
+    icon: string;
+    color: string;
+    category: string;
+  }> = [
+    {
+      id: 'botox-cosmetic',
+      name: 'Botox Cosmetic',
+      duration: 30,
+      numbingTime: 0,
+      defaultRoom: 'room-1',
+      minPrice: 300,
+      maxPrice: 800,
+      pricePerUnit: true,
+      unitType: 'unit',
+      gfeCategory: 'botox',
+      requiresConsult: false,
+      icon: 'syringe',
+      color: 'blue',
+      category: 'injection',
+    },
+    {
+      id: 'filler',
+      name: 'Dermal Filler',
+      duration: 45,
+      numbingTime: 30,
+      defaultRoom: 'room-1',
+      minPrice: 600,
+      maxPrice: 1200,
+      pricePerUnit: false,
+      unitType: 'syringe',
+      gfeCategory: 'filler',
+      requiresConsult: false,
+      icon: 'syringe',
+      color: 'violet',
+      category: 'injection',
+    },
+    {
+      id: 'laser',
+      name: 'Laser Treatment',
+      duration: 45,
+      numbingTime: 45,
+      defaultRoom: 'room-2',
+      minPrice: 250,
+      maxPrice: 500,
+      pricePerUnit: false,
+      unitType: 'area',
+      gfeCategory: 'laser',
+      requiresConsult: true,
+      icon: 'laser',
+      color: 'red',
+      category: 'laser',
+    },
+    {
+      id: 'consultation',
+      name: 'Annual Consultation',
+      duration: 30,
+      numbingTime: 0,
+      defaultRoom: 'room-1',
+      minPrice: 150,
+      maxPrice: 150,
+      pricePerUnit: false,
+      unitType: 'session',
+      gfeCategory: 'consult',
+      requiresConsult: false,
+      icon: 'clipboard',
+      color: 'green',
+      category: 'consult',
+    },
+  ];
+
+  for (const svc of services) {
+    const existing = await systemRepo.searchOne<ActivityDefinition>({
+      resourceType: 'ActivityDefinition',
+      filters: [
+        { code: '_id', operator: 'eq', value: svc.id },
+        { code: '_project', operator: 'eq', value: project.id as string },
+      ],
+    });
+
+    if (existing) {
+      globalLogger.info(`ActivityDefinition ${svc.name} already exists: ${existing.id}`);
+      continue;
+    }
+
+    await systemRepo.createResource<ActivityDefinition>({
+      resourceType: 'ActivityDefinition',
+      id: svc.id,
+      meta: { project: project.id },
+      status: 'active',
+      name: svc.id,
+      title: svc.name,
+      kind: 'ServiceRequest',
+      code: {
+        coding: [
+          {
+            system: 'http://melissaknudson.com/services',
+            code: svc.id,
+            display: svc.name,
+          },
+        ],
+        text: svc.name,
+      },
+      timingDuration: {
+        value: svc.duration,
+        unit: 'min',
+      },
+      extension: [
+        {
+          url: 'http://melissaknudson.com/fhir/StructureDefinition/service-config',
+          extension: [
+            { url: 'numbingTime', valueInteger: svc.numbingTime },
+            { url: 'defaultRoom', valueString: svc.defaultRoom },
+            { url: 'roomMovable', valueBoolean: true },
+            { url: 'minPrice', valueMoney: { value: svc.minPrice, currency: 'USD' } },
+            { url: 'maxPrice', valueMoney: { value: svc.maxPrice, currency: 'USD' } },
+            { url: 'pricePerUnit', valueBoolean: svc.pricePerUnit },
+            { url: 'unitType', valueString: svc.unitType },
+            { url: 'gfeCategory', valueString: svc.gfeCategory },
+            { url: 'requiresConsult', valueBoolean: svc.requiresConsult },
+            { url: 'icon', valueString: svc.icon },
+            { url: 'color', valueString: svc.color },
+            { url: 'category', valueString: svc.category },
+          ],
+        },
+      ],
+    });
+
+    globalLogger.info(`Created ActivityDefinition: ${svc.name}`);
+  }
 }
