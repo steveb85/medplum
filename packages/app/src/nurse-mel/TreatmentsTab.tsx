@@ -279,10 +279,10 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
       if (!procedure.id) return;
       const route = getTreatmentPageRoute(patientId, procedure.id, procedure);
       navigate(route);
-    } else if (treatment.type === 'appointment' && treatment.resource.resourceType === 'Appointment') {
-      // For appointments without procedures, navigate to calendar
-      navigate(`/calendar?appointment=${treatment.id}`);
-    }
+} else if (treatment.type === 'appointment' && treatment.resource.resourceType === 'Appointment') {
+    // For appointments, navigate to booking detail page
+    navigate(`/bookings/${treatment.id}`);
+  }
   }, [navigate, patientId]);
 
   // Handle creating new treatment - opens calendar for booking

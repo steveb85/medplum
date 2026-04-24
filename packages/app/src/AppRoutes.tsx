@@ -21,6 +21,7 @@ import { UsersPage } from './admin/UsersPage';
 import { RoleGuard } from './components/RoleGuard';
 import { BatchPage } from './BatchPage';
 import { BulkAppPage } from './BulkAppPage';
+import { BookingDetailPage } from './pages/BookingDetailPage';
 import { BookingsPage } from './pages/BookingsPage';
 import { CalendarPage } from './pages/CalendarPage';
 import {
@@ -102,6 +103,7 @@ export function AppRoutes(): JSX.Element {
       <Route path="/changepassword" element={<ChangePasswordPage />} />
       <Route path="/calendar" element={<CalendarPage />} />
       <Route path="/bookings" element={<BookingsPage />} />
+      <Route path="/bookings/:id" element={<BookingDetailPage />} />
       <Route path="/notifications" element={<NotificationsPage />} />
       <Route path="/security" element={<SecurityPage />} />
       <Route path="/mfa" element={<MfaPage />} />

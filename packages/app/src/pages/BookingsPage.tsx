@@ -2,29 +2,44 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  Title,
-  Paper,
-  Stack,
-  Tabs,
-  Table,
-  Badge,
-  Group,
   ActionIcon,
-  Text,
-  Loader,
-  Tooltip,
+  Badge,
   Button,
+  Group,
+  Loader,
   Menu,
   Modal,
+  Paper,
+  Stack,
+  Table,
+  Tabs,
+  Text,
   Textarea,
+  TextInput,
+  Title,
+  Tooltip,
 } from '@mantine/core';
-import { useMedplum } from '@medplum/react';
-import type { Appointment, Patient, Practitioner } from '@medplum/fhirtypes';
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { IconEye, IconCheck, IconX, IconDots, IconUserCheck, IconUserX, IconCalendarOff } from '@tabler/icons-react';
 import { showNotification } from '@mantine/notifications';
-import type { JSX } from 'react';
+import type { Appointment, Practitioner } from '@medplum/fhirtypes';
+import { useMedplum } from '@medplum/react';
+import {
+  IconCalendarOff,
+  IconCheck,
+  IconDots,
+  IconEye,
+  IconSearch,
+  IconUserCheck,
+  IconUserX,
+  IconX,
+} from '@tabler/icons-react';
 import dayjs from 'dayjs';
+import type { JSX } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  getDepositStatus,
+  formatDepositAmount,
+  getDepositStatusColor,
+} from '../utils/payments';
 import { getMedSpaRole } from '../auth/role';
 import { createNotification } from '../notifications/utils';
 
@@ -68,6 +83,11 @@ export function BookingsPage(): JSX.Element {
   const [cancelBooking, setCancelBooking] = useState<BookingRow | null>(null);
   const [cancelReason, setCancelReason] = useState('');
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+
   // Load all appointments
   const loadBookings = useCallback(async () => {
     try {
@@ -79,17 +99,13 @@ export function BookingsPage(): JSX.Element {
         _count: '100',
       });
 
-      const appointmentResources = (appointmentsBundle.entry || []).map(
-        (e) => e.resource as Appointment
-      );
+      const appointmentResources = (appointmentsBundle.entry || []).map((e) => e.resource as Appointment);
 
       // Build rows with patient info and services
       const rows: BookingRow[] = await Promise.all(
         appointmentResources.map(async (appointment) => {
           // Get patient reference
-          const patientParticipant = appointment.participant?.find(
-            (p) => p.actor?.reference?.startsWith('Patient/')
-          );
+          const patientParticipant = appointment.participant?.find((p) => p.actor?.reference?.startsWith('Patient/'));
           const patientRef = patientParticipant?.actor?.reference;
           let patientName = 'Unknown Patient';
           let patientId = '';
@@ -144,113 +160,132 @@ export function BookingsPage(): JSX.Element {
   }, [medplum]);
 
   useEffect(() => {
-    loadBookings();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadBookings().catch(console.error);
   }, [loadBookings]);
 
+  // Debounce search query
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSearchLoading(true);
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+      setSearchLoading(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // Update appointment status
-  const updateStatus = useCallback(async (row: BookingRow, newStatus: string, reason?: string) => {
-    try {
-      setUpdatingId(row.appointment.id || null);
+  const updateStatus = useCallback(
+    async (row: BookingRow, newStatus: string, reason?: string) => {
+      try {
+        setUpdatingId(row.appointment.id || null);
 
-      const updatedAppointment: Appointment = {
-        ...row.appointment,
-        status: newStatus as Appointment['status'],
-      };
+        const updatedAppointment: Appointment = {
+          ...row.appointment,
+          status: newStatus as Appointment['status'],
+        };
 
-      // Add cancellation reason extension if cancelled
-      if (newStatus === 'cancelled' && reason) {
-        updatedAppointment.extension = [
-          ...(row.appointment.extension || []),
-          {
-            url: 'http://melissaknudson.com/fhir/StructureDefinition/cancellation-reason',
-            valueString: reason,
-          },
-        ];
-      }
+        // Add cancellation reason extension if cancelled
+        if (newStatus === 'cancelled' && reason) {
+          updatedAppointment.extension = [
+            ...(row.appointment.extension || []),
+            {
+              url: 'http://melissaknudson.com/fhir/StructureDefinition/cancellation-reason',
+              valueString: reason,
+            },
+          ];
+        }
 
-      // Add status change audit
-      const statusChangeExt = {
-        url: 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit',
-        extension: [
-          { url: 'from', valueString: row.appointment.status || 'unknown' },
-          { url: 'to', valueString: newStatus },
-          { url: 'changedAt', valueDateTime: new Date().toISOString() },
-          { url: 'changedBy', valueReference: { reference: `Practitioner/${medplum.getProfile()?.id}` } },
-        ],
-      };
+        // Add status change audit
+        const statusChangeExt = {
+          url: 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit',
+          extension: [
+            { url: 'from', valueString: row.appointment.status || 'unknown' },
+            { url: 'to', valueString: newStatus },
+            { url: 'changedAt', valueDateTime: new Date().toISOString() },
+            { url: 'changedBy', valueReference: { reference: `Practitioner/${medplum.getProfile()?.id}` } },
+          ],
+        };
 
-      updatedAppointment.extension = [
-        ...(updatedAppointment.extension || []),
-        statusChangeExt,
-      ];
+        updatedAppointment.extension = [...(updatedAppointment.extension || []), statusChangeExt];
 
-      await medplum.updateResource(updatedAppointment);
+        await medplum.updateResource(updatedAppointment);
 
-      // Send notification to providers
-      if (newStatus === 'booked' || newStatus === 'cancelled') {
-        try {
-          // Get patient
-          const patient = row.patientId ? await medplum.readResource('Patient', row.patientId) : undefined;
+        // Send notification to providers
+        if (newStatus === 'booked' || newStatus === 'cancelled') {
+          try {
+            // Get patient
+            const patient = row.patientId ? await medplum.readResource('Patient', row.patientId) : undefined;
 
-          // Get providers from appointment participants
-          const practitionerParticipants = row.appointment.participant?.filter(
-            (p) => p.actor?.reference?.startsWith('Practitioner/')
-          ) || [];
+            // Get providers from appointment participants
+            const practitionerParticipants =
+              row.appointment.participant?.filter((p) => p.actor?.reference?.startsWith('Practitioner/')) || [];
 
-          const providers: Practitioner[] = [];
-          for (const pp of practitionerParticipants) {
-            const pid = pp.actor?.reference?.split('/')[1];
-            if (pid) {
-              try {
-                const provider = await medplum.readResource('Practitioner', pid);
-                providers.push(provider);
-              } catch {
-                // Skip if can't read
+            const providers: Practitioner[] = [];
+            for (const pp of practitionerParticipants) {
+              const pid = pp.actor?.reference?.split('/')[1];
+              if (pid) {
+                try {
+                  const provider = await medplum.readResource('Practitioner', pid);
+                  providers.push(provider);
+                } catch {
+                  // Skip if can't read
+                }
               }
             }
+
+            const mainProvider = providers[0];
+            const assistant = providers[1];
+
+            await createNotification(
+              medplum,
+              newStatus === 'booked' ? 'appointment-approved' : 'appointment-cancelled',
+              {
+                patient,
+                appointment: updatedAppointment,
+                provider: mainProvider,
+                assistant,
+                date: updatedAppointment.start,
+                time: dayjs(updatedAppointment.start).format('h:mm A'),
+                serviceType: row.services.join(', '),
+              },
+              medplum.getProfile() as Practitioner | undefined
+            );
+          } catch (notifyErr) {
+            console.error('Error sending notification:', notifyErr);
           }
-
-          const mainProvider = providers[0];
-          const assistant = providers[1];
-
-          await createNotification(medplum, newStatus === 'booked' ? 'appointment-approved' : 'appointment-cancelled', {
-            patient,
-            appointment: updatedAppointment,
-            provider: mainProvider,
-            assistant,
-            date: updatedAppointment.start,
-            time: dayjs(updatedAppointment.start).format('h:mm A'),
-            serviceType: row.services.join(', '),
-          }, medplum.getProfile() as Practitioner | undefined);
-        } catch (notifyErr) {
-          console.error('Error sending notification:', notifyErr);
         }
+
+        showNotification({
+          color: 'green',
+          title: 'Success',
+          message: `Booking ${newStatus === 'booked' ? 'approved' : `marked as ${statusConfig[newStatus]?.label || newStatus}`}`,
+        });
+
+        // Refresh the list
+        await loadBookings();
+      } catch (err) {
+        console.error('Error updating booking:', err);
+        showNotification({
+          color: 'red',
+          title: 'Error',
+          message: 'Failed to update booking status',
+        });
+      } finally {
+        setUpdatingId(null);
       }
-
-      showNotification({
-        color: 'green',
-        title: 'Success',
-        message: `Booking ${newStatus === 'booked' ? 'approved' : `marked as ${statusConfig[newStatus]?.label || newStatus}`}`,
-      });
-
-      // Refresh the list
-      await loadBookings();
-    } catch (err) {
-      console.error('Error updating booking:', err);
-      showNotification({
-        color: 'red',
-        title: 'Error',
-        message: 'Failed to update booking status',
-      });
-    } finally {
-      setUpdatingId(null);
-    }
-  }, [medplum, loadBookings]);
+    },
+    [medplum, loadBookings]
+  );
 
   // Handle approve booking
-  const handleApprove = useCallback((row: BookingRow) => {
-    updateStatus(row, 'booked');
-  }, [updateStatus]);
+  const handleApprove = useCallback(
+    (row: BookingRow) => {
+      updateStatus(row, 'booked').catch(console.error);
+    },
+    [updateStatus]
+  );
 
   // Handle cancel with reason
   const handleCancel = useCallback((row: BookingRow) => {
@@ -262,67 +297,51 @@ export function BookingsPage(): JSX.Element {
   // Confirm cancellation
   const confirmCancel = useCallback(() => {
     if (cancelBooking) {
-      updateStatus(cancelBooking, 'cancelled', cancelReason || undefined);
+      updateStatus(cancelBooking, 'cancelled', cancelReason || undefined).catch(console.error);
       setCancelModalOpen(false);
       setCancelBooking(null);
     }
   }, [cancelBooking, cancelReason, updateStatus]);
 
   // Handle mark as arrived
-  const handleArrived = useCallback((row: BookingRow) => {
-    updateStatus(row, 'arrived');
-  }, [updateStatus]);
+  const handleArrived = useCallback(
+    (row: BookingRow) => {
+      updateStatus(row, 'arrived').catch(console.error);
+    },
+    [updateStatus]
+  );
 
   // Handle mark as no-show
-  const handleNoShow = useCallback((row: BookingRow) => {
-    updateStatus(row, 'noshow');
-  }, [updateStatus]);
+  const handleNoShow = useCallback(
+    (row: BookingRow) => {
+      updateStatus(row, 'noshow').catch(console.error);
+    },
+    [updateStatus]
+  );
 
-  // Filter bookings based on active tab
-  const filteredBookings = useMemo(() => {
-    const now = dayjs();
-
-    switch (activeTab) {
-      case 'pending':
-        return bookings.filter((row) => row.appointment.status === 'pending');
-      case 'upcoming':
-        return bookings.filter((row) => {
-          const date = dayjs(row.appointment.start);
-          const status = row.appointment.status;
-          return (date.isAfter(now) || date.isSame(now, 'day')) &&
-                 status !== 'cancelled' &&
-                 status !== 'fulfilled' &&
-                 status !== 'noshow';
-        });
-      case 'past':
-        return bookings.filter((row) => {
-          const date = dayjs(row.appointment.start);
-          return date.isBefore(now, 'day') ||
-                 row.appointment.status === 'fulfilled' ||
-                 row.appointment.status === 'cancelled' ||
-                 row.appointment.status === 'noshow';
-        });
-      case 'all':
-      default:
-        return bookings;
-    }
-  }, [bookings, activeTab]);
+  // Helper functions (need to be defined before filteredBookings useMemo)
 
   // Format date from appointment
   const formatDate = (appointment: Appointment): string => {
-    if (!appointment.start) return 'Not scheduled';
+    if (!appointment.start) {
+      return 'Not scheduled';
+    }
     return dayjs(appointment.start).format('MMM D, YYYY');
   };
 
   // Format time from appointment
   const formatTime = (appointment: Appointment): string => {
-    if (!appointment.start) return '';
+    if (!appointment.start) {
+      return '';
+    }
     return dayjs(appointment.start).format('h:mm A');
   };
 
   // Get duration
   const getDuration = (appointment: Appointment): string => {
-    if (!appointment.start || !appointment.end) return '-';
+    if (!appointment.start || !appointment.end) {
+      return '-';
+    }
     const start = dayjs(appointment.start);
     const end = dayjs(appointment.end);
     const minutes = end.diff(start, 'minutes');
@@ -339,7 +358,11 @@ export function BookingsPage(): JSX.Element {
     const roomExt = appointment.extension?.find(
       (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
     )?.valueString;
-    return roomExt === 'room-1' ? 'Room 1' : roomExt === 'room-2' ? 'Room 2' : '-';
+    const roomMap: Record<string, string> = {
+      'room-1': 'Room 1',
+      'room-2': 'Room 2',
+    };
+    return roomMap[roomExt || ''] || '-';
   };
 
   // Get provider names
@@ -351,22 +374,104 @@ export function BookingsPage(): JSX.Element {
     return providers?.join(', ') || '-';
   };
 
+  // Get duration in minutes (for sorting)
+  const getDurationMinutes = (appointment: Appointment): number => {
+    if (!appointment.start || !appointment.end) {
+      return 0;
+    }
+    return dayjs(appointment.end).diff(dayjs(appointment.start), 'minutes');
+  };
+
+  // Filter bookings based on active tab and search query
+  const filteredBookings = useMemo(() => {
+    const now = dayjs();
+
+    // First apply tab filter
+    let filtered: BookingRow[];
+    switch (activeTab) {
+      case 'pending':
+        filtered = bookings.filter((row) => row.appointment.status === 'pending');
+        break;
+      case 'upcoming':
+        filtered = bookings.filter((row) => {
+          const date = dayjs(row.appointment.start);
+          const status = row.appointment.status;
+          return (
+            (date.isAfter(now) || date.isSame(now, 'day')) &&
+            status !== 'cancelled' &&
+            status !== 'fulfilled' &&
+            status !== 'noshow'
+          );
+        });
+        break;
+      case 'past':
+        filtered = bookings.filter((row) => {
+          const date = dayjs(row.appointment.start);
+          return (
+            date.isBefore(now, 'day') ||
+            row.appointment.status === 'fulfilled' ||
+            row.appointment.status === 'cancelled' ||
+            row.appointment.status === 'noshow'
+          );
+        });
+        break;
+      case 'all':
+      default:
+        filtered = bookings;
+    }
+
+    // Apply search filter if query exists
+    if (debouncedQuery.trim()) {
+      const needle = debouncedQuery.toLowerCase();
+      filtered = filtered.filter((row) => {
+        // Search patient name
+        if (row.patientName.toLowerCase().includes(needle)) {
+          return true;
+        }
+        // Search services
+        if (row.services.some((s) => s.toLowerCase().includes(needle))) {
+          return true;
+        }
+        // Search date
+        const dateStr = formatDate(row.appointment).toLowerCase();
+        if (dateStr.includes(needle)) {
+          return true;
+        }
+        // Search room
+        const room = getRoom(row.appointment).toLowerCase();
+        if (room.includes(needle)) {
+          return true;
+        }
+        // Search providers
+        const providers = getProviders(row.appointment).toLowerCase();
+        if (providers.includes(needle)) {
+          return true;
+        }
+        return false;
+      });
+    }
+
+    return filtered;
+    }, [bookings, activeTab, debouncedQuery]);
+
   // Handle view appointment
-  const handleViewAppointment = (row: BookingRow) => {
+  const handleViewAppointment = (row: BookingRow): void => {
     if (row.appointment.id) {
-      window.location.href = `/calendar?appointment=${row.appointment.id}`;
+      window.location.href = `/bookings/${row.appointment.id}`;
     }
   };
 
   // Handle click on patient name
-  const handlePatientClick = (patientId: string) => {
+  const handlePatientClick = (patientId: string): void => {
     if (patientId) {
       window.location.href = `/Patient/${patientId}`;
     }
   };
 
   // Get available actions for a booking
-  const getAvailableActions = (row: BookingRow) => {
+  const getAvailableActions = (
+    row: BookingRow
+  ): { canApprove: boolean; canArrive: boolean; canNoShow: boolean; canCancel: boolean } => {
     const status = row.appointment.status || 'pending';
     const transitions = allowedTransitions[status] || [];
 
@@ -383,57 +488,85 @@ export function BookingsPage(): JSX.Element {
       <Title order={3}>Bookings</Title>
 
       <Paper withBorder p="md">
-        <Tabs value={activeTab} onChange={(v) => setActiveTab(v || 'all')}>
-          <Tabs.List>
-            <Tabs.Tab value="all">
-              All ({bookings.length})
-            </Tabs.Tab>
-            <Tabs.Tab value="pending">
-              Pending Approval ({bookings.filter((row) => row.appointment.status === 'pending').length})
-            </Tabs.Tab>
-            <Tabs.Tab value="upcoming">
-              Upcoming ({bookings.filter((row) => {
-                const date = dayjs(row.appointment.start);
-                const status = row.appointment.status;
-                return (date.isAfter(dayjs()) || date.isSame(dayjs(), 'day')) &&
-                       status !== 'cancelled' &&
-                       status !== 'fulfilled' &&
-                       status !== 'noshow';
-              }).length})
-            </Tabs.Tab>
-            <Tabs.Tab value="past">
-              Past ({bookings.filter((row) => {
-                const date = dayjs(row.appointment.start);
-                return date.isBefore(dayjs(), 'day') ||
-                       row.appointment.status === 'fulfilled' ||
-                       row.appointment.status === 'cancelled' ||
-                       row.appointment.status === 'noshow';
-              }).length})
-            </Tabs.Tab>
-          </Tabs.List>
+        <Stack gap="md">
+          {/* Search input */}
+          <TextInput
+            placeholder="Search by patient, service, provider, date, or room..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+            leftSection={<IconSearch size={16} />}
+            rightSection={
+              searchQuery && (
+                <ActionIcon onClick={() => setSearchQuery('')} variant="transparent" color="gray">
+                  <IconX size={14} />
+                </ActionIcon>
+              )
+            }
+          />
 
-          <Tabs.Panel value="all" pt="md">
-            {renderTable()}
-          </Tabs.Panel>
-          <Tabs.Panel value="pending" pt="md">
-            {renderTable()}
-          </Tabs.Panel>
-          <Tabs.Panel value="upcoming" pt="md">
-            {renderTable()}
-          </Tabs.Panel>
-          <Tabs.Panel value="past" pt="md">
-            {renderTable()}
-          </Tabs.Panel>
-        </Tabs>
+          <Tabs
+            value={activeTab}
+            onChange={(v) => {
+              setActiveTab(v || 'all');
+              setSearchQuery(''); // Clear search when switching tabs
+            }}
+          >
+            <Tabs.List>
+              <Tabs.Tab value="all">All ({bookings.length})</Tabs.Tab>
+              <Tabs.Tab value="pending">
+                Pending Approval ({bookings.filter((row) => row.appointment.status === 'pending').length})
+              </Tabs.Tab>
+              <Tabs.Tab value="upcoming">
+                Upcoming (
+                {
+                  bookings.filter((row) => {
+                    const date = dayjs(row.appointment.start);
+                    const status = row.appointment.status;
+                    return (
+                      (date.isAfter(dayjs()) || date.isSame(dayjs(), 'day')) &&
+                      status !== 'cancelled' &&
+                      status !== 'fulfilled' &&
+                      status !== 'noshow'
+                    );
+                  }).length
+                }
+                )
+              </Tabs.Tab>
+              <Tabs.Tab value="past">
+                Past (
+                {
+                  bookings.filter((row) => {
+                    const date = dayjs(row.appointment.start);
+                    return (
+                      date.isBefore(dayjs(), 'day') ||
+                      row.appointment.status === 'fulfilled' ||
+                      row.appointment.status === 'cancelled' ||
+                      row.appointment.status === 'noshow'
+                    );
+                  }).length
+                }
+                )
+              </Tabs.Tab>
+            </Tabs.List>
+
+            <Tabs.Panel value="all" pt="md">
+              {renderTable()}
+            </Tabs.Panel>
+            <Tabs.Panel value="pending" pt="md">
+              {renderTable()}
+            </Tabs.Panel>
+            <Tabs.Panel value="upcoming" pt="md">
+              {renderTable()}
+            </Tabs.Panel>
+            <Tabs.Panel value="past" pt="md">
+              {renderTable()}
+            </Tabs.Panel>
+          </Tabs>
+        </Stack>
       </Paper>
 
       {/* Cancellation Modal */}
-      <Modal
-        opened={cancelModalOpen}
-        onClose={() => setCancelModalOpen(false)}
-        title="Cancel Booking"
-        size="sm"
-      >
+      <Modal opened={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Cancel Booking" size="sm">
         <Stack>
           <Text size="sm" c="dimmed">
             Please provide a reason for cancelling this booking:
@@ -466,11 +599,26 @@ export function BookingsPage(): JSX.Element {
       );
     }
 
+    if (searchLoading) {
+      return (
+        <Group justify="center" p="xl">
+          <Loader size="sm" />
+        </Group>
+      );
+    }
+
     if (filteredBookings.length === 0) {
       return (
-        <Text c="dimmed" ta="center" p="xl">
-          No bookings found
-        </Text>
+        <Stack gap="xs" align="center" p="xl">
+          <Text c="dimmed">
+            {debouncedQuery ? `No bookings found matching "${debouncedQuery}"` : 'No bookings found'}
+          </Text>
+          {debouncedQuery && (
+            <Text size="xs" c="dimmed">
+              Try searching by patient name, service, provider, date, or room
+            </Text>
+          )}
+        </Stack>
       );
     }
 
@@ -486,6 +634,7 @@ export function BookingsPage(): JSX.Element {
             <Table.Th>Room</Table.Th>
             <Table.Th>Providers</Table.Th>
             <Table.Th>Status</Table.Th>
+            <Table.Th>Deposit</Table.Th>
             <Table.Th>Actions</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -527,18 +676,32 @@ export function BookingsPage(): JSX.Element {
                 <Table.Td>{getRoom(row.appointment)}</Table.Td>
                 <Table.Td>{getProviders(row.appointment)}</Table.Td>
                 <Table.Td>
-                  <Badge
-                    color={
-                      statusConfig[row.appointment.status as keyof typeof statusConfig]
-                        ?.color || 'gray'
-                    }
-                  >
-                    {statusConfig[row.appointment.status as keyof typeof statusConfig]
-                      ?.label || row.appointment.status}
+                  <Badge color={statusConfig[row.appointment.status as keyof typeof statusConfig]?.color || 'gray'}>
+                    {statusConfig[row.appointment.status as keyof typeof statusConfig]?.label || row.appointment.status}
                   </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Group gap="xs">
+          </Table.Td>
+          <Table.Td>
+            {(() => {
+              const depositInfo = getDepositStatus(row.appointment);
+              let label: string;
+              if (depositInfo.status === 'paid') {
+                label = `Paid: $${depositInfo.amount}`;
+              } else if (depositInfo.status === 'waived') {
+                label = 'Waived';
+              } else if (depositInfo.status === 'requested') {
+                label = `Requested: $${depositInfo.amount}`;
+              } else {
+                label = 'Pending';
+              }
+              return (
+                <Badge color={getDepositStatusColor(depositInfo.status)} variant="light">
+                  {label}
+                </Badge>
+              );
+            })()}
+          </Table.Td>
+          <Table.Td>
+            <Group gap="xs">
                     {/* Approve Button - only for pending */}
                     {actions.canApprove && (
                       <Tooltip label="Approve booking">
@@ -558,20 +721,13 @@ export function BookingsPage(): JSX.Element {
                     {(actions.canArrive || actions.canNoShow || actions.canCancel) && (
                       <Menu position="bottom-end" withArrow>
                         <Menu.Target>
-                          <ActionIcon
-                            variant="light"
-                            loading={isUpdating}
-                            disabled={isUpdating}
-                          >
+                          <ActionIcon variant="light" loading={isUpdating} disabled={isUpdating}>
                             <IconDots size={18} />
                           </ActionIcon>
                         </Menu.Target>
                         <Menu.Dropdown>
                           {actions.canArrive && (
-                            <Menu.Item
-                              leftSection={<IconUserCheck size={14} />}
-                              onClick={() => handleArrived(row)}
-                            >
+                            <Menu.Item leftSection={<IconUserCheck size={14} />} onClick={() => handleArrived(row)}>
                               Mark as Arrived
                             </Menu.Item>
                           )}
@@ -599,10 +755,7 @@ export function BookingsPage(): JSX.Element {
 
                     {/* View Button */}
                     <Tooltip label="View booking">
-                      <ActionIcon
-                        variant="subtle"
-                        onClick={() => handleViewAppointment(row)}
-                      >
+                      <ActionIcon variant="subtle" onClick={() => handleViewAppointment(row)}>
                         <IconEye size={18} />
                       </ActionIcon>
                     </Tooltip>

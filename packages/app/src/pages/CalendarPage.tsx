@@ -114,46 +114,14 @@ export function CalendarPage(): JSX.Element {
     });
   }, [appointments]);
 
-  // Handle clicking on an event
-  const handleSelectEvent = useCallback(async (event: { resource: Appointment }) => {
-    const patientParticipant = event.resource.participant?.find(
-      p => p.actor?.reference?.startsWith('Patient/')
-    );
-    const patientId = patientParticipant?.actor?.reference?.split('/')[1];
-    const appointment = event.resource;
-
-    if (!patientId) return;
-
-    // Try to find the linked procedure for this appointment
-    try {
-      const proceduresBundle = await medplum.search('Procedure', {
-        subject: `Patient/${patientId}`,
-        _sort: '-date',
-        _count: '10',
-      });
-
-      // Find procedure with linked appointment extension
-      const procedures = (proceduresBundle.entry || []).map(e => e.resource as Procedure);
-      const linkedProcedure = procedures.find(p =>
-        p.extension?.some(e =>
-          e.url === 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment' &&
-          e.valueReference?.reference === getReferenceString(appointment)
-        )
-      );
-
-      if (linkedProcedure?.id) {
-        // Navigate directly to the treatment
-        window.location.href = `/Patient/${patientId}/botox-treatment?procedureId=${linkedProcedure.id}`;
-      } else {
-        // Fall back to treatments list
-        window.location.href = `/Patient/${patientId}/treatments`;
-      }
-    } catch (err) {
-      console.error('Error finding linked procedure:', err);
-      // Fall back to treatments list
-      window.location.href = `/Patient/${patientId}/treatments`;
-    }
-  }, [medplum]);
+// Handle clicking on an event
+const handleSelectEvent = useCallback((event: { resource: Appointment }) => {
+  const appointment = event.resource;
+  if (appointment.id) {
+    // Navigate to booking detail page
+    window.location.href = `/bookings/${appointment.id}`;
+  }
+}, []);
 
   // Handle clicking on a time slot
   const handleSelectSlot = useCallback((slotInfo: { start: Date; end: Date }) => {

@@ -449,26 +449,30 @@ export function CreateAppointmentModalV2({
       const serviceRequests: ServiceRequest[] = [];
       for (let i = 0; i < selectedServices.length; i++) {
         const svc = selectedServices[i];
-        const serviceRequest: ServiceRequest = {
-          resourceType: 'ServiceRequest',
-          status: 'draft',
-          intent: 'order',
-          code: svc.activityDefinition.code,
-          subject: createReference(patient),
-          requester: { reference: getReferenceString(mainProvider) },
-          authoredOn: new Date().toISOString(),
-          supportingInfo: [{ reference: getReferenceString(savedAppointment) }],
-          extension: [
-            {
-              url: 'http://melissaknudson.com/fhir/StructureDefinition/service-position',
-              valueInteger: i + 1,
-            },
-            {
-              url: 'http://melissaknudson.com/fhir/StructureDefinition/numbing-required',
-              valueBoolean: svc.config.numbingTime > 0,
-            },
-          ],
-        };
+const serviceRequest: ServiceRequest = {
+        resourceType: 'ServiceRequest',
+        status: 'draft',
+        intent: 'order',
+        code: svc.activityDefinition.code,
+        subject: createReference(patient),
+        requester: { reference: getReferenceString(mainProvider) },
+        authoredOn: new Date().toISOString(),
+        supportingInfo: [{ reference: getReferenceString(savedAppointment) }],
+        extension: [
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/service-position',
+            valueInteger: i + 1,
+          },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/numbing-required',
+            valueBoolean: svc.config.numbingTime > 0,
+          },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment',
+            valueReference: { reference: getReferenceString(savedAppointment) },
+          },
+        ],
+      };
         const saved = await medplum.createResource(serviceRequest);
         serviceRequests.push(saved);
       }

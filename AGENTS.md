@@ -148,24 +148,30 @@ packages/app/src/
 
 ### ✅ COMPLETED (Sprint 3.2 - Staff Approval Workflow)
 
-- ✅ Booking approval workflow (pending → booked)
-- ✅ Staff notification system (on approve/cancel)
-- ✅ Appointment status management (arrived, no-show, cancelled)
-- ✅ Status audit trail extensions
+- ✅ Booking approval workflow (pending → approved → booked)
+- ✅ Staff notification system (on create/approve/cancel)
+- ✅ Appointment status management (pending, approved, booked, arrived, no-show, cancelled)
+- ✅ Status audit trail extensions (`status-change-audit`)
+- ✅ Deposit amount override (custom amount per booking)
+- ✅ Calendar event styling (cancelled, no-show, pending badges)
+- ✅ Auto-cancel logic (96h or 48h before treatment)
+- ✅ Role-based booking creation (coordinator → pending, provider → booked)
 
 ### 🔄 IN PROGRESS
 
-- 🔄 Testing booking status transitions
-- 🔄 Verifying notification delivery
+- 🔄 Booking detail page with deposit management
+- 🔄 Split calendar events (numbing + treatment blocks)
+- 🔄 Uncancel function with reason input
 
-### ⏭️ UPCOMING (Sprint 3.3 - Patient Communications)
+### ⏭️ UPCOMING (Sprint 3.3 - Communications & Deposits)
 
-- ⏭️ Patient portal (separate domain, public-facing)
-- ⏭️ SMS reminders via Twilio
-- ⏭️ Email notifications via Resend
-- ⏭️ Stripe integration for deposits
-- ⏭️ Bot intake questionnaires
-- ⏭️ Automated follow-up workflows
+- ⏭️ Twilio SMS integration (sandbox)
+- ⏭️ Resend email integration
+- ⏭️ Stripe payment links
+- ⏭️ Automated deposit requests (SMS + Email)
+- ⏭️ Payment reminder schedule (24h intervals, max 4)
+- ⏭️ Appointment reminders (24h, 2h before)
+- ⏭️ Post-appointment follow-ups (per-service schedule)
 
 ---
 
@@ -577,3 +583,127 @@ arrived → fulfilled (Complete treatment)
 - `status-change-audit`: tracks from → to, timestamp, changedBy
 - `cancellation-reason`: stores cancellation reason
 
+
+---
+
+### April 24, 2026 - Sprint 3.3 Phase 1-3 Complete (Communications & Deposits)
+
+**New Features: Deposit Management, SMS/Email Integration, Automated Reminders**
+
+**Phase 1: Configuration & Setup**
+
+**Files Modified:**
+1. **`/packages/app/src/pages/admin/ServiceCatalogPage.tsx`**
+   - Added deposit configuration: `depositAmount`, `depositReminders`, `depositReminderInterval`
+   - Added follow-up schedule: `followUpSchedule` JSON array
+   - Added per-provider rates: `providerRates` JSON array (advanced feature for multi-provider pricing)
+
+**Files Created:**
+2. **`/packages/app/src/utils/payments.ts`** (NEW)
+   - Deposit status management (`pending`, `requested`, `paid`, `waived`)
+   - Payment link expiry calculation (96h default, dynamic based on appointment proximity)
+   - Auto-cancel logic (96h or 48h before appointment)
+   - Deposit amount formatting and validation
+
+3. **`/packages/app/src/utils/sms.ts`** (NEW)
+   - Twilio SMS integration
+   - Templates: deposit request, payment confirmation, appointment reminders, auto-cancel warnings
+   - Sandbox mode for development
+
+4. **`/packages/app/src/utils/email.ts`** (NEW)
+   - Resend email integration
+   - Same templates as SMS
+   - HTML + text email support
+
+**Phase 2: Booking Detail Page**
+
+**Files Created:**
+5. **`/packages/app/src/pages/BookingDetailPage.tsx`** (NEW)
+   - Full booking details display (patient, services, providers, room)
+   - Deposit management section with status badge
+   - Custom deposit amount override
+   - "Send Payment Link" button (triggers SMS + Email)
+   - "Mark as Paid" button for manual payment entry
+   - "Waive Deposit" with reason input
+   - Status actions: Approve, Mark Arrived, Mark No-Show, Cancel, Uncancel
+   - Activity history timeline (audit trail)
+
+**Files Modified:**
+6. **`/packages/app/src/AppRoutes.tsx`**
+   - Added route `/bookings/:id` → BookingDetailPage
+
+7. **`/packages/app/src/pages/BookingsPage.tsx`**
+   - Updated eye icon to link to `/bookings/:id` (detail page)
+
+**Phase 3: Server-Side Webhooks**
+
+**Files Created:**
+8. **`/packages/server/src/webhooks/stripe.ts`** (NEW)
+   - Stripe webhook handler for payment events
+   - Updates appointment deposit status on payment success
+   - Creates `deposit-info` extension with payment details
+   - `createStripePaymentLink()` function for generating checkout URLs
+
+9. **`/packages/server/src/webhooks/twilio.ts`** (NEW)
+   - Incoming SMS webhook handler
+   - Creates Communication FHIR resource for each message
+   - Auto-response logic (cancel, reschedule, confirm, stop)
+   - Broadcasts patient messages to staff via notifications
+
+**Phase 4: Automated Reminders**
+
+**Files Created:**
+10. **`/packages/app/src/utils/reminders.ts`** (NEW)
+    - Deposit reminder scheduler (every 24h, max 4)
+    - Auto-cancel warning (24h before auto-cancel)
+    - Appointment reminders (24h and 2h before)
+    - Post-treatment follow-ups (per-service schedule)
+    - Upcoming reminders display for booking detail page
+
+**Environment Variables Added:**
+```bash
+# Twilio
+TWILIO_ACCOUNT_SID=xxx
+TWILIO_AUTH_TOKEN=xxx
+TWILIO_PHONE_NUMBER=+1234567890
+
+# Stripe
+STRIPE_PUBLISHABLE_KEY=pk_test_xxx
+STRIPE_SECRET_KEY=sk_test_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+
+# Resend
+RESEND_API_KEY=re_xxx
+RESEND_FROM_EMAIL=noreply@studioassistant.io
+
+# Payment Links
+PAYMENT_LINK_EXPIRY_HOURS=96
+PAYMENT_LINK_BASE_URL=https://api-dev.studioassistant.io/pay
+```
+
+**New FHIR Extensions:**
+| Extension | Purpose | FHIR Compliant |
+|-----------|---------|----------------|
+| `deposit-info` | Tracks deposit status, amount, timestamps | Yes |
+| `last-deposit-reminder` | Tracks which reminder was sent | Yes |
+| `auto-cancel-warning-sent` | Tracks if warning was sent | Yes |
+| `appointment-reminder-24h-sent` | Tracks 24h reminder | Yes |
+| `appointment-reminder-2h-sent` | Tracks 2h reminder | Yes |
+| `post-treatment-followup-sent` | Tracks follow-up communications | Yes |
+| `sms-metadata` | Stores Twilio message metadata | Yes |
+
+**Architecture Decisions Made:**
+- **Deposit Status Flow**: `pending` → `requested` → `paid` | `waived`
+- **Dynamic Payment Link Expiry**: 96h default, adjusted based on appointment proximity
+- **Auto-Cancel Logic**: 96h since request OR 48h before appointment (whichever first)
+- **SMS/Email Templates**: Centralized in utility files with variable substitution
+- **Communication Resources**: Incoming SMS stored as FHIR Communication for audit trail
+- **Sandbox Mode**: SMS/Email log to console in development, don't actually send
+
+**Next Phase:**
+- Phase 4: Split Calendar Events (numbing blocks separate from treatment blocks)
+- Phase 5: Booking creation with automatic deposit request (when approved)
+
+---
+
+**Current Status:** Sprint 3.3 Phase 1-3 Complete, ready for Phase 4 (Calendar Split Events)

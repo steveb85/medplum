@@ -132,28 +132,29 @@ export function NotificationsPage(): JSX.Element {
     }
   }, [medplum, notifications, loadNotifications]);
 
-  // Navigate to related resource
-  const handleNavigate = useCallback((notification: Communication) => {
-    const related = getRelatedResource(notification);
-    if (related) {
-      if (related.type === 'Appointment') {
-        navigate('/calendar');
-      } else if (related.type === 'Procedure') {
-        const patientRef = notification.subject?.reference;
-        if (patientRef) {
-          const patientId = patientRef.split('/')[1];
-          navigate(`/Patient/${patientId}/botox-treatment?procedureId=${related.id}`);
-        }
-      } else if (related.type === 'Patient') {
-        navigate(`/Patient/${related.id}`);
+// Navigate to related resource
+const handleNavigate = useCallback((notification: Communication) => {
+  const related = getRelatedResource(notification);
+  if (related) {
+    if (related.type === 'Appointment') {
+      // Navigate to booking detail page
+      navigate(`/bookings/${related.id}`);
+    } else if (related.type === 'Procedure') {
+      const patientRef = notification.subject?.reference;
+      if (patientRef) {
+        const patientId = patientRef.split('/')[1];
+        navigate(`/Patient/${patientId}/botox-treatment?procedureId=${related.id}`);
       }
+    } else if (related.type === 'Patient') {
+      navigate(`/Patient/${related.id}`);
     }
+  }
 
-    // Mark as read when clicked
-    if (notification.id && !isNotificationRead(notification)) {
-      handleMarkAsRead(notification.id);
-    }
-  }, [navigate, handleMarkAsRead]);
+  // Mark as read when clicked
+  if (notification.id && !isNotificationRead(notification)) {
+    handleMarkAsRead(notification.id);
+  }
+}, [navigate, handleMarkAsRead]);
 
   // Filter notifications based on showAll toggle
   const displayedNotifications = showAll

@@ -26,6 +26,17 @@ import { IconEdit, IconPlus } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 
+interface FollowUpMessage {
+  hours: number;
+  message: string;
+}
+
+interface ProviderRate {
+  providerId: string;
+  providerName: string;
+  pricePerUnit: number;
+}
+
 interface ServiceConfig {
   numbingTime: number;
   defaultRoom: string;
@@ -39,6 +50,11 @@ interface ServiceConfig {
   icon: string;
   color: string;
   category: string;
+  depositAmount: number;
+  depositReminders: number;
+  depositReminderInterval: number;
+  followUpSchedule: FollowUpMessage[];
+  providerRates: ProviderRate[];
 }
 
 interface ServiceFormData {
@@ -76,6 +92,28 @@ function parseServiceConfig(activity: ActivityDefinition): ServiceConfig {
     (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-config'
   );
 
+  // Parse follow-up schedule from JSON string
+  const followUpScheduleRaw = ext?.extension?.find((e) => e.url === 'followUpSchedule')?.valueString;
+  let followUpSchedule: FollowUpMessage[] = [];
+  if (followUpScheduleRaw) {
+    try {
+      followUpSchedule = JSON.parse(followUpScheduleRaw);
+    } catch {
+      followUpSchedule = [];
+    }
+  }
+
+  // Parse provider rates from JSON string
+  const providerRatesRaw = ext?.extension?.find((e) => e.url === 'providerRates')?.valueString;
+  let providerRates: ProviderRate[] = [];
+  if (providerRatesRaw) {
+    try {
+      providerRates = JSON.parse(providerRatesRaw);
+    } catch {
+      providerRates = [];
+    }
+  }
+
   return {
     numbingTime: ext?.extension?.find((e) => e.url === 'numbingTime')?.valueInteger ?? 0,
     defaultRoom: ext?.extension?.find((e) => e.url === 'defaultRoom')?.valueString ?? 'room-1',
@@ -89,11 +127,16 @@ function parseServiceConfig(activity: ActivityDefinition): ServiceConfig {
     icon: ext?.extension?.find((e) => e.url === 'icon')?.valueString ?? '',
     color: ext?.extension?.find((e) => e.url === 'color')?.valueString ?? 'blue',
     category: ext?.extension?.find((e) => e.url === 'category')?.valueString ?? 'other',
+    depositAmount: ext?.extension?.find((e) => e.url === 'depositAmount')?.valueInteger ?? 250,
+    depositReminders: ext?.extension?.find((e) => e.url === 'depositReminders')?.valueInteger ?? 4,
+    depositReminderInterval: ext?.extension?.find((e) => e.url === 'depositReminderInterval')?.valueInteger ?? 24,
+    followUpSchedule,
+    providerRates,
   };
 }
 
 function buildExtensions(config: ServiceConfig): ActivityDefinition['extension'] {
-  const extensions: Array<{ url: string; [key: string]: unknown }> = [
+  const extensions: { url: string; [key: string]: unknown }[] = [
     { url: 'numbingTime', valueInteger: config.numbingTime },
     { url: 'defaultRoom', valueString: config.defaultRoom },
     { url: 'roomMovable', valueBoolean: config.roomMovable },
@@ -104,6 +147,9 @@ function buildExtensions(config: ServiceConfig): ActivityDefinition['extension']
     { url: 'requiresConsult', valueBoolean: config.requiresConsult },
     { url: 'color', valueString: config.color },
     { url: 'category', valueString: config.category },
+    { url: 'depositAmount', valueInteger: config.depositAmount },
+    { url: 'depositReminders', valueInteger: config.depositReminders },
+    { url: 'depositReminderInterval', valueInteger: config.depositReminderInterval },
   ];
 
   // Only add optional fields if they have values
@@ -112,6 +158,12 @@ function buildExtensions(config: ServiceConfig): ActivityDefinition['extension']
   }
   if (config.icon) {
     extensions.push({ url: 'icon', valueString: config.icon });
+  }
+  if (config.followUpSchedule && config.followUpSchedule.length > 0) {
+    extensions.push({ url: 'followUpSchedule', valueString: JSON.stringify(config.followUpSchedule) });
+  }
+  if (config.providerRates && config.providerRates.length > 0) {
+    extensions.push({ url: 'providerRates', valueString: JSON.stringify(config.providerRates) });
   }
 
   return [
@@ -133,6 +185,17 @@ function getCategoryBadgeColor(category: string): string {
     default:
       return 'gray';
   }
+}
+
+// Helper function to get room display name
+function getRoomDisplay(roomValue: string): string {
+  if (roomValue === 'room-1') {
+    return 'Room 1';
+  }
+  if (roomValue === 'room-2') {
+    return 'Room 2';
+  }
+  return roomValue;
 }
 
 export function ServiceCatalogPage(): JSX.Element {
@@ -157,6 +220,11 @@ export function ServiceCatalogPage(): JSX.Element {
       icon: '',
       color: 'blue',
       category: 'other',
+      depositAmount: 250,
+      depositReminders: 4,
+      depositReminderInterval: 24,
+      followUpSchedule: [],
+      providerRates: [],
     },
   });
 
@@ -164,8 +232,9 @@ export function ServiceCatalogPage(): JSX.Element {
     _sort: 'name',
     _count: '100',
   });
-  
+
   const services = servicesResult as ActivityDefinition[] | undefined;
+
   const refresh = useCallback(async () => {
     // Force re-render by modifying state - useSearchResources will refetch
     window.location.reload();
@@ -175,19 +244,22 @@ export function ServiceCatalogPage(): JSX.Element {
     return services ?? [];
   }, [services]);
 
-  const handleEdit = useCallback((service: ActivityDefinition) => {
-    setEditingService(service);
-    const config = parseServiceConfig(service);
-    setFormData({
-      id: service.id ?? '',
-      name: service.name ?? '',
-      title: service.title ?? '',
-      description: service.description,
-      duration: service.timingDuration?.value ?? 30,
-      config,
-    });
-    open();
-  }, [open]);
+  const handleEdit = useCallback(
+    (service: ActivityDefinition) => {
+      setEditingService(service);
+      const config = parseServiceConfig(service);
+      setFormData({
+        id: service.id ?? '',
+        name: service.name ?? '',
+        title: service.title ?? '',
+        description: service.description,
+        duration: service.timingDuration?.value ?? 30,
+        config,
+      });
+      open();
+    },
+    [open]
+  );
 
   const handleCreate = useCallback(() => {
     setEditingService(null);
@@ -209,6 +281,11 @@ export function ServiceCatalogPage(): JSX.Element {
         icon: '',
         color: 'blue',
         category: 'other',
+        depositAmount: 250,
+        depositReminders: 4,
+        depositReminderInterval: 24,
+        followUpSchedule: [],
+        providerRates: [],
       },
     });
     open();
@@ -252,7 +329,7 @@ export function ServiceCatalogPage(): JSX.Element {
         showNotification({ title: 'Success', message: 'Service created', color: 'green' });
       }
       close();
-      refresh();
+      await refresh();
     } catch (err) {
       showNotification({
         title: 'Error',
@@ -262,26 +339,118 @@ export function ServiceCatalogPage(): JSX.Element {
     }
   }, [medplum, editingService, formData, close, refresh]);
 
-  const handleToggleStatus = useCallback(async (service: ActivityDefinition) => {
-    try {
-      await medplum.updateResource<ActivityDefinition>({
-        ...service,
-        status: service.status === 'active' ? 'retired' : 'active',
-      });
-      showNotification({
-        title: 'Success',
-        message: `Service ${service.status === 'active' ? 'deactivated' : 'activated'}`,
-        color: 'green',
-      });
-      refresh();
-    } catch (err) {
-      showNotification({
-        title: 'Error',
-        message: normalizeErrorString(err),
-        color: 'red',
-      });
+  const handleToggleStatus = useCallback(
+    async (service: ActivityDefinition) => {
+      try {
+        await medplum.updateResource<ActivityDefinition>({
+          ...service,
+          status: service.status === 'active' ? 'retired' : 'active',
+        });
+        showNotification({
+          title: 'Success',
+          message: `Service ${service.status === 'active' ? 'deactivated' : 'activated'}`,
+          color: 'green',
+        });
+        await refresh();
+      } catch (err) {
+        showNotification({
+          title: 'Error',
+          message: normalizeErrorString(err),
+          color: 'red',
+        });
+      }
+    },
+    [medplum, refresh]
+  );
+
+  // Render table body content
+  const renderTableBody = (): JSX.Element => {
+    if (loading) {
+      return (
+        <Table.Tr>
+          <Table.Td colSpan={10}>
+            <Text ta="center">Loading...</Text>
+          </Table.Td>
+        </Table.Tr>
+      );
     }
-  }, [medplum, refresh]);
+
+    if (allServices.length === 0) {
+      return (
+        <Table.Tr>
+          <Table.Td colSpan={10}>
+            <Text ta="center" c="dimmed">
+              No services found. Create your first service.
+            </Text>
+          </Table.Td>
+        </Table.Tr>
+      );
+    }
+
+    return (
+      <>
+        {allServices.map((service) => {
+          const config = parseServiceConfig(service);
+          const priceText = config.pricePerUnit
+            ? `$${config.minPrice}-$${config.maxPrice} per ${config.unitType}`
+            : `$${config.minPrice} flat`;
+
+          return (
+            <Table.Tr key={service.id}>
+              <Table.Td>
+                <Group gap="xs">
+                  <div
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: '50%',
+                      backgroundColor: config.color,
+                    }}
+                  />
+                  <Text fw={500}>{service.title}</Text>
+                </Group>
+              </Table.Td>
+              <Table.Td>
+                <Badge color={getCategoryBadgeColor(config.category)}>{config.category}</Badge>
+              </Table.Td>
+              <Table.Td>{service.timingDuration?.value || 30} min</Table.Td>
+              <Table.Td>
+                {config.numbingTime > 0 ? `${config.numbingTime} min` : 'None'}
+              </Table.Td>
+              <Table.Td>{priceText}</Table.Td>
+              <Table.Td>
+                <Badge variant="light">${config.depositAmount}</Badge>
+              </Table.Td>
+              <Table.Td>
+                <Badge variant="light">{config.gfeCategory || 'N/A'}</Badge>
+              </Table.Td>
+              <Table.Td>
+                {getRoomDisplay(config.defaultRoom)}
+                {config.roomMovable && (
+                  <Text size="xs" c="dimmed">
+                    (movable)
+                  </Text>
+                )}
+              </Table.Td>
+              <Table.Td>
+                <Switch
+                  checked={service.status === 'active'}
+                  onChange={() => handleToggleStatus(service)}
+                  size="sm"
+                />
+              </Table.Td>
+              <Table.Td>
+                <Button variant="light" size="xs" onClick={() => handleEdit(service)}>
+                  <IconEdit size={14} />
+                </Button>
+              </Table.Td>
+            </Table.Tr>
+          );
+        })}
+      </>
+    );
+  };
+
 
   return (
     <Stack gap="md" p="md">
@@ -293,8 +462,8 @@ export function ServiceCatalogPage(): JSX.Element {
       </Group>
 
       <Text size="sm" c="dimmed">
-        Manage services available for booking. Configure duration, pricing, room requirements, and
-        GFE categories.
+        Manage services available for booking. Configure duration, pricing, room requirements, GFE categories, and
+        deposit settings.
       </Text>
 
       <Card withBorder>
@@ -306,97 +475,19 @@ export function ServiceCatalogPage(): JSX.Element {
               <Table.Th>Duration</Table.Th>
               <Table.Th>Numbing</Table.Th>
               <Table.Th>Price Range</Table.Th>
+              <Table.Th>Deposit</Table.Th>
               <Table.Th>GFE</Table.Th>
               <Table.Th>Room</Table.Th>
               <Table.Th>Status</Table.Th>
               <Table.Th>Actions</Table.Th>
             </Table.Tr>
           </Table.Thead>
-          <Table.Tbody>
-            {loading ? (
-              <Table.Tr>
-                <Table.Td colSpan={9}>
-                  <Text ta="center">Loading...</Text>
-                </Table.Td>
-              </Table.Tr>
-            ) : allServices.length === 0 ? (
-              <Table.Tr>
-                <Table.Td colSpan={9}>
-                  <Text ta="center" c="dimmed">
-                    No services found. Create your first service.
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            ) : (
-              allServices.map((service) => {
-                const config = parseServiceConfig(service);
-                const priceText = config.pricePerUnit
-                  ? `$${config.minPrice}-$${config.maxPrice} per ${config.unitType}`
-                  : `$${config.minPrice} flat`;
-
-                return (
-                  <Table.Tr key={service.id}>
-                    <Table.Td>
-                      <Group gap="xs">
-                        <div
-                          style={{
-                            width: 12,
-                            height: 12,
-                            borderRadius: '50%',
-                            backgroundColor: config.color,
-                          }}
-                        />
-                        <Text fw={500}>{service.title}</Text>
-                      </Group>
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge color={getCategoryBadgeColor(config.category)}>
-                        {config.category}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>{service.timingDuration?.value ?? 30} min</Table.Td>
-                    <Table.Td>
-                      {config.numbingTime > 0 ? `${config.numbingTime} min` : 'None'}
-                    </Table.Td>
-                    <Table.Td>{priceText}</Table.Td>
-                    <Table.Td>
-                      <Badge variant="light">{config.gfeCategory || 'N/A'}</Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      {config.defaultRoom === 'room-1' ? 'Room 1' : 'Room 2'}
-                      {config.roomMovable && (
-                        <Text size="xs" c="dimmed">
-                          (movable)
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Switch
-                        checked={service.status === 'active'}
-                        onChange={() => handleToggleStatus(service)}
-                        size="sm"
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      <Button variant="light" size="xs" onClick={() => handleEdit(service)}>
-                        <IconEdit size={14} />
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
-                );
-              })
-            )}
-          </Table.Tbody>
+<Table.Tbody>{renderTableBody()}</Table.Tbody>
         </Table>
       </Card>
 
       {/* Edit/Create Modal */}
-      <Modal
-        opened={opened}
-        onClose={close}
-        title={editingService ? 'Edit Service' : 'Create Service'}
-        size="lg"
-      >
+      <Modal opened={opened} onClose={close} title={editingService ? 'Edit Service' : 'Create Service'} size="lg">
         <Stack>
           <TextInput
             label="Service Name"
@@ -425,7 +516,7 @@ export function ServiceCatalogPage(): JSX.Element {
             <NumberInput
               label="Duration (minutes)"
               value={formData.duration}
-              onChange={(val) => setFormData((d) => ({ ...d, duration: Number(val) ?? 30 }))}
+              onChange={(val) => setFormData((d) => ({ ...d, duration: Number(val) || 30 }))}
               min={15}
               max={360}
               step={15}
@@ -438,7 +529,7 @@ export function ServiceCatalogPage(): JSX.Element {
               onChange={(val) =>
                 setFormData((d) => ({
                   ...d,
-                  config: { ...d.config, numbingTime: Number(val) ?? 0 },
+                  config: { ...d.config, numbingTime: Number(val) || 0 },
                 }))
               }
               min={0}
@@ -453,7 +544,7 @@ export function ServiceCatalogPage(): JSX.Element {
             onChange={(val) =>
               setFormData((d) => ({
                 ...d,
-                config: { ...d.config, category: val ?? 'other' },
+                config: { ...d.config, category: val || 'other' },
               }))
             }
             data={SERVICE_CATEGORIES}
@@ -466,7 +557,7 @@ export function ServiceCatalogPage(): JSX.Element {
             onChange={(val) =>
               setFormData((d) => ({
                 ...d,
-                config: { ...d.config, gfeCategory: val ?? '' },
+                config: { ...d.config, gfeCategory: val || '' },
               }))
             }
             data={GFE_CATEGORIES}
@@ -480,7 +571,7 @@ export function ServiceCatalogPage(): JSX.Element {
               onChange={(val) =>
                 setFormData((d) => ({
                   ...d,
-                  config: { ...d.config, defaultRoom: val ?? 'room-1' },
+                  config: { ...d.config, defaultRoom: val || 'room-1' },
                 }))
               }
               data={[
@@ -508,7 +599,7 @@ export function ServiceCatalogPage(): JSX.Element {
               onChange={(val) =>
                 setFormData((d) => ({
                   ...d,
-                  config: { ...d.config, minPrice: Number(val) ?? 0 },
+                  config: { ...d.config, minPrice: Number(val) || 0 },
                 }))
               }
               min={0}
@@ -520,7 +611,7 @@ export function ServiceCatalogPage(): JSX.Element {
               onChange={(val) =>
                 setFormData((d) => ({
                   ...d,
-                  config: { ...d.config, maxPrice: Number(val) ?? 0 },
+                  config: { ...d.config, maxPrice: Number(val) || 0 },
                 }))
               }
               min={0}
@@ -545,7 +636,7 @@ export function ServiceCatalogPage(): JSX.Element {
               onChange={(val) =>
                 setFormData((d) => ({
                   ...d,
-                  config: { ...d.config, unitType: val ?? 'unit' },
+                  config: { ...d.config, unitType: val || 'unit' },
                 }))
               }
               data={UNIT_TYPES}
@@ -564,6 +655,58 @@ export function ServiceCatalogPage(): JSX.Element {
               }))
             }
           />
+
+          <Title order={4} mt="md">
+            Deposit Settings
+          </Title>
+
+          <Group grow>
+            <NumberInput
+              label="Deposit Amount ($)"
+              description="Default deposit for this service"
+              value={formData.config.depositAmount}
+              onChange={(val) =>
+                setFormData((d) => ({
+                  ...d,
+                  config: { ...d.config, depositAmount: Number(val) || 250 },
+                }))
+              }
+              min={0}
+              max={10000}
+              step={25}
+            />
+
+            <NumberInput
+              label="Max Reminders"
+              description="# of deposit reminders (max 4)"
+              value={formData.config.depositReminders}
+              onChange={(val) => {
+                const numVal = Number(val) || 4;
+                setFormData((d) => ({
+                  ...d,
+                  config: { ...d.config, depositReminders: Math.min(numVal, 4) },
+                }));
+              }}
+              min={1}
+              max={4}
+              step={1}
+            />
+
+            <NumberInput
+              label="Reminder Interval (hours)"
+              description="Hours between reminders"
+              value={formData.config.depositReminderInterval}
+              onChange={(val) =>
+                setFormData((d) => ({
+                  ...d,
+                  config: { ...d.config, depositReminderInterval: Number(val) || 24 },
+                }))
+              }
+              min={1}
+              max={72}
+              step={1}
+            />
+          </Group>
 
           <ColorInput
             label="Color"
