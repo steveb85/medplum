@@ -215,6 +215,12 @@ export async function initApp(app: Express, config: MedplumServerConfig): Promis
   apiRouter.get('/robots.txt', (_req, res) => res.type(ContentType.TEXT).send('User-agent: *\nDisallow: /'));
   apiRouter.get('/healthcheck', healthcheckHandler);
   apiRouter.get('/openapi.json', openApiHandler);
+  // Config endpoint for public configuration values (VAPID key, etc)
+  apiRouter.get('/config', (_req, res) => {
+    res.json({
+      vapidPublicKey: config.VAPID_PUBLIC_KEY || '',
+    });
+  });
   apiRouter.use('/.well-known/', wellKnownRouter);
   apiRouter.use('/admin/', adminRouter);
   apiRouter.use('/auth/', authRouter);

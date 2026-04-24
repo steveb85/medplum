@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { showNotification } from '@mantine/notifications';
-import type { MedplumClient } from '@medplum/core';
+import { createReference, type MedplumClient } from '@medplum/core';
+import type { Practitioner } from '@medplum/fhirtypes';
 
 // Local storage keys
 const PUSH_SUBSCRIBED_KEY = 'nursemel-push-subscribed';
@@ -24,9 +25,11 @@ export interface PushSubscriptionData {
  * Check if running as standalone (Home Screen) app
  */
 export function isStandalone(): boolean {
-  return window.matchMedia('(display-mode: standalone)').matches ||
-         // @ts-ignore - Safari property
-         window.navigator?.standalone === true;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    // @ts-ignore - Safari property
+    window.navigator?.standalone === true
+  );
 }
 
 /**
@@ -93,110 +96,90 @@ export function dismissPushPrompt(): void {
 }
 
 /**
+ * Check if install prompt should be shown
+ * (iOS standalone apps need install prompt, non-iOS get native install)
+ */
+export function shouldShowInstallPrompt(): boolean {
+  // Only show on iOS devices that are not in standalone mode
+  return isIOS() && !isStandalone() && !isInstallPromptDismissed();
+}
+
+/**
+ * Check if push prompt should be shown
+ * (Show if push is supported, not already subscribed, and prompt not dismissed)
+ */
+export function shouldShowPushPrompt(): boolean {
+  return isPushSupported() && !hasPushSubscription() && !isPushPromptDismissed();
+}
+
+/**
  * Reset all prompts (for testing)
  */
 export function resetPrompts(): void {
   localStorage.removeItem(PUSH_SUBSCRIBED_KEY);
   localStorage.removeItem(INSTALL_PROMPT_DISMISSED_KEY);
   localStorage.removeItem(PUSH_PROMPT_DISMISSED_KEY);
+  localStorage.removeItem(PUSH_SUBSCRIPTION_ID_KEY);
+  localStorage.removeItem(PUSH_SUBSCRIPTION_DATA_KEY);
 }
 
 /**
- * Get push subscription data from localStorage
- * Returns null if not subscribed
+ * Request notification permission
  */
-export function getPushSubscriptionData(): PushSubscriptionData | null {
-  const data = localStorage.getItem(PUSH_SUBSCRIPTION_DATA_KEY);
-  if (!data) return null;
-  try {
-    return JSON.parse(data) as PushSubscriptionData;
-  } catch {
-    return null;
+export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  if (!('Notification' in window)) {
+    return 'denied';
   }
+  return Notification.requestPermission();
 }
 
 /**
- * Register service worker
+ * Check if notifications are allowed
  */
-export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (!('serviceWorker' in navigator)) {
-    console.log('[Push] Service workers not supported');
-    return null;
-  }
-
-  try {
-    const registration = await navigator.serviceWorker.register('/service-worker.js');
-    console.log('[Push] Service worker registered:', registration);
-    return registration;
-  } catch (err) {
-    console.error('[Push] Service worker registration failed:', err);
-    return null;
-  }
+export function areNotificationsAllowed(): boolean {
+  return Notification.permission === 'granted';
 }
 
 /**
  * Subscribe to push notifications
  */
-export async function subscribeToPush(medplum: MedplumClient): Promise<boolean> {
+export async function subscribeToPush(
+  medplum: MedplumClient,
+  vapidPublicKey: string,
+  profile: Practitioner | undefined
+): Promise<boolean> {
+  if (!isPushSupported()) {
+    console.log('[Push] Push notifications not supported');
+    return false;
+  }
+
   try {
-    // Check permission
-    const permission = await Notification.requestPermission();
+    // Request permission first
+    const permission = await requestNotificationPermission();
     if (permission !== 'granted') {
-      showNotification({
-        title: 'Permission Required',
-        message: 'Please allow notifications to receive alerts',
-        color: 'yellow',
-      });
+      console.log('[Push] Notification permission denied');
       return false;
     }
 
-    // Register service worker
-    const registration = await registerServiceWorker();
-    if (!registration) {
-      showNotification({
-        title: 'Error',
-        message: 'Push notifications not supported on this device',
-        color: 'red',
-      });
-      return false;
-    }
+    // Get service worker registration
+    const registration = await navigator.serviceWorker.ready;
 
-    // Check for existing subscription
-    let subscription = await registration.pushManager.getSubscription();
-
-    if (!subscription) {
-      // Get VAPID public key from environment
-      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-
-      // Debug: Log all env vars
-      console.log('[Push] Env vars available:', Object.keys(import.meta.env).filter(k => k.includes('VAPID') || k.includes('MEDPLUM')));
-      console.log('[Push] VAPID key value:', vapidPublicKey ? 'Present (first 20 chars: ' + vapidPublicKey.substring(0, 20) + '...)' : 'MISSING');
-
-      if (!vapidPublicKey) {
-        console.error('[Push] VAPID public key not configured');
-        console.error('[Push] Please set VITE_VAPID_PUBLIC_KEY in .env file');
-        showNotification({
-          title: 'Configuration Error',
-          message: 'Push notifications not configured - VAPID key missing',
-          color: 'red',
-        });
-        return false;
-      }
-
-  // Subscribe
-    subscription = await registration.pushManager.subscribe({
+    // Subscribe to push
+    const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as unknown as ArrayBuffer,
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
-    }
 
-    // Send subscription to server
-    await sendSubscriptionToServer(medplum, subscription);
+    console.log('[Push] Subscription created:', subscription);
 
+    // Send subscription to server with practitioner profile
+    await sendSubscriptionToServer(medplum, subscription, profile);
+
+    // Mark as subscribed
     markPushSubscribed();
 
     showNotification({
-      title: 'Notifications Enabled',
+      title: 'Push Notifications Enabled',
       message: 'You will receive push notifications for appointments and treatments',
       color: 'green',
     });
@@ -215,11 +198,13 @@ export async function subscribeToPush(medplum: MedplumClient): Promise<boolean> 
 
 /**
  * Send subscription to server
- * Creates a Medplum Subscription resource to store the push subscription
+ * Creates a Medplum Communication resource to store the push subscription
+ * We use Communication instead of Subscription because Bots can query Communications
  */
 async function sendSubscriptionToServer(
   medplum: MedplumClient,
-  subscription: PushSubscription
+  subscription: PushSubscription,
+  profile: Practitioner | undefined
 ): Promise<void> {
   console.log('[Push] Storing subscription:', subscription);
 
@@ -228,39 +213,15 @@ async function sendSubscriptionToServer(
     const existingSubId = localStorage.getItem(PUSH_SUBSCRIPTION_ID_KEY);
     if (existingSubId) {
       try {
-        await medplum.deleteResource('Subscription', existingSubId);
-        console.log('[Push] Deleted old subscription:', existingSubId);
+        await medplum.deleteResource('Communication', existingSubId);
+        console.log('[Push] Deleted old push registration:', existingSubId);
       } catch (err) {
-        // Ignore errors - subscription may not exist
-        console.log('[Push] Could not delete old subscription:', err);
+        // Ignore errors - may not exist
+        console.log('[Push] Could not delete old push registration:', err);
       }
     }
 
-    // Create new Subscription resource to store push data
-    // The bot will read this and send push notifications
-    const pushSubscription: any = {
-      resourceType: 'Subscription',
-      status: 'active',
-      reason: 'Push notifications',
-      criteria: 'Communication?recipient=me',
-      channel: {
-        type: 'websocket',
-        endpoint: subscription.endpoint,
-        payload: JSON.stringify({
-          endpoint: subscription.endpoint,
-          keys: subscription.toJSON().keys,
-        }),
-      },
-    };
-
-    const created = await medplum.createResource(pushSubscription);
-    console.log('[Push] Subscription stored:', created.id);
-
-    // Store the subscription ID so we can clean it up later
-    localStorage.setItem(PUSH_SUBSCRIPTION_ID_KEY, created.id as string);
-
-    // Store the push subscription data for use when creating notifications
-    // (We can't search for Subscriptions due to permissions, so store locally)
+    // Extract subscription data
     const subJson = subscription.toJSON();
     const pushData: PushSubscriptionData = {
       endpoint: subscription.endpoint,
@@ -269,6 +230,46 @@ async function sendSubscriptionToServer(
         auth: subJson.keys?.auth || '',
       },
     };
+
+    // Create a Communication resource to store push subscription
+    // This acts as a "push registration" that the Bot can query
+    const pushRegistration: any = {
+      resourceType: 'Communication',
+      status: 'completed',
+      category: [
+        {
+          coding: [
+            {
+              system: 'http://melissaknudson.com/notification-type',
+              code: 'push-registration',
+              display: 'Push Notification Registration',
+            },
+          ],
+        },
+      ],
+      priority: 'routine',
+      sent: new Date().toISOString(),
+      sender: profile ? createReference(profile) : undefined,
+      payload: [
+        {
+          contentString: JSON.stringify(pushData),
+        },
+      ],
+      extension: [
+        {
+          url: 'http://melissaknudson.com/fhir/StructureDefinition/notification-category',
+          valueString: 'push-registration',
+        },
+      ],
+    };
+
+    const created = await medplum.createResource(pushRegistration);
+    console.log('[Push] Push registration stored:', created.id);
+
+    // Store the registration ID so we can clean it up later
+    localStorage.setItem(PUSH_SUBSCRIPTION_ID_KEY, created.id as string);
+
+    // Also store locally for non-broadcast notifications
     localStorage.setItem(PUSH_SUBSCRIPTION_DATA_KEY, JSON.stringify(pushData));
     console.log('[Push] Push subscription data stored in localStorage');
   } catch (err) {
@@ -289,23 +290,24 @@ export async function unsubscribeFromPush(medplum: MedplumClient): Promise<boole
       await subscription.unsubscribe();
     }
 
-    // Delete server-side subscription if we have the ID
+    // Delete server-side registration if we have the ID
     const existingSubId = localStorage.getItem(PUSH_SUBSCRIPTION_ID_KEY);
     if (existingSubId) {
       try {
-        await medplum.deleteResource('Subscription', existingSubId);
-        console.log('[Push] Deleted server subscription:', existingSubId);
+        await medplum.deleteResource('Communication', existingSubId);
+        console.log('[Push] Deleted server registration:', existingSubId);
       } catch (err) {
-        console.log('[Push] Could not delete server subscription:', err);
+        console.log('[Push] Could not delete server registration:', err);
       }
     }
 
+    // Clear local storage
     localStorage.removeItem(PUSH_SUBSCRIBED_KEY);
     localStorage.removeItem(PUSH_SUBSCRIPTION_ID_KEY);
     localStorage.removeItem(PUSH_SUBSCRIPTION_DATA_KEY);
 
     showNotification({
-      title: 'Notifications Disabled',
+      title: 'Push Notifications Disabled',
       message: 'You will no longer receive push notifications',
       color: 'blue',
     });
@@ -318,9 +320,42 @@ export async function unsubscribeFromPush(medplum: MedplumClient): Promise<boole
 }
 
 /**
- * Convert base64 to Uint8Array for VAPID key
+ * Get VAPID public key from server
  */
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+export async function getVapidPublicKey(medplum: MedplumClient): Promise<string | null> {
+  try {
+    // Get from /api/config endpoint
+    const response = await medplum.get('/api/config');
+    if (response && (response as any).vapidPublicKey) {
+      return (response as any).vapidPublicKey;
+    }
+    return null;
+  } catch (err) {
+    console.error('[Push] Failed to get VAPID public key:', err);
+    return null;
+  }
+}
+
+/**
+ * Get push subscription data from localStorage
+ */
+export function getPushSubscriptionData(): PushSubscriptionData | null {
+  const data = localStorage.getItem(PUSH_SUBSCRIPTION_DATA_KEY);
+  if (!data) {
+    return null;
+  }
+  try {
+    return JSON.parse(data) as PushSubscriptionData;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert URL-safe base64 to Uint8Array
+ * Needed for the Push API
+ */
+function urlBase64ToUint8Array(base64String: string): BufferSource {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
 
@@ -330,55 +365,33 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);
   }
-
-  return outputArray;
+  return outputArray as BufferSource;
 }
 
 /**
- * Check if should show install prompt
+ * Initialize push notifications
+ * Call this when the app loads to set up the service worker
  */
-export function shouldShowInstallPrompt(): boolean {
-  // Only on mobile iOS
-  if (!isMobile() || !isIOS()) {
-    return false;
-  }
-
-  // Not already standalone
-  if (isStandalone()) {
-    return false;
-  }
-
-  // Not already dismissed
-  if (isInstallPromptDismissed()) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Check if should show push prompt
- */
-export function shouldShowPushPrompt(): boolean {
-  // Only if push is supported
+export async function initializePush(
+  medplum: MedplumClient,
+  vapidPublicKey: string,
+  profile: Practitioner | undefined
+): Promise<void> {
   if (!isPushSupported()) {
-    return false;
+    console.log('[Push] Push notifications not supported');
+    return;
   }
 
-  // On mobile iOS, must be standalone
-  if (isMobile() && isIOS() && !isStandalone()) {
-    return false;
-  }
+  // Check if already subscribed
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
 
-  // Not already subscribed
-  if (hasPushSubscription()) {
-    return false;
+  if (subscription) {
+    console.log('[Push] Already subscribed');
+    // Update server-side registration with practitioner profile
+    await sendSubscriptionToServer(medplum, subscription, profile);
+    markPushSubscribed();
+  } else {
+    console.log('[Push] Not subscribed yet');
   }
-
-  // Not already dismissed
-  if (isPushPromptDismissed()) {
-    return false;
-  }
-
-  return true;
 }

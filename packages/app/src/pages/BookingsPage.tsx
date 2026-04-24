@@ -1,64 +1,96 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { Title, Paper, Stack, Tabs, Table, Badge, Group, ActionIcon, Text, Loader } from '@mantine/core';
-import { getReferenceString } from '@medplum/core';
+import {
+  Title,
+  Paper,
+  Stack,
+  Tabs,
+  Table,
+  Badge,
+  Group,
+  ActionIcon,
+  Text,
+  Loader,
+  Tooltip,
+  Button,
+  Menu,
+  Modal,
+  Textarea,
+} from '@mantine/core';
 import { useMedplum } from '@medplum/react';
-import type { Procedure } from '@medplum/fhirtypes';
+import type { Appointment, Patient, Practitioner } from '@medplum/fhirtypes';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { IconEye } from '@tabler/icons-react';
+import { IconEye, IconCheck, IconX, IconDots, IconUserCheck, IconUserX, IconCalendarOff } from '@tabler/icons-react';
+import { showNotification } from '@mantine/notifications';
 import type { JSX } from 'react';
 import dayjs from 'dayjs';
-import { getTreatmentPageRoute } from '../treatments/shared/getTreatmentType';
+import { getMedSpaRole } from '../auth/role';
+import { createNotification } from '../notifications/utils';
 
-// Status configuration matching TreatmentsTab
+// Appointment status configuration
 const statusConfig: Record<string, { color: string; label: string }> = {
-  preparation: { color: 'orange', label: 'Scheduled' },
-  'in-progress': { color: 'blue', label: 'In Progress' },
-  completed: { color: 'green', label: 'Completed' },
+  pending: { color: 'yellow', label: 'Pending' },
+  booked: { color: 'blue', label: 'Booked' },
+  arrived: { color: 'teal', label: 'Arrived' },
+  fulfilled: { color: 'green', label: 'Completed' },
   cancelled: { color: 'red', label: 'Cancelled' },
+  noshow: { color: 'gray', label: 'No Show' },
 };
 
-const statusOrder = {
-  preparation: 0,
-  'in-progress': 1,
-  completed: 2,
-  cancelled: 3,
+// Status transition rules
+const allowedTransitions: Record<string, string[]> = {
+  pending: ['booked', 'cancelled'],
+  booked: ['arrived', 'cancelled', 'noshow'],
+  arrived: ['fulfilled', 'cancelled', 'noshow'],
+  fulfilled: [],
+  cancelled: [],
+  noshow: [],
 };
 
 interface BookingRow {
-  procedure: Procedure;
+  appointment: Appointment;
   patientName: string;
   patientId: string;
+  services: string[];
 }
 
 export function BookingsPage(): JSX.Element {
   const medplum = useMedplum();
-  const [procedures, setProcedures] = useState<BookingRow[]>([]);
+  const role = getMedSpaRole(medplum);
+  const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>('upcoming');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  // Load all treatments
-  const loadTreatments = useCallback(async () => {
+  // Modal state for cancellation reason
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelBooking, setCancelBooking] = useState<BookingRow | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+
+  // Load all appointments
+  const loadBookings = useCallback(async () => {
     try {
       setLoading(true);
 
-      // Search for ALL aesthetic treatment procedures (practice-wide)
-      const proceduresBundle = await medplum.search('Procedure', {
-        'code:has': 'http://melissaknudson.com/treatments|', // Any code in our system
+      // Search for ALL appointments (practice-wide)
+      const appointmentsBundle = await medplum.search('Appointment', {
         _sort: '-date',
         _count: '100',
       });
 
-      const procedureResources = (proceduresBundle.entry || []).map(
-        (e) => e.resource as Procedure
+      const appointmentResources = (appointmentsBundle.entry || []).map(
+        (e) => e.resource as Appointment
       );
 
-      // Extract patient info and build rows
+      // Build rows with patient info and services
       const rows: BookingRow[] = await Promise.all(
-        procedureResources.map(async (procedure) => {
+        appointmentResources.map(async (appointment) => {
           // Get patient reference
-          const patientRef = procedure.subject?.reference;
+          const patientParticipant = appointment.participant?.find(
+            (p) => p.actor?.reference?.startsWith('Patient/')
+          );
+          const patientRef = patientParticipant?.actor?.reference;
           let patientName = 'Unknown Patient';
           let patientId = '';
 
@@ -77,127 +109,252 @@ export function BookingsPage(): JSX.Element {
             }
           }
 
-          return { procedure, patientName, patientId };
+          // Get services from appointment
+          const services: string[] = [];
+          if (appointment.serviceType) {
+            for (const service of appointment.serviceType) {
+              if (service.text) {
+                services.push(service.text);
+              }
+            }
+          }
+
+          return { appointment, patientName, patientId, services };
         })
       );
 
-      // Sort by status then date
+      // Sort by start date (newest first for past, soonest first for upcoming)
       rows.sort((a, b) => {
-        const statusDiff =
-          (statusOrder[a.procedure.status as keyof typeof statusOrder] ?? 4) -
-          (statusOrder[b.procedure.status as keyof typeof statusOrder] ?? 4);
-        if (statusDiff !== 0) return statusDiff;
-
-        // Within same status, sort by date descending
-        const getDate = (p: Procedure) => {
-          const scheduledExt = p.extension?.find(
-            (e) =>
-              e.url ===
-              'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
-          )?.valueDateTime;
-          return new Date(scheduledExt || p.performedDateTime || 0).getTime();
-        };
-        return getDate(b.procedure) - getDate(a.procedure);
+        const dateA = new Date(a.appointment.start || 0).getTime();
+        const dateB = new Date(b.appointment.start || 0).getTime();
+        return dateB - dateA;
       });
 
-      setProcedures(rows);
+      setBookings(rows);
     } catch (err) {
-      console.error('Error loading treatments:', err);
+      console.error('Error loading bookings:', err);
+      showNotification({
+        color: 'red',
+        title: 'Error',
+        message: 'Failed to load bookings',
+      });
     } finally {
       setLoading(false);
     }
   }, [medplum]);
 
   useEffect(() => {
-    loadTreatments();
-  }, [loadTreatments]);
+    loadBookings();
+  }, [loadBookings]);
 
-  // Filter procedures based on active tab
-  const filteredProcedures = useMemo(() => {
+  // Update appointment status
+  const updateStatus = useCallback(async (row: BookingRow, newStatus: string, reason?: string) => {
+    try {
+      setUpdatingId(row.appointment.id || null);
+
+      const updatedAppointment: Appointment = {
+        ...row.appointment,
+        status: newStatus as Appointment['status'],
+      };
+
+      // Add cancellation reason extension if cancelled
+      if (newStatus === 'cancelled' && reason) {
+        updatedAppointment.extension = [
+          ...(row.appointment.extension || []),
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/cancellation-reason',
+            valueString: reason,
+          },
+        ];
+      }
+
+      // Add status change audit
+      const statusChangeExt = {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit',
+        extension: [
+          { url: 'from', valueString: row.appointment.status || 'unknown' },
+          { url: 'to', valueString: newStatus },
+          { url: 'changedAt', valueDateTime: new Date().toISOString() },
+          { url: 'changedBy', valueReference: { reference: `Practitioner/${medplum.getProfile()?.id}` } },
+        ],
+      };
+
+      updatedAppointment.extension = [
+        ...(updatedAppointment.extension || []),
+        statusChangeExt,
+      ];
+
+      await medplum.updateResource(updatedAppointment);
+
+      // Send notification to providers
+      if (newStatus === 'booked' || newStatus === 'cancelled') {
+        try {
+          // Get patient
+          const patient = row.patientId ? await medplum.readResource('Patient', row.patientId) : undefined;
+
+          // Get providers from appointment participants
+          const practitionerParticipants = row.appointment.participant?.filter(
+            (p) => p.actor?.reference?.startsWith('Practitioner/')
+          ) || [];
+
+          const providers: Practitioner[] = [];
+          for (const pp of practitionerParticipants) {
+            const pid = pp.actor?.reference?.split('/')[1];
+            if (pid) {
+              try {
+                const provider = await medplum.readResource('Practitioner', pid);
+                providers.push(provider);
+              } catch {
+                // Skip if can't read
+              }
+            }
+          }
+
+          const mainProvider = providers[0];
+          const assistant = providers[1];
+
+          await createNotification(medplum, newStatus === 'booked' ? 'appointment-approved' : 'appointment-cancelled', {
+            patient,
+            appointment: updatedAppointment,
+            provider: mainProvider,
+            assistant,
+            date: updatedAppointment.start,
+            time: dayjs(updatedAppointment.start).format('h:mm A'),
+            serviceType: row.services.join(', '),
+          }, medplum.getProfile() as Practitioner | undefined);
+        } catch (notifyErr) {
+          console.error('Error sending notification:', notifyErr);
+        }
+      }
+
+      showNotification({
+        color: 'green',
+        title: 'Success',
+        message: `Booking ${newStatus === 'booked' ? 'approved' : `marked as ${statusConfig[newStatus]?.label || newStatus}`}`,
+      });
+
+      // Refresh the list
+      await loadBookings();
+    } catch (err) {
+      console.error('Error updating booking:', err);
+      showNotification({
+        color: 'red',
+        title: 'Error',
+        message: 'Failed to update booking status',
+      });
+    } finally {
+      setUpdatingId(null);
+    }
+  }, [medplum, loadBookings]);
+
+  // Handle approve booking
+  const handleApprove = useCallback((row: BookingRow) => {
+    updateStatus(row, 'booked');
+  }, [updateStatus]);
+
+  // Handle cancel with reason
+  const handleCancel = useCallback((row: BookingRow) => {
+    setCancelBooking(row);
+    setCancelReason('');
+    setCancelModalOpen(true);
+  }, []);
+
+  // Confirm cancellation
+  const confirmCancel = useCallback(() => {
+    if (cancelBooking) {
+      updateStatus(cancelBooking, 'cancelled', cancelReason || undefined);
+      setCancelModalOpen(false);
+      setCancelBooking(null);
+    }
+  }, [cancelBooking, cancelReason, updateStatus]);
+
+  // Handle mark as arrived
+  const handleArrived = useCallback((row: BookingRow) => {
+    updateStatus(row, 'arrived');
+  }, [updateStatus]);
+
+  // Handle mark as no-show
+  const handleNoShow = useCallback((row: BookingRow) => {
+    updateStatus(row, 'noshow');
+  }, [updateStatus]);
+
+  // Filter bookings based on active tab
+  const filteredBookings = useMemo(() => {
     const now = dayjs();
 
     switch (activeTab) {
+      case 'pending':
+        return bookings.filter((row) => row.appointment.status === 'pending');
       case 'upcoming':
-        return procedures.filter((row) => {
-          const scheduledExt = row.procedure.extension?.find(
-            (e) =>
-              e.url ===
-              'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
-          )?.valueDateTime;
-          const date = dayjs(scheduledExt || row.procedure.performedDateTime);
-          return date.isAfter(now) && date.isBefore(now.add(7, 'day'));
+        return bookings.filter((row) => {
+          const date = dayjs(row.appointment.start);
+          const status = row.appointment.status;
+          return (date.isAfter(now) || date.isSame(now, 'day')) &&
+                 status !== 'cancelled' &&
+                 status !== 'fulfilled' &&
+                 status !== 'noshow';
         });
       case 'past':
-        return procedures.filter((row) => {
-          const scheduledExt = row.procedure.extension?.find(
-            (e) =>
-              e.url ===
-              'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
-          )?.valueDateTime;
-          const date = dayjs(scheduledExt || row.procedure.performedDateTime);
-          return date.isBefore(now);
+        return bookings.filter((row) => {
+          const date = dayjs(row.appointment.start);
+          return date.isBefore(now, 'day') ||
+                 row.appointment.status === 'fulfilled' ||
+                 row.appointment.status === 'cancelled' ||
+                 row.appointment.status === 'noshow';
         });
       case 'all':
       default:
-        return procedures;
+        return bookings;
     }
-  }, [procedures, activeTab]);
+  }, [bookings, activeTab]);
 
-  // Format date from procedure
-  const formatDate = (procedure: Procedure): string => {
-    const scheduledExt = procedure.extension?.find(
-      (e) =>
-        e.url ===
-        'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
-    )?.valueDateTime;
-    const dateStr = scheduledExt || procedure.performedDateTime;
-    if (!dateStr) return 'Not scheduled';
-    return dayjs(dateStr).format('MMM D, YYYY');
+  // Format date from appointment
+  const formatDate = (appointment: Appointment): string => {
+    if (!appointment.start) return 'Not scheduled';
+    return dayjs(appointment.start).format('MMM D, YYYY');
   };
 
-  // Format time from procedure
-  const formatTime = (procedure: Procedure): string => {
-    const scheduledExt = procedure.extension?.find(
-      (e) =>
-        e.url ===
-        'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
-    )?.valueDateTime;
-    if (!scheduledExt) return '';
-    return dayjs(scheduledExt).format('h:mm A');
+  // Format time from appointment
+  const formatTime = (appointment: Appointment): string => {
+    if (!appointment.start) return '';
+    return dayjs(appointment.start).format('h:mm A');
   };
 
-  // Get service name
-  const getServiceName = (procedure: Procedure): string => {
-    return (
-      procedure.code?.text ||
-      procedure.code?.coding?.[0]?.display ||
-      'Unknown Service'
-    );
+  // Get duration
+  const getDuration = (appointment: Appointment): string => {
+    if (!appointment.start || !appointment.end) return '-';
+    const start = dayjs(appointment.start);
+    const end = dayjs(appointment.end);
+    const minutes = end.diff(start, 'minutes');
+    if (minutes < 60) {
+      return `${minutes} min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
   };
 
-  // Get areas treated
-  const getAreas = (procedure: Procedure): string => {
-    const areasExt = procedure.extension?.find(
-      (e) =>
-        e.url === 'http://melissaknudson.com/fhir/StructureDefinition/treatment-areas'
+  // Get room from extension
+  const getRoom = (appointment: Appointment): string => {
+    const roomExt = appointment.extension?.find(
+      (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
     )?.valueString;
-    return areasExt || '-';
+    return roomExt === 'room-1' ? 'Room 1' : roomExt === 'room-2' ? 'Room 2' : '-';
   };
 
-  // Get units used
-  const getUnits = (procedure: Procedure): string => {
-    const unitsExt = procedure.extension?.find(
-      (e) =>
-        e.url === 'http://melissaknudson.com/fhir/StructureDefinition/units-used'
-    )?.valueString;
-    return unitsExt || '-';
+  // Get provider names
+  const getProviders = (appointment: Appointment): string => {
+    const providers = appointment.participant
+      ?.filter((p) => p.actor?.reference?.startsWith('Practitioner/'))
+      .map((p) => p.actor?.display || 'Provider')
+      .slice(0, 2);
+    return providers?.join(', ') || '-';
   };
 
-  // Handle view treatment - routes to appropriate treatment page based on service type
-  const handleViewTreatment = (row: BookingRow) => {
-    if (row.patientId && row.procedure.id) {
-      const route = getTreatmentPageRoute(row.patientId, row.procedure.id, row.procedure);
-      window.location.href = route;
+  // Handle view appointment
+  const handleViewAppointment = (row: BookingRow) => {
+    if (row.appointment.id) {
+      window.location.href = `/calendar?appointment=${row.appointment.id}`;
     }
   };
 
@@ -208,6 +365,19 @@ export function BookingsPage(): JSX.Element {
     }
   };
 
+  // Get available actions for a booking
+  const getAvailableActions = (row: BookingRow) => {
+    const status = row.appointment.status || 'pending';
+    const transitions = allowedTransitions[status] || [];
+
+    return {
+      canApprove: transitions.includes('booked'),
+      canArrive: transitions.includes('arrived'),
+      canNoShow: transitions.includes('noshow'),
+      canCancel: transitions.includes('cancelled'),
+    };
+  };
+
   return (
     <Stack gap="md" p="md">
       <Title order={3}>Bookings</Title>
@@ -215,42 +385,37 @@ export function BookingsPage(): JSX.Element {
       <Paper withBorder p="md">
         <Tabs value={activeTab} onChange={(v) => setActiveTab(v || 'all')}>
           <Tabs.List>
-            <Tabs.Tab value="all">All ({procedures.length})</Tabs.Tab>
+            <Tabs.Tab value="all">
+              All ({bookings.length})
+            </Tabs.Tab>
+            <Tabs.Tab value="pending">
+              Pending Approval ({bookings.filter((row) => row.appointment.status === 'pending').length})
+            </Tabs.Tab>
             <Tabs.Tab value="upcoming">
-              Upcoming (
-              {procedures.filter((row) => {
-                const scheduledExt = row.procedure.extension?.find(
-                  (e) =>
-                    e.url ===
-                    'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
-                )?.valueDateTime;
-                const date = dayjs(
-                  scheduledExt || row.procedure.performedDateTime
-                );
-                return (
-                  date.isAfter(dayjs()) &&
-                  date.isBefore(dayjs().add(7, 'day'))
-                );
-              }).length}
-              )
+              Upcoming ({bookings.filter((row) => {
+                const date = dayjs(row.appointment.start);
+                const status = row.appointment.status;
+                return (date.isAfter(dayjs()) || date.isSame(dayjs(), 'day')) &&
+                       status !== 'cancelled' &&
+                       status !== 'fulfilled' &&
+                       status !== 'noshow';
+              }).length})
             </Tabs.Tab>
             <Tabs.Tab value="past">
-              Past (
-              {procedures.filter((row) => {
-                const scheduledExt = row.procedure.extension?.find(
-                  (e) =>
-                    e.url ===
-                    'http://melissaknudson.com/fhir/StructureDefinition/scheduled-datetime'
-                )?.valueDateTime;
-                return dayjs(
-                  scheduledExt || row.procedure.performedDateTime
-                ).isBefore(dayjs());
-              }).length}
-              )
+              Past ({bookings.filter((row) => {
+                const date = dayjs(row.appointment.start);
+                return date.isBefore(dayjs(), 'day') ||
+                       row.appointment.status === 'fulfilled' ||
+                       row.appointment.status === 'cancelled' ||
+                       row.appointment.status === 'noshow';
+              }).length})
             </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="all" pt="md">
+            {renderTable()}
+          </Tabs.Panel>
+          <Tabs.Panel value="pending" pt="md">
             {renderTable()}
           </Tabs.Panel>
           <Tabs.Panel value="upcoming" pt="md">
@@ -261,6 +426,34 @@ export function BookingsPage(): JSX.Element {
           </Tabs.Panel>
         </Tabs>
       </Paper>
+
+      {/* Cancellation Modal */}
+      <Modal
+        opened={cancelModalOpen}
+        onClose={() => setCancelModalOpen(false)}
+        title="Cancel Booking"
+        size="sm"
+      >
+        <Stack>
+          <Text size="sm" c="dimmed">
+            Please provide a reason for cancelling this booking:
+          </Text>
+          <Textarea
+            placeholder="Cancellation reason..."
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.currentTarget.value)}
+            minRows={3}
+          />
+          <Group justify="flex-end">
+            <Button variant="light" onClick={() => setCancelModalOpen(false)}>
+              Abort
+            </Button>
+            <Button color="red" onClick={confirmCancel}>
+              Cancel Booking
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 
@@ -273,10 +466,10 @@ export function BookingsPage(): JSX.Element {
       );
     }
 
-    if (filteredProcedures.length === 0) {
+    if (filteredBookings.length === 0) {
       return (
         <Text c="dimmed" ta="center" p="xl">
-          No treatments found
+          No bookings found
         </Text>
       );
     }
@@ -286,63 +479,138 @@ export function BookingsPage(): JSX.Element {
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Patient</Table.Th>
-            <Table.Th>Service</Table.Th>
+            <Table.Th>Services</Table.Th>
             <Table.Th>Date</Table.Th>
             <Table.Th>Time</Table.Th>
-            <Table.Th>Areas</Table.Th>
-            <Table.Th>Units</Table.Th>
-            <Table.Th>Actions</Table.Th>
+            <Table.Th>Duration</Table.Th>
+            <Table.Th>Room</Table.Th>
+            <Table.Th>Providers</Table.Th>
             <Table.Th>Status</Table.Th>
+            <Table.Th>Actions</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {filteredProcedures.map((row) => (
-            <Table.Tr key={row.procedure.id}>
-              <Table.Td>
-                {row.patientId ? (
-                  <Text
-                    component="a"
-                    href={`/Patient/${row.patientId}`}
-                    c="blue"
-                    style={{ cursor: 'pointer', textDecoration: 'none' }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handlePatientClick(row.patientId);
-                    }}
+          {filteredBookings.map((row) => {
+            const actions = getAvailableActions(row);
+            const isUpdating = updatingId === row.appointment.id;
+
+            return (
+              <Table.Tr key={row.appointment.id}>
+                <Table.Td>
+                  {row.patientId ? (
+                    <Text
+                      component="a"
+                      href={`/Patient/${row.patientId}`}
+                      c="blue"
+                      style={{ cursor: 'pointer', textDecoration: 'none' }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handlePatientClick(row.patientId);
+                      }}
+                    >
+                      {row.patientName}
+                    </Text>
+                  ) : (
+                    row.patientName
+                  )}
+                </Table.Td>
+                <Table.Td>
+                  <Tooltip label={row.services.join(', ')}>
+                    <Text size="sm" lineClamp={1} style={{ maxWidth: 200 }}>
+                      {row.services.join(', ') || 'Unknown'}
+                    </Text>
+                  </Tooltip>
+                </Table.Td>
+                <Table.Td>{formatDate(row.appointment)}</Table.Td>
+                <Table.Td>{formatTime(row.appointment)}</Table.Td>
+                <Table.Td>{getDuration(row.appointment)}</Table.Td>
+                <Table.Td>{getRoom(row.appointment)}</Table.Td>
+                <Table.Td>{getProviders(row.appointment)}</Table.Td>
+                <Table.Td>
+                  <Badge
+                    color={
+                      statusConfig[row.appointment.status as keyof typeof statusConfig]
+                        ?.color || 'gray'
+                    }
                   >
-                    {row.patientName}
-                  </Text>
-                ) : (
-                  row.patientName
-                )}
-              </Table.Td>
-              <Table.Td>{getServiceName(row.procedure)}</Table.Td>
-              <Table.Td>{formatDate(row.procedure)}</Table.Td>
-              <Table.Td>{formatTime(row.procedure)}</Table.Td>
-              <Table.Td>{getAreas(row.procedure)}</Table.Td>
-              <Table.Td>{getUnits(row.procedure)}</Table.Td>
-              <Table.Td>
-                <ActionIcon
-                  variant="subtle"
-                  onClick={() => handleViewTreatment(row)}
-                  title="View treatment"
-                >
-                  <IconEye size={18} />
-                </ActionIcon>
-              </Table.Td>
-              <Table.Td>
-                <Badge
-                  color={
-                    statusConfig[row.procedure.status as keyof typeof statusConfig]
-                      ?.color || 'gray'
-                  }
-                >
-                  {statusConfig[row.procedure.status as keyof typeof statusConfig]
-                    ?.label || row.procedure.status}
-                </Badge>
-              </Table.Td>
-            </Table.Tr>
-          ))}
+                    {statusConfig[row.appointment.status as keyof typeof statusConfig]
+                      ?.label || row.appointment.status}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>
+                  <Group gap="xs">
+                    {/* Approve Button - only for pending */}
+                    {actions.canApprove && (
+                      <Tooltip label="Approve booking">
+                        <Button
+                          size="xs"
+                          color="green"
+                          loading={isUpdating}
+                          onClick={() => handleApprove(row)}
+                          leftSection={<IconCheck size={14} />}
+                        >
+                          Approve
+                        </Button>
+                      </Tooltip>
+                    )}
+
+                    {/* Action Menu */}
+                    {(actions.canArrive || actions.canNoShow || actions.canCancel) && (
+                      <Menu position="bottom-end" withArrow>
+                        <Menu.Target>
+                          <ActionIcon
+                            variant="light"
+                            loading={isUpdating}
+                            disabled={isUpdating}
+                          >
+                            <IconDots size={18} />
+                          </ActionIcon>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                          {actions.canArrive && (
+                            <Menu.Item
+                              leftSection={<IconUserCheck size={14} />}
+                              onClick={() => handleArrived(row)}
+                            >
+                              Mark as Arrived
+                            </Menu.Item>
+                          )}
+                          {actions.canNoShow && (
+                            <Menu.Item
+                              leftSection={<IconUserX size={14} />}
+                              color="orange"
+                              onClick={() => handleNoShow(row)}
+                            >
+                              Mark as No-Show
+                            </Menu.Item>
+                          )}
+                          {actions.canCancel && (
+                            <Menu.Item
+                              leftSection={<IconCalendarOff size={14} />}
+                              color="red"
+                              onClick={() => handleCancel(row)}
+                            >
+                              Cancel Booking
+                            </Menu.Item>
+                          )}
+                        </Menu.Dropdown>
+                      </Menu>
+                    )}
+
+                    {/* View Button */}
+                    <Tooltip label="View booking">
+                      <ActionIcon
+                        variant="subtle"
+                        onClick={() => handleViewAppointment(row)}
+                      >
+                        <IconEye size={18} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Group>
+                </Table.Td>
+              </Table.Tr>
+            );
+          })}
         </Table.Tbody>
       </Table>
     );

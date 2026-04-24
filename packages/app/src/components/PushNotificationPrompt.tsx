@@ -5,9 +5,10 @@ import { Button, Group, Paper, Stack, Text, Title, Box } from '@mantine/core';
 import { IconBell, IconX, IconCheck } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import type { MedplumClient } from '@medplum/core';
+import type { Practitioner } from '@medplum/fhirtypes';
 import { useMedplum } from '@medplum/react';
 import { useState } from 'react';
-import { subscribeToPush, dismissPushPrompt, isStandalone } from '../notifications/push';
+import { subscribeToPush, dismissPushPrompt, isStandalone, getVapidPublicKey } from '../notifications/push';
 
 interface PushNotificationPromptProps {
   onDismiss: () => void;
@@ -29,7 +30,18 @@ export function PushNotificationPrompt({ onDismiss, onSuccess }: PushNotificatio
     setError(null);
 
     try {
-      const success = await subscribeToPush(medplum);
+      // Get VAPID public key from server config
+      const vapidKey = await getVapidPublicKey(medplum);
+      if (!vapidKey) {
+        setError('Push notifications are not configured. Please contact support.');
+        setLoading(false);
+        return;
+      }
+
+      // Get current user profile for sender attribution
+      const profile = medplum.getProfile() as Practitioner | undefined;
+
+      const success = await subscribeToPush(medplum, vapidKey, profile);
       if (success) {
         if (onSuccess) {
           onSuccess();

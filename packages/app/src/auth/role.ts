@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { MedplumClient } from '@medplum/core';
+import type { Practitioner } from '@medplum/fhirtypes';
 
 /**
  * Nurse Mel MedSpa Role Hierarchy
@@ -275,4 +276,98 @@ export function canManageBilling(role: MedSpaRole): boolean {
     role === 'project-admin' ||
     role === 'coordinator'
   );
+}
+
+/**
+ * Check if a Practitioner can act as a main provider (dedicated provider)
+ * Main providers can be: RN, NP, MD, PA - anyone with clinical qualification
+ * Excludes: coordinator, assistant, admin (non-clinical roles)
+ *
+ * @param practitioner - The Practitioner resource
+ * @returns True if practitioner can be a main provider
+ */
+export function isMainProviderEligible(practitioner: Practitioner): boolean {
+  // Check for medspa-role extension
+  const medspaRole = practitioner.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role'
+  )?.valueString;
+
+  if (medspaRole) {
+    // These roles can be main providers
+    return ['provider', 'project-admin', 'super-admin'].includes(medspaRole.toLowerCase());
+  }
+
+  // Check qualifications for role codes that indicate non-clinical staff
+  const nonClinicalRoleCodes = ['coordinator', 'assistant', 'admin', 'receptionist'];
+  const hasNonClinicalRoleCode = practitioner.qualification?.some((q) =>
+    q.code?.coding?.some((c) => {
+      const code = c.code?.toLowerCase() ?? '';
+      return nonClinicalRoleCodes.includes(code);
+    })
+  );
+
+  // If they have a non-clinical role code, exclude them
+  if (hasNonClinicalRoleCode) {
+    return false;
+  }
+
+  // Check qualifications for clinical codes (positive check)
+  const clinicalCodes = ['RN', 'NP', 'MD', 'DO', 'PA', 'LPN', 'APRN', 'CRNA'];
+  const hasClinicalQualification = practitioner.qualification?.some((q) =>
+    q.code?.coding?.some((c) => clinicalCodes.includes(c.code ?? ''))
+  );
+
+  if (hasClinicalQualification) {
+    return true;
+  }
+
+  // Default to false for safety - only allow if explicitly has clinical qualification
+  return false;
+}
+
+/**
+ * Check if a Practitioner can act as an assistant
+ * Assistants can be: providers OR assistants
+ * Excludes: coordinator, admin, receptionist
+ *
+ * @param practitioner - The Practitioner resource
+ * @returns True if practitioner can be an assistant
+ */
+export function isAssistantEligible(practitioner: Practitioner): boolean {
+  // Check for medspa-role extension
+  const medspaRole = practitioner.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role'
+  )?.valueString;
+
+  if (medspaRole) {
+    // These roles can be assistants
+    return ['provider', 'assistant', 'project-admin', 'super-admin'].includes(medspaRole.toLowerCase());
+  }
+
+  // Check qualifications for excluded role codes
+  const excludedRoleCodes = ['coordinator', 'admin', 'receptionist'];
+  const hasExcludedRoleCode = practitioner.qualification?.some((q) =>
+    q.code?.coding?.some((c) => {
+      const code = c.code?.toLowerCase() ?? '';
+      return excludedRoleCodes.includes(code);
+    })
+  );
+
+  // If they have an excluded role code, exclude them
+  if (hasExcludedRoleCode) {
+    return false;
+  }
+
+  // Check qualifications for included role codes (assistant OR clinical)
+  const includedRoleCodes = ['assistant', 'RN', 'NP', 'MD', 'DO', 'PA', 'LPN', 'APRN', 'CRNA'];
+  const hasIncludedRoleCode = practitioner.qualification?.some((q) =>
+    q.code?.coding?.some((c) => includedRoleCodes.includes(c.code ?? ''))
+  );
+
+  if (hasIncludedRoleCode) {
+    return true;
+  }
+
+  // Default to false for safety
+  return false;
 }

@@ -212,7 +212,7 @@ function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRol
 
   if (role !== 'coordinator' && role !== 'provider' && role !== 'assistant') {
     nonEmptyMenus.push({
-      title: 'Services',
+      title: 'Project Admin',
       links: [
         {
           label: 'Services',

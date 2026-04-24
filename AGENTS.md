@@ -2,9 +2,9 @@
 
 > **Purpose**: Living document providing context for AI agents working on this project. Updated after each session with current status, recent changes, and architectural decisions.
 
-**Last Updated**: April 23, 2026
-**Current Phase**: Phase 1 - Data Model Validation (Complete)
-**Next Phase**: Phase 2 - Patient Portal & Integrations
+**Last Updated**: April 24, 2026
+**Current Phase**: Phase 2 - Sprint 3.1 Complete
+**Next Phase**: Sprint 3.2 (Staff Approval Workflow)
 
 **Build Plan**: See [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) for architecture  
 **Migration**: See [MIGRATION_PLAN.md](./MIGRATION_PLAN.md) for Phase 1→2 transition  
@@ -81,47 +81,56 @@ cloudflared tunnel --config .cloudflared/medplum-api.yml run
 
 ```
 packages/app/src/
-├── components/                    # Shared components
-│   ├── CreateAppointmentModal.tsx # Booking creation & editing (EDIT MODE ADDED)
+├── components/                 # Shared components
+│   ├── CreateAppointmentModal.tsx    # Legacy booking modal (edit mode)
+│   ├── CreateAppointmentModalV2.tsx  # NEW: 5-step multi-service booking modal
 │   └── ...
-├── nurse-mel/                     # Nurse Mel specific features
-│   ├── BotoxTreatmentPage.tsx     # Botox workflow (EDIT BUTTON ADDED)
-│   ├── PhotoUploadSection.tsx     # Before/after photo handling
-│   ├── TreatmentsTab.tsx          # Patient treatments list
+├── nurse-mel/                  # Nurse Mel specific features
+│   ├── BotoxTreatmentPage.tsx  # Botox workflow
+│   ├── PhotoUploadSection.tsx  # Before/after photo handling
+│   ├── TreatmentsTab.tsx       # Patient treatments list (NOW SHOWS APPOINTMENTS)
 │   └── ...
-├── treatments/                    # Treatment detail pages
+├── treatments/                 # Treatment detail pages
 │   ├── FillerTreatmentPage.tsx
 │   ├── LaserTreatmentPage.tsx
 │   ├── ConsultationTreatmentPage.tsx
-│   └── shared/                    # Shared treatment components
+│   └── shared/                 # Shared treatment components
 │       ├── useTreatmentData.ts
 │       ├── TreatmentHeader.tsx
 │       ├── TreatmentStatusAlert.tsx
-│       └── getTreatmentType.ts    # Service type routing logic
-├── pages/                         # Top-level pages
-│   ├── CalendarPage.tsx           # Scheduling with momentLocalizer
-│   └── BookingsPage.tsx           # Practice-wide bookings list
+│       └── getTreatmentType.ts   # Service type routing logic
+├── pages/                      # Top-level pages
+│   ├── CalendarPage.tsx        # Scheduling with drag-to-create
+│   └── BookingsPage.tsx        # Practice-wide bookings list (NOW SHOWS APPOINTMENTS)
 └── auth/
-    └── role.ts                    # getMedSpaRole() - Provider vs Coordinator
+    └── role.ts                 # Role utils: getMedSpaRole(), isMainProviderEligible(), isAssistantEligible()
 ```
 
 ---
 
 ## 4. Current Implementation Status
 
-### ✅ COMPLETED (As of April 23, 2026)
+### ✅ COMPLETED (As of April 24, 2026)
 
 **Core Workflows:**
 - ✅ Botox treatment workflow (before photos → treatment → after photos)
 - ✅ Patient management with search
 - ✅ Calendar scheduling with `momentLocalizer` (switched from dayjs for timezone handling)
 - ✅ Appointment booking with patient, providers, date/time, service type
+- ✅ **Multi-service booking modal (V2)** - 5-step wizard with patient, services, schedule, providers, review
+- ✅ **Duration override** - Click to customize appointment duration
+- ✅ **GFE status checking** - Shows consult expiry warnings during booking
+- ✅ **Provider role filtering** - Main provider shows only clinical staff (RN, NP, MD, etc.)
+- ✅ **Assistant filtering** - Shows providers AND assistants, excludes coordinators
 - ✅ Role-based access control (Provider vs Coordinator permissions)
 - ✅ Treatment status: `preparation` → `in-progress` → `completed`
 - ✅ **Edit booking functionality** - coordinators can edit scheduled treatments
 - ✅ Service type change detection with navigation to correct treatment page
 - ✅ Audit trail extensions (`last-edited`, `edited-by`)
 - ✅ Provider assignment stored in `procedure.performer[]` (index 0 = main, index 1 = assistant)
+- ✅ **Bookings list** - Shows appointments (not just procedures)
+- ✅ **Patient treatments tab** - Shows both appointments AND procedures
+- ✅ **Calendar drag-drop** - Opens modal with pre-filled date/time/duration
 
 **FHIR Compliance:**
 - ✅ Custom extensions for aesthetic data (injection maps, treatment areas, units used)
@@ -129,17 +138,27 @@ packages/app/src/
 - ✅ Proper `performer` array for provider assignments
 - ✅ `subject` references to Patient
 - ✅ Media resources for photos with related-procedure extension
+- ✅ ServiceRequest resources for booked services
+- ✅ Task resources for numbing when assistant assigned
 
 **Photo Workflow:**
 - ✅ Before/after photo upload via PhotoUploadSection
 - ✅ Photos linked to Procedure via `http://melissaknudson.com/fhir/StructureDefinition/related-procedure`
 - ✅ ReadOnly mode based on treatment status
 
+### ✅ COMPLETED (Sprint 3.2 - Staff Approval Workflow)
+
+- ✅ Booking approval workflow (pending → booked)
+- ✅ Staff notification system (on approve/cancel)
+- ✅ Appointment status management (arrived, no-show, cancelled)
+- ✅ Status audit trail extensions
+
 ### 🔄 IN PROGRESS
 
-- 🔄 Testing edit modal provider prefilling (main provider works, assistant needs verification)
+- 🔄 Testing booking status transitions
+- 🔄 Verifying notification delivery
 
-### ⏭️ UPCOMING (Phase 2)
+### ⏭️ UPCOMING (Sprint 3.3 - Patient Communications)
 
 - ⏭️ Patient portal (separate domain, public-facing)
 - ⏭️ SMS reminders via Twilio
@@ -150,9 +169,51 @@ packages/app/src/
 
 ---
 
-## 5. Recent Changes (April 23, 2026)
+## 5. Recent Changes
 
-### Edit Booking Feature Implementation
+### April 24, 2026 - Sprint 3.1 Complete (Multi-Service Booking)
+
+**New Feature: CreateAppointmentModalV2**
+
+**Files Created:**
+1. **`/packages/app/src/components/CreateAppointmentModalV2.tsx`** (NEW)
+   - 5-step wizard: Patient → Services → Schedule → Providers → Review
+   - Multi-service booking with duration calculation
+   - Duration override functionality
+   - GFE status checking with expiry warnings
+   - Provider filtering (main vs assistant)
+   - Creates Appointment + ServiceRequest + Task (for numbing)
+
+**Files Modified:**
+2. **`/packages/app/src/pages/CalendarPage.tsx`**
+   - Added "New Appointment" button
+   - Integrated CreateAppointmentModalV2
+   - Drag-drop now passes date/time/duration to modal via `initialSlot` prop
+
+3. **`/packages/app/src/pages/BookingsPage.tsx`**
+   - Changed to show Appointments instead of Procedures
+   - Updated columns: Patient, Services, Date, Time, Duration, Room, Providers, Status
+
+4. **`/packages/app/src/nurse-mel/TreatmentsTab.tsx`**
+   - Now shows BOTH appointments and procedures
+   - Displays "Booking" badge for appointments
+   - Links to calendar for appointments, treatment pages for procedures
+
+5. **`/packages/app/src/auth/role.ts`**
+   - Added `isMainProviderEligible()` function
+   - Added `isAssistantEligible()` function
+   - Filters practitioners based on qualification codes
+
+### Architecture Decisions Made
+
+- **Appointment-Centric**: Bookings page now shows Appointments, not Procedures
+- **Provider Filtering**: Uses qualification codes (`RN`, `assistant`, `coordinator`, etc.) to filter dropdowns
+- **Multi-Service**: One booking can have multiple services with calculated duration
+- **Custom Duration**: Users can override calculated duration per-booking
+
+---
+
+### April 23, 2026 - Edit Booking Feature
 
 **Files Modified:**
 1. **`/packages/app/src/components/CreateAppointmentModal.tsx`**
@@ -446,3 +507,40 @@ Before marking a feature complete, verify:
 5. Testing checklist results
 
 **Questions?** Check INSTRUCTIONS.md for setup details, or project-context.md for full architecture.
+
+---
+
+### April 24, 2026 - Sprint 3.2 Complete (Staff Approval Workflow)
+
+**New Feature: Booking Approval & Status Management**
+
+**Files Modified:**
+1. **`/packages/app/src/pages/BookingsPage.tsx`**
+   - Added "Pending Approval" tab showing pending bookings
+   - Added "Approve" button for pending bookings (green checkmark)
+   - Added status action menu: Mark as Arrived, No-Show, Cancel
+   - Added cancellation modal with reason input
+   - Status badge colors: Pending (yellow), Booked (blue), Arrived (teal), Completed (green), Cancelled (red), No-Show (gray)
+   - Auto-notification on approve/cancel to assigned providers
+
+2. **`/packages/app/src/notifications/templates.ts`**
+   - Added `appointment-approved` notification template
+   - Sends notification to main provider and assistant when booking approved
+
+3. **`/packages/app/src/notifications/utils.ts`**
+   - Updated `getNotificationRecipients` for approval workflow
+   - Sends to assigned providers on status changes
+
+**Status Transition Rules:**
+```
+pending → booked (Approve)
+booked → arrived (Mark Arrived)
+booked → noshow (Mark No-Show)
+booked → cancelled (Cancel)
+arrived → fulfilled (Complete treatment)
+```
+
+**Audit Trail Extensions:**
+- `status-change-audit`: tracks from → to, timestamp, changedBy
+- `cancellation-reason`: stores cancellation reason
+

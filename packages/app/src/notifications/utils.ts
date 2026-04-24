@@ -34,21 +34,21 @@ export function getNotificationRecipients(
       break;
 
     case 'appointment-cancelled':
-      // Notify all assigned providers
-      if (data.provider) {
+      // Notify all assigned providers (except the one who cancelled)
+      if (data.provider && data.provider.id !== currentUser?.id) {
         recipients.push(createReference(data.provider));
       }
-      if (data.assistant) {
+      if (data.assistant && data.assistant.id !== currentUser?.id) {
         recipients.push(createReference(data.assistant));
       }
       break;
 
     case 'appointment-rescheduled':
-      // Notify all assigned providers
-      if (data.provider) {
+      // Notify all assigned providers (except the one who rescheduled)
+      if (data.provider && data.provider.id !== currentUser?.id) {
         recipients.push(createReference(data.provider));
       }
-      if (data.assistant) {
+      if (data.assistant && data.assistant.id !== currentUser?.id) {
         recipients.push(createReference(data.assistant));
       }
       break;

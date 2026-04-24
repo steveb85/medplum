@@ -260,18 +260,20 @@ async function createProviderAccessPolicy(systemRepo: SystemRepository, project:
       { resourceType: 'Coverage', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Account', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Subscription', interaction: ['read', 'create', 'delete'] },
-      // Clinical resources that may be queried
-      { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'search'] },
-      { resourceType: 'DiagnosticReport', interaction: ['read', 'vread', 'search'] },
-      { resourceType: 'MedicationRequest', interaction: ['read', 'vread', 'search'] },
-      { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
-      { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
-      { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
-    ],
-  });
+    // Clinical resources that may be queried
+    { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'create', 'search'] },
+    { resourceType: 'DiagnosticReport', interaction: ['read', 'vread', 'search'] },
+    { resourceType: 'MedicationRequest', interaction: ['read', 'vread', 'search'] },
+    { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
+    { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
+    { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
+    // Service catalog (ActivityDefinitions)
+    { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
+  ],
+});
 
-  globalLogger.info(`Created Provider AccessPolicy: ${policy.id}`);
-  return policy;
+globalLogger.info(`Created Provider AccessPolicy: ${policy.id}`);
+return policy;
 }
 
 async function createCoordinatorAccessPolicy(systemRepo: SystemRepository, project: Project): Promise<AccessPolicy> {
@@ -315,12 +317,14 @@ async function createCoordinatorAccessPolicy(systemRepo: SystemRepository, proje
       { resourceType: 'Account', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Subscription', interaction: ['read', 'create', 'delete'] },
       // Clinical resources that may be queried (read-only for coordinators)
-      { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'create', 'search'] },
       { resourceType: 'DiagnosticReport', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'MedicationRequest', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
+    // Service catalog (ActivityDefinitions) - needed for booking
+    { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
     ],
   });
 
@@ -422,12 +426,14 @@ async function createAssistantAccessPolicy(systemRepo: SystemRepository, project
       { resourceType: 'Coverage', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Account', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Subscription', interaction: ['read', 'create', 'delete'] },
-      { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'create', 'search'] },
       { resourceType: 'DiagnosticReport', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'MedicationRequest', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
+    // Service catalog (ActivityDefinitions) - needed for booking
+    { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
     ],
   });
 
@@ -1118,7 +1124,7 @@ let pushSubscriptionsCacheTime = 0;
 const CACHE_TTL_MS = 60000; // 1 minute cache
 
 async function getAllPushSubscriptions(medplum) {
-  console.log('[Push Bot] Querying all active push subscriptions from FHIR...');
+  console.log('[Push Bot] Querying all push registrations from FHIR...');
 
   // Check cache
   const now = Date.now();
@@ -1130,52 +1136,46 @@ async function getAllPushSubscriptions(medplum) {
   const subscriptionsByPractitioner = {};
 
   try {
-    // Search for ALL active FHIR Subscriptions
-    // Note: 'reason' is not a searchable parameter, so we filter in code
-    const bundle = await medplum.search('Subscription', {
-      status: 'active',
+    // Query for Communication resources with push-registration category
+    // These are "push registration" records created when users enable push notifications
+    const bundle = await medplum.search('Communication', {
+      category: 'push-registration',
+      status: 'completed',
       _count: '100',
     });
 
-    console.log('[Push Bot] Found', bundle.entry?.length || 0, 'total FHIR Subscriptions');
+    console.log('[Push Bot] Found', bundle.entry?.length || 0, 'total push registration Communications');
 
     for (const entry of bundle.entry || []) {
-      const sub = entry.resource;
-      if (!sub) continue;
+      const comm = entry.resource;
+      if (!comm) continue;
 
-      console.log('[Push Bot] Checking subscription:', sub.id);
-      console.log('[Push Bot] Subscription reason:', sub.reason);
-      console.log('[Push Bot] Subscription author:', sub.meta?.author?.reference);
-      console.log('[Push Bot] Subscription has payload:', !!sub.channel?.payload);
+      console.log('[Push Bot] Checking push registration:', comm.id);
+      console.log('[Push Bot] Sender:', comm.sender?.reference);
 
-      // Filter for push notification subscriptions by reason
-      if (sub.reason !== 'Push notifications') {
-        console.log('[Push Bot] Skipping - reason does not match');
-        continue;
-      }
-
-      // Get the practitioner ID from the subscription's author
-      const authorRef = sub.meta?.author?.reference || '';
-      console.log('[Push Bot] Author reference:', authorRef);
+      // Get the practitioner ID from the Communication sender
+      const senderRef = comm.sender?.reference || '';
+      console.log('[Push Bot] Sender reference:', senderRef);
 
       // Extract practitioner ID using string operations (vmcontext-safe)
       let practitionerId = null;
-      if (authorRef.startsWith('Practitioner/')) {
-        practitionerId = authorRef.substring('Practitioner/'.length);
+      if (senderRef.startsWith('Practitioner/')) {
+        practitionerId = senderRef.substring('Practitioner/'.length);
       }
       if (!practitionerId) {
-        console.log('[Push Bot] Skipping subscription without practitioner author:', sub.id);
+        console.log('[Push Bot] Skipping - sender is not a Practitioner');
         continue;
       }
 
       console.log('[Push Bot] Found practitioner ID:', practitionerId);
 
-      // Parse the push subscription data from the channel payload
-      if (sub.channel?.payload) {
+      // Parse the push subscription data from the payload
+      const payload = comm.payload?.[0]?.contentString;
+      if (payload) {
         console.log('[Push Bot] Payload present, parsing...');
         try {
-          const pushData = JSON.parse(sub.channel.payload);
-          console.log('[Push Bot] Parsed push data:', JSON.stringify(pushData, null, 2));
+          const pushData = JSON.parse(payload);
+          console.log('[Push Bot] Parsed push data for practitioner', practitionerId);
           if (pushData.endpoint && pushData.keys) {
             if (!subscriptionsByPractitioner[practitionerId]) {
               subscriptionsByPractitioner[practitionerId] = [];
@@ -1186,10 +1186,10 @@ async function getAllPushSubscriptions(medplum) {
             console.log('[Push Bot] Push data missing endpoint or keys');
           }
         } catch (parseErr) {
-          console.log('[Push Bot] Failed to parse subscription payload for:', sub.id, parseErr);
+          console.log('[Push Bot] Failed to parse push data for:', comm.id, parseErr.message);
         }
       } else {
-        console.log('[Push Bot] No payload found for subscription:', sub.id);
+        console.log('[Push Bot] No payload found for registration:', comm.id);
       }
     }
 
@@ -1201,7 +1201,7 @@ async function getAllPushSubscriptions(medplum) {
     return subscriptionsByPractitioner;
 
   } catch (err) {
-    console.log('[Push Bot] Error querying push subscriptions:', err);
+    console.log('[Push Bot] Error querying push registrations:', err.message);
     return {};
   }
 }
@@ -1275,7 +1275,41 @@ function getNotificationUrl(communication) {
 }
 `;
 
-async function createPushNotificationBot(systemRepo: SystemRepository, project: Project): Promise<Bot> {
+async function createPushBotAccessPolicy(systemRepo: SystemRepository, project: Project): Promise<AccessPolicy> {
+  const existing = await systemRepo.searchOne<AccessPolicy>({
+    resourceType: 'AccessPolicy',
+    filters: [{ code: 'name', operator: 'eq', value: 'Push Notification Bot Policy' }],
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  const policy = await systemRepo.createResource<AccessPolicy>({
+    resourceType: 'AccessPolicy',
+    meta: { project: project.id },
+    name: 'Push Notification Bot Policy',
+    resource: [
+      // Read Subscriptions to find user push subscriptions
+      { resourceType: 'Subscription', interaction: ['read', 'search'] },
+      // Read Communications to get notification details
+      { resourceType: 'Communication', interaction: ['read', 'search'] },
+      // Read Practitioners to identify recipients
+      { resourceType: 'Practitioner', interaction: ['read', 'search'] },
+    ],
+  });
+
+  globalLogger.info(`Created Push Notification Bot AccessPolicy: ${policy.id}`);
+  return policy;
+}
+
+async function createPushNotificationBot(
+  systemRepo: SystemRepository,
+  project: Project
+): Promise<Bot> {
+  // Create AccessPolicy for the Bot first
+  const accessPolicy = await createPushBotAccessPolicy(systemRepo, project);
+
   // Search for existing bot by looking at all Bots (name is not a searchable field)
   const existingBots = await systemRepo.search<Bot>({
     resourceType: 'Bot',
@@ -1355,13 +1389,15 @@ async function createPushNotificationBot(systemRepo: SystemRepository, project: 
   globalLogger.info(`Created push notification bot: ${bot.id}`);
 
   // Create ProjectMembership for the Bot so it can be executed
-  // Note: For Bots, the Bot itself is both the user and the profile
+  // Assign the AccessPolicy and set admin: true to allow reading all resources
   await systemRepo.createResource<ProjectMembership>({
     resourceType: 'ProjectMembership',
     meta: { project: project.id },
     project: createReference(project),
     user: createReference(bot),
     profile: createReference(bot),
+    admin: true, // Allows Bot to read all resources including user-created Subscriptions
+    access: [{ policy: createReference(accessPolicy) }],
   });
 
   globalLogger.info(`Created project membership for push notification bot`);

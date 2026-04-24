@@ -274,8 +274,12 @@ export function CalendarPage(): JSX.Element {
 
       <CreateAppointmentModalV2
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedSlot(null);
+        }}
         onSuccess={handleModalSuccess}
+        initialSlot={selectedSlot}
       />
     </Stack>
   );

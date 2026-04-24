@@ -10,6 +10,7 @@ import dayjs from 'dayjs';
  */
 export type NotificationType =
   | 'appointment-created'
+  | 'appointment-approved'
   | 'appointment-cancelled'
   | 'appointment-rescheduled'
   | 'treatment-started'
@@ -66,6 +67,19 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
       const time = data.time || 'Unknown time';
       const service = data.serviceType || 'Appointment';
       return `${service} scheduled for ${patientName} on ${date} at ${time}`;
+    },
+    priority: 'routine',
+    category: 'appointment',
+  },
+
+  'appointment-approved': {
+    type: 'appointment-approved',
+    title: 'Appointment Approved',
+    getMessage: (data) => {
+      const patientName = getPatientName(data.patient);
+      const date = data.date ? dayjs(data.date).format('MMM D, YYYY') : 'Unknown date';
+      const time = data.time || 'Unknown time';
+      return `Appointment for ${patientName} on ${date} at ${time} has been approved`;
     },
     priority: 'routine',
     category: 'appointment',

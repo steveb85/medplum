@@ -19,6 +19,7 @@ import {
   TextInput,
   Title,
   Tooltip,
+  Loader,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { showNotification } from '@mantine/notifications';
@@ -31,7 +32,7 @@ import type {
   ServiceRequest,
   Task,
 } from '@medplum/fhirtypes';
-import { ResourceInput, useMedplum } from '@medplum/react';
+import { ResourceInput, useMedplum, AsyncAutocomplete } from '@medplum/react';
 import {
   IconAlertCircle,
   IconBuilding,
@@ -46,7 +47,8 @@ import {
 import dayjs from 'dayjs';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getMedSpaRole } from '../auth/role';
+import { getMedSpaRole, isMainProviderEligible, isAssistantEligible } from '../auth/role';
+import { createNotification } from '../notifications/utils';
 
 // Step types
 type Step = 'patient' | 'services' | 'schedule' | 'providers' | 'review';
@@ -75,6 +77,7 @@ interface CreateAppointmentModalV2Props {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  initialSlot?: { start: Date; end: Date } | null;
 }
 
 // Parse ActivityDefinition extension to ServiceConfig
@@ -172,6 +175,7 @@ export function CreateAppointmentModalV2({
   isOpen,
   onClose,
   onSuccess,
+  initialSlot,
 }: CreateAppointmentModalV2Props): JSX.Element {
   const medplum = useMedplum();
   const role = getMedSpaRole(medplum);
@@ -199,11 +203,15 @@ export function CreateAppointmentModalV2({
   const [selectedTime, setSelectedTime] = useState<string>('09:00');
   const [selectedRoom, setSelectedRoom] = useState<string>('room-1');
   const [duration, setDuration] = useState<number>(30);
+  const [customDuration, setCustomDuration] = useState<number | null>(null);
+  const [durationOverrideOpen, setDurationOverrideOpen] = useState(false);
   const [numbingTime, setNumbingTime] = useState<number>(0);
 
   // Step 4: Providers
   const [mainProvider, setMainProvider] = useState<Practitioner | null>(null);
   const [assistantProvider, setAssistantProvider] = useState<Practitioner | null>(null);
+  const [allPractitioners, setAllPractitioners] = useState<Practitioner[]>([]);
+  const [practitionersLoading, setPractitionersLoading] = useState(false);
 
   // Step 5: Review
   const [notes, setNotes] = useState('');
@@ -216,18 +224,54 @@ export function CreateAppointmentModalV2({
     const loadServices = async (): Promise<void> => {
       try {
         const result = await medplum.searchResources('ActivityDefinition', {
-          status: 'active',
           _sort: 'name',
           _count: '100',
         });
-        setAvailableServices(result as ActivityDefinition[]);
+        // Filter active services client-side
+        const activeServices = (result as ActivityDefinition[]).filter(
+          s => s.status === 'active'
+        );
+        setAvailableServices(activeServices);
       } catch (err) {
         console.error('Error loading services:', err);
       }
     };
 
     loadServices().catch(console.error);
-  }, [isOpen, medplum]);
+
+    // Load all practitioners for provider selection
+    const loadPractitioners = async (): Promise<void> => {
+      try {
+        setPractitionersLoading(true);
+        const result = await medplum.searchResources('Practitioner', {
+          _sort: 'name',
+          _count: '100',
+        });
+        setAllPractitioners(result as Practitioner[]);
+      } catch (err) {
+        console.error('Error loading practitioners:', err);
+      } finally {
+        setPractitionersLoading(false);
+      }
+    };
+    loadPractitioners().catch(console.error);
+
+    // Set initial slot from calendar if provided
+    if (initialSlot) {
+      setSelectedDate(initialSlot.start);
+      const hours = initialSlot.start.getHours().toString().padStart(2, '0');
+      const minutes = initialSlot.start.getMinutes().toString().padStart(2, '0');
+      setSelectedTime(`${hours}:${minutes}`);
+
+      // Calculate duration from slot
+      const durationMs = initialSlot.end.getTime() - initialSlot.start.getTime();
+      const durationMinutes = Math.round(durationMs / (1000 * 60));
+      if (durationMinutes > 0) {
+        setDuration(durationMinutes);
+        setCustomDuration(durationMinutes);
+      }
+    }
+  }, [isOpen, medplum, initialSlot]);
 
   // Check GFE when patient changes
   useEffect(() => {
@@ -272,6 +316,9 @@ export function CreateAppointmentModalV2({
     // Check compatibility
     const issues = checkServiceCompatibility(selectedServices);
     setServiceErrors(issues);
+
+    // Reset custom duration when services change
+    setCustomDuration(null);
   }, [selectedServices]);
 
   // Service selection handler
@@ -330,10 +377,16 @@ export function CreateAppointmentModalV2({
         .minute(parseInt(selectedTime.split(':')[1]));
       const endTime = startTime.add(duration, 'minute');
 
+      // Determine initial status based on user role
+      // Providers can auto-approve their own bookings
+      // Coordinators must have bookings approved by providers
+      const userRole = getMedSpaRole(medplum);
+      const initialStatus = userRole === 'provider' || userRole === 'assistant' ? 'booked' : 'pending';
+
       // 1. Create Appointment
       const appointment: Appointment = {
         resourceType: 'Appointment',
-        status: 'pending',
+        status: initialStatus,
         serviceType: [{ text: selectedServices.map((s) => s.activityDefinition.title).join(', ') }],
         start: startTime.toISOString(),
         end: endTime.toISOString(),
@@ -376,6 +429,21 @@ export function CreateAppointmentModalV2({
       }
 
       const savedAppointment = await medplum.createResource(appointment);
+
+      // Send notification to providers about new booking
+      try {
+        await createNotification(medplum, 'appointment-created', {
+          patient,
+          appointment: savedAppointment,
+          provider: mainProvider,
+          assistant: assistantProvider,
+          date: savedAppointment.start,
+          time: dayjs(savedAppointment.start).format('h:mm A'),
+          serviceType: selectedServices.map((s) => s.activityDefinition.title).join(', '),
+        }, medplum.getProfile() as Practitioner | undefined);
+      } catch (notifyErr) {
+        console.error('Error sending notification:', notifyErr);
+      }
 
       // 2. Create ServiceRequests for each service
       const serviceRequests: ServiceRequest[] = [];
@@ -464,8 +532,10 @@ export function CreateAppointmentModalV2({
       }
 
       showNotification({
-        title: 'Booking Requested',
-        message: `Booking for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} created and pending approval`,
+        title: initialStatus === 'booked' ? 'Booking Confirmed' : 'Booking Requested',
+        message: initialStatus === 'booked' 
+          ? `Booking for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} confirmed`
+          : `Booking for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} created and pending approval`,
         color: 'green',
       });
 
@@ -617,62 +687,98 @@ export function CreateAppointmentModalV2({
                     // Check GFE for this service
                     const gfeStatus = checkGFEStatus(patient, config.gfeCategory);
 
-                    return (
-                      <Card
-                        key={service.id}
-                        withBorder
-                        padding="sm"
+              return (
+                <Card
+                  key={service.id}
+                  withBorder
+                  padding="sm"
+                  style={{
+                    cursor: 'pointer',
+                    borderColor: isSelected ? 'var(--mantine-color-blue-5)' : undefined,
+                    backgroundColor: isSelected ? 'var(--mantine-color-blue-0)' : undefined,
+                  }}
+                  onClick={() => toggleService(service)}
+                >
+                  <Group justify="space-between" wrap="nowrap">
+                    <Group gap="xs" style={{ flex: 1, minWidth: 0 }}>
+                      <div
                         style={{
-                          cursor: 'pointer',
-                          borderColor: isSelected ? 'var(--mantine-color-blue-5)' : undefined,
-                          backgroundColor: isSelected ? 'var(--mantine-color-blue-0)' : undefined,
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          backgroundColor: config.color,
+                          flexShrink: 0,
                         }}
-                        onClick={() => toggleService(service)}
-                      >
-                        <Group justify="space-between" wrap="nowrap">
-                          <Group gap="xs">
-                            <div
-                              style={{
-                                width: 12,
-                                height: 12,
-                                borderRadius: '50%',
-                                backgroundColor: config.color,
-                              }}
-                            />
-                            <div>
-                              <Text fw={500}>{service.title}</Text>
-                              <Text size="xs" c="dimmed">
-                                {service.timingDuration?.value ?? 30} min
-                                {config.numbingTime > 0 && ` • ${config.numbingTime} min numbing`}
-                              </Text>
-                            </div>
-                          </Group>
-                          <Group gap="xs">
-                            {!gfeStatus.valid && config.gfeCategory && (
-                              <Tooltip label="GFE expired">
-                                <Badge color="red" size="sm">
-                                  GFE
-                                </Badge>
-                              </Tooltip>
-                            )}
-                            {isSelected && <IconCheck size={20} color="var(--mantine-color-blue-5)" />}
-                          </Group>
-                        </Group>
-                      </Card>
-                    );
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Text fw={500} lineClamp={1}>{service.title}</Text>
+                        <Text size="xs" c="dimmed">
+                          {service.timingDuration?.value ?? 30} min
+                          {config.numbingTime > 0 && ` • ${config.numbingTime} min numbing`}
+                        </Text>
+                      </div>
+                    </Group>
+                    <Group gap="xs" style={{ flexShrink: 0, minWidth: '80px', justifyContent: 'flex-end' }}>
+                      {!gfeStatus.valid && config.gfeCategory && (
+                        <Tooltip label="GFE expired">
+                          <Badge color="red" size="sm" style={{ flexShrink: 0 }}>
+                            GFE
+                          </Badge>
+                        </Tooltip>
+                      )}
+                      {isSelected && (
+                        <div style={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                          <IconCheck size={20} color="var(--mantine-color-blue-5)" />
+                        </div>
+                      )}
+                    </Group>
+                  </Group>
+                </Card>
+              );
                   })
               )}
             </Stack>
 
             {selectedServices.length > 0 && (
               <Card withBorder bg="gray.0">
-                <Group justify="space-between">
-                  <Text fw={500}>Total Duration:</Text>
-                  <Text>
-                    {duration} minutes
-                    {numbingTime > 0 && ` (${numbingTime} min numbing)`}
-                  </Text>
-                </Group>
+                <Stack gap="xs">
+                  <Group justify="space-between">
+                    <Text fw={500}>Total Duration:</Text>
+                    {durationOverrideOpen ? (
+                      <Group gap="xs">
+                      <NumberInput
+                        value={customDuration ?? duration}
+                        onChange={(val) => setCustomDuration(typeof val === 'number' ? val : duration)}
+                        min={15}
+                        max={300}
+                        step={15}
+                        w={80}
+                        size="xs"
+                        suffix=" min"
+                      />
+                        <Button size="xs" variant="light" onClick={() => setDurationOverrideOpen(false)}>
+                          Done
+                        </Button>
+                      </Group>
+                    ) : (
+                      <Tooltip label="Click to override duration">
+                        <Button
+                          variant="light"
+                          size="xs"
+                          onClick={() => setDurationOverrideOpen(true)}
+                        >
+                          {customDuration ?? duration} min
+                          {numbingTime > 0 && ` (+${numbingTime} numbing)`}
+                        </Button>
+                      </Tooltip>
+                    )}
+                  </Group>
+                  {!durationOverrideOpen && customDuration !== null && (
+                    <Text size="xs" c="orange" ta="right">
+                      Custom: {customDuration} min (was {duration})
+                    </Text>
+                  )}
+                </Stack>
               </Card>
             )}
           </Stack>
@@ -756,6 +862,16 @@ export function CreateAppointmentModalV2({
         );
 
       case 'providers':
+        // Filter practitioners for each role
+        const eligibleMainProviders = allPractitioners.filter(p => isMainProviderEligible(p));
+        const eligibleAssistants = allPractitioners.filter(p => isAssistantEligible(p));
+
+        const toOption = (p: Practitioner) => ({
+          value: p.id || '',
+          label: `${p.name?.[0]?.given?.[0] || ''} ${p.name?.[0]?.family || ''}`.trim() || 'Unknown',
+          resource: p,
+        });
+
         return (
           <Stack gap="md">
             <Text size="sm" c="dimmed">
@@ -766,13 +882,24 @@ export function CreateAppointmentModalV2({
               <Text size="sm" fw={500} mb="xs">
                 Main Provider <span style={{ color: 'red' }}>*</span>
               </Text>
-              <ResourceInput
-                resourceType="Practitioner"
-                name="mainProvider"
-                placeholder="Select main provider..."
-                defaultValue={mainProvider ?? undefined}
-                onChange={(value) => setMainProvider(value as Practitioner | null)}
-              />
+              {practitionersLoading ? (
+                <Loader size="sm" />
+              ) : (
+                <Select
+                  placeholder="Select main provider..."
+                  value={mainProvider?.id}
+                  onChange={(id) => {
+                    const p = eligibleMainProviders.find(pr => pr.id === id);
+                    setMainProvider(p || null);
+                  }}
+                  data={eligibleMainProviders.map(p => ({
+                    value: p.id || '',
+                    label: `${p.name?.[0]?.given?.[0] || ''} ${p.name?.[0]?.family || ''}`.trim() || 'Unknown',
+                  }))}
+                  searchable
+                  required
+                />
+              )}
             </div>
 
             <div>
@@ -784,13 +911,24 @@ export function CreateAppointmentModalV2({
                   ? 'Recommended for numbing'
                   : 'For assistance if needed'}
               </Text>
-              <ResourceInput
-                resourceType="Practitioner"
-                name="assistantProvider"
-                placeholder="Select assistant..."
-                defaultValue={assistantProvider ?? undefined}
-                onChange={(value) => setAssistantProvider(value as Practitioner | null)}
-              />
+              {practitionersLoading ? (
+                <Loader size="sm" />
+              ) : (
+                <Select
+                  placeholder="Select assistant..."
+                  value={assistantProvider?.id || null}
+                  onChange={(id) => {
+                    const p = eligibleAssistants.find(pr => pr.id === id);
+                    setAssistantProvider(p || null);
+                  }}
+                  data={eligibleAssistants.map(p => ({
+                    value: p.id || '',
+                    label: `${p.name?.[0]?.given?.[0] || ''} ${p.name?.[0]?.family || ''}`.trim() || 'Unknown',
+                  }))}
+                  searchable
+                  clearable
+                />
+              )}
             </div>
           </Stack>
         );
@@ -898,20 +1036,54 @@ export function CreateAppointmentModalV2({
       opened={isOpen}
       onClose={onClose}
       title="New Appointment"
-      size="lg"
+      size={isMobile ? '100%' : 'xl'}
       fullScreen={isMobile}
+      styles={isMobile ? undefined : {
+        content: { minWidth: '900px', maxWidth: '1200px' },
+        body: { overflowX: 'hidden' },
+      }}
     >
       <Stack>
         {/* Progress indicator */}
         <Progress value={((activeStep + 1) / steps.length) * 100} size="sm" />
 
         {/* Step indicator */}
-        <Stepper active={activeStep} size="sm">
-          <Stepper.Step label="Patient" description="Select patient" />
-          <Stepper.Step label="Services" description="Choose services" />
-          <Stepper.Step label="Schedule" description="Date & time" />
-          <Stepper.Step label="Providers" description="Assign staff" />
-          <Stepper.Step label="Review" description="Confirm details" />
+        <Stepper
+          active={activeStep}
+          size={isMobile ? 'xs' : 'sm'}
+          styles={{
+            root: { overflowX: 'auto' },
+            steps: {
+              gap: isMobile ? 4 : 12,
+              flexWrap: 'nowrap',
+              justifyContent: 'center',
+            },
+            step: {
+              flex: isMobile ? '0 0 auto' : '0 0 auto',
+              minWidth: 'auto',
+            },
+            stepLabel: {
+              fontSize: isMobile ? '10px' : '12px',
+              whiteSpace: 'nowrap',
+            },
+            stepDescription: { display: 'none' },
+            stepIcon: {
+              width: isMobile ? 20 : 24,
+              height: isMobile ? 20 : 24,
+              fontSize: isMobile ? '10px' : '12px',
+            },
+            separator: {
+              marginLeft: isMobile ? 2 : 4,
+              marginRight: isMobile ? 2 : 4,
+              minWidth: isMobile ? 8 : 20,
+            },
+          }}
+        >
+          <Stepper.Step label="Patient" />
+          <Stepper.Step label="Services" />
+          <Stepper.Step label="Schedule" />
+          <Stepper.Step label="Providers" />
+          <Stepper.Step label="Review" />
         </Stepper>
 
         {/* Step content */}
