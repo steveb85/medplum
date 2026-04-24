@@ -405,6 +405,39 @@ Stripe Webhook → https://api-dev.studioassistant.io/webhook/stripe → localho
 - Stripe needs a public URL for payment confirmation webhooks
 - Without tunnels, you'd have to deploy to test webhooks
 
+### Push Notifications
+
+**Status:** ✅ Complete - Working for both broadcast and targeted notifications
+
+**Documentation:** See `packages/app/docs/PUSH_NOTIFICATIONS.md` for complete technical documentation
+
+**Key Concepts:**
+
+| Notification Type | Recipients | Use Case | Example |
+|-------------------|------------|----------|---------|
+| **Broadcast** | ALL practitioners | Patient messages, announcements | "Patient asking about pricing" |
+| **Targeted** | Specific providers | Provider-specific tasks | "New Botox appointment assigned to you" |
+
+**When to Use Each:**
+
+**Broadcast to ALL staff:**
+- 🗣️ **Patient communications** - Incoming messages from patients (anyone can reply)
+- 📢 **Company announcements** - System maintenance, new features
+- 🚨 **Urgent alerts** - Building closure, emergency updates
+- 📋 **Shared inbox items** - Messages the entire practice needs to see
+
+**Targeted to SPECIFIC provider:**
+- 📅 **New bookings** - Only the assigned provider
+- 🔄 **Booking changes** - Reschedules, cancellations for that provider
+- 💉 **Treatment updates** - Patient ready for Botox, photos uploaded
+- 📸 **Photo uploads** - Before/after photos ready for review
+- 📝 **Notes added** - Consultation notes on provider's patient
+
+**Why this matters:**
+- Broadcasts keep everyone informed (shared inbox concept - any staff can reply)
+- Targeted notifications reduce noise (only relevant people get interrupted)
+- Providers can focus on their patients without being interrupted by others' tasks
+
 ### Future Integrations
 
 | Service | Purpose | HIPAA Consideration |

@@ -1012,40 +1012,37 @@ exports.handler = async function(medplum, event) {
   let subscriptionCount = 0;
   let sentCount = 0;
 
-  // For broadcasts, get ALL push subscriptions from FHIR
-  // For regular notifications, get from Communication extension
-  let allPushSubscriptions = null;
+  // Query ALL push subscriptions from FHIR (for both broadcast and targeted)
+  // This allows us to find subscriptions for any practitioner, not just the creator
+  console.log('[Push Bot] Querying all push subscriptions from FHIR...');
+  const allPushSubscriptions = await getAllPushSubscriptions(medplum);
+  console.log('[Push Bot] Found', Object.keys(allPushSubscriptions).length, 'practitioners with push subscriptions');
+
+  // Determine which practitioners to notify
+  let targetPractitionerIds = [];
   if (isBroadcast) {
-    console.log('[Push Bot] Querying ALL active push subscriptions...');
-    allPushSubscriptions = await getAllPushSubscriptions(medplum);
-    console.log('[Push Bot] Found', Object.keys(allPushSubscriptions).length, 'practitioners with push subscriptions');
+    // For broadcasts, send to ALL practitioners who have push subscriptions
+    targetPractitionerIds = Object.keys(allPushSubscriptions);
+    console.log('[Push Bot] BROADCAST MODE - Sending to all', targetPractitionerIds.length, 'practitioners with subscriptions');
+  } else {
+    // For targeted notifications, send only to Communication recipients who have subscriptions
+    for (const recipient of communication.recipient || []) {
+      if (recipient.reference?.startsWith('Practitioner/')) {
+        const practitionerId = recipient.reference.split('/')[1];
+        targetPractitionerIds.push(practitionerId);
+      }
+    }
+    console.log('[Push Bot] TARGETED MODE - Sending to', targetPractitionerIds.length, 'recipients');
   }
 
-  for (const recipient of communication.recipient || []) {
+  // Send to each target practitioner
+  for (const practitionerId of targetPractitionerIds) {
     recipientCount++;
-    console.log('[Push Bot] Processing recipient:', recipientCount, '-', recipient.reference);
-
-    if (!recipient.reference?.startsWith('Practitioner/')) {
-      console.log('[Push Bot] Skipping - not a Practitioner');
-      continue;
-    }
-
-    const practitionerId = recipient.reference.split('/')[1];
-    console.log('[Push Bot] Practitioner ID:', practitionerId);
+    console.log('[Push Bot] Processing recipient:', recipientCount, '- Practitioner/' + practitionerId);
 
     try {
-      let subscriptions = [];
-
-      if (isBroadcast && allPushSubscriptions) {
-        // For broadcasts, use subscriptions from the query
-        subscriptions = allPushSubscriptions[practitionerId] || [];
-        console.log('[Push Bot] Found', subscriptions.length, 'subscriptions for this practitioner (from query)');
-      } else {
-        // For regular notifications, get from Communication extension
-        console.log('[Push Bot] Getting push subscriptions from Communication...');
-        subscriptions = await getPushSubscriptions(communication, practitionerId);
-        console.log('[Push Bot] Found', subscriptions.length, 'subscriptions (from Communication)');
-      }
+      const subscriptions = allPushSubscriptions[practitionerId] || [];
+      console.log('[Push Bot] Found', subscriptions.length, 'subscription(s) for this practitioner');
 
       if (subscriptions.length === 0) {
         console.log('[Push Bot] No push subscriptions found for this practitioner');
@@ -1085,38 +1082,6 @@ exports.handler = async function(medplum, event) {
   console.log('[Push Bot] Notifications sent:', sentCount);
   console.log('[Push Bot] ===================');
 };
-
-async function getPushSubscriptions(communication, practitionerId) {
-  console.log('[Push Bot] Getting push subscriptions for practitioner:', practitionerId);
-
-  // Get push subscriptions from the Communication extension
-  // This is set by createNotification() in the frontend when the notification is created
-  const pushSubsExtension = communication.extension?.find(
-    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/push-subscriptions'
-  );
-
-  if (!pushSubsExtension?.valueString) {
-    console.log('[Push Bot] No push subscriptions extension found in Communication');
-    return [];
-  }
-
-  try {
-    const pushSubscriptions = JSON.parse(pushSubsExtension.valueString);
-    console.log('[Push Bot] Found push subscriptions for practitioners:', Object.keys(pushSubscriptions));
-
-    const subscriptions = pushSubscriptions[practitionerId];
-    if (subscriptions && subscriptions.length > 0) {
-      console.log('[Push Bot] Found', subscriptions.length, 'push subscription(s) for this practitioner');
-      return subscriptions;
-    } else {
-      console.log('[Push Bot] No push subscriptions found for this practitioner');
-      return [];
-    }
-  } catch (err) {
-    console.log('[Push Bot] Failed to parse push subscriptions:', err);
-    return [];
-  }
-}
 
 // Cache for push subscriptions to avoid querying on every notification
 let pushSubscriptionsCache = null;

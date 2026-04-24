@@ -435,8 +435,8 @@ export function CreateAppointmentModalV2({
         await createNotification(medplum, 'appointment-created', {
           patient,
           appointment: savedAppointment,
-          provider: mainProvider,
-          assistant: assistantProvider,
+          provider: mainProvider ?? undefined,
+          assistant: assistantProvider ?? undefined,
           date: savedAppointment.start,
           time: dayjs(savedAppointment.start).format('h:mm A'),
           serviceType: selectedServices.map((s) => s.activityDefinition.title).join(', '),
