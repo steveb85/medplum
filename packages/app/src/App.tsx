@@ -12,6 +12,7 @@ import {
   IconCalendar,
   IconClipboardList,
   IconDatabase,
+  IconDoor,
   IconFolder,
   IconForms,
   IconId,
@@ -219,11 +220,9 @@ function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRol
           href: '/admin/services',
           icon: <IconBuilding />,
         },
-        {
-          label: 'Access Policies',
-          href: '/admin/accesspolicies',
-          icon: <IconLock />,
-        },
+
+        { label: 'Rooms', href: '/admin/rooms', icon: <IconDoor /> },
+        { label: 'Access Policies', href: '/admin/accesspolicies', icon: <IconLock /> },
       ],
     });
   }

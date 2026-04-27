@@ -380,8 +380,17 @@ export function CreateAppointmentModalV2({
       // Determine initial status based on user role
       // Providers can auto-approve their own bookings
       // Coordinators must have bookings approved by providers
-      const userRole = getMedSpaRole(medplum);
-      const initialStatus = userRole === 'provider' || userRole === 'assistant' ? 'booked' : 'pending';
+// WORKFLOW: All bookings start as PENDING, regardless of who creates them
+    // Provider must approve (deposit paid/waived) before booking becomes BOOKED
+    // This ensures deposit requirement is always enforced
+    const initialStatus = 'pending';
+
+    // TODO: When Stripe API is integrated, add logic to cancel payment intent
+    // when a booking is cancelled while deposit is in 'requested' state
+    // Example:
+    // if (booking.status === 'cancelled' && depositInfo.status === 'requested') {
+    //   await stripe.paymentIntents.cancel(depositInfo.paymentIntentId);
+    // }
 
       // 1. Create Appointment
       const appointment: Appointment = {

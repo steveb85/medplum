@@ -702,20 +702,23 @@ export function BookingsPage(): JSX.Element {
           </Table.Td>
           <Table.Td>
             <Group gap="xs">
-                    {/* Approve Button - only for pending */}
-                    {actions.canApprove && (
-                      <Tooltip label="Approve booking">
-                        <Button
-                          size="xs"
-                          color="green"
-                          loading={isUpdating}
-                          onClick={() => handleApprove(row)}
-                          leftSection={<IconCheck size={14} />}
-                        >
-                          Approve
-                        </Button>
-                      </Tooltip>
-                    )}
+{/* Send Payment Link Button - only for pending bookings */}
+              {/* NOTE: This does NOT approve the booking, it sends payment request to patient.
+                  Booking stays PENDING until deposit is paid or waived.
+                  TODO: When Stripe API integrated, this will initiate payment link creation */}
+              {actions.canApprove && (
+                <Tooltip label="Send deposit payment request to patient">
+                  <Button
+                    size="xs"
+                    color="blue"
+                    loading={isUpdating}
+                    onClick={() => handleViewAppointment(row)}
+                    leftSection={<IconCheck size={14} />}
+                  >
+                    Send Payment Link
+                  </Button>
+                </Tooltip>
+              )}
 
                     {/* Action Menu */}
                     {(actions.canArrive || actions.canNoShow || actions.canCancel) && (
