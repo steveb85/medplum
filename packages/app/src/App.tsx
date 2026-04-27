@@ -219,6 +219,11 @@ function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRol
           href: '/admin/services',
           icon: <IconBuilding />,
         },
+        {
+          label: 'Access Policies',
+          href: '/admin/accesspolicies',
+          icon: <IconLock />,
+        },
       ],
     });
   }

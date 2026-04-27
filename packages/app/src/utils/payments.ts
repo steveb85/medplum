@@ -10,11 +10,12 @@ export type DepositStatus = 'pending' | 'requested' | 'paid' | 'waived';
 
 export interface DepositInfo {
   status: DepositStatus;
-  amount: number;
+  amount: number; // Requested amount
   requestedAt?: Date;
   // Payment tracking
   paidAt?: Date;
   paidBy?: { reference: string; display?: string };
+  actualPaidAmount?: number; // Actual amount paid (may differ from requested)
   paymentType?: 'online' | 'manual'; // online = Stripe, manual = cash/check/etc
   paymentNotes?: string; // For manual payments: check number, cash, etc.
   // Undo tracking (only for manual payments)
@@ -22,6 +23,8 @@ export interface DepositInfo {
   undoneAt?: Date;
   undoneBy?: { reference: string; display?: string };
   undoneReason?: string;
+  // Payment link tracking
+  paymentLinkSentAt?: Date;
   // Waiver tracking
   waivedAt?: Date;
   waivedBy?: { reference: string; display?: string };
@@ -45,12 +48,14 @@ export function getDepositStatus(appointment: Appointment): DepositInfo {
   const requestedAtRaw = ext.extension.find((e) => e.url === 'requestedAt')?.valueDateTime;
   const paidAtRaw = ext.extension.find((e) => e.url === 'paidAt')?.valueDateTime;
   const paidBy = ext.extension.find((e) => e.url === 'paidBy')?.valueReference;
+  const actualPaidAmount = ext.extension.find((e) => e.url === 'actualPaidAmount')?.valueInteger;
   const paymentType = ext.extension.find((e) => e.url === 'paymentType')?.valueString as 'online' | 'manual' | undefined;
   const paymentNotes = ext.extension.find((e) => e.url === 'paymentNotes')?.valueString;
   const isUndone = ext.extension.find((e) => e.url === 'isUndone')?.valueBoolean;
   const undoneAtRaw = ext.extension.find((e) => e.url === 'undoneAt')?.valueDateTime;
   const undoneBy = ext.extension.find((e) => e.url === 'undoneBy')?.valueReference;
   const undoneReason = ext.extension.find((e) => e.url === 'undoneReason')?.valueString;
+  const paymentLinkSentAtRaw = ext.extension.find((e) => e.url === 'paymentLinkSentAt')?.valueDateTime;
   const waivedAtRaw = ext.extension.find((e) => e.url === 'waivedAt')?.valueDateTime;
   const waivedBy = ext.extension.find((e) => e.url === 'waivedBy')?.valueReference;
   const waivedReason = ext.extension.find((e) => e.url === 'waivedReason')?.valueString;
@@ -61,12 +66,14 @@ export function getDepositStatus(appointment: Appointment): DepositInfo {
     requestedAt: requestedAtRaw ? new Date(requestedAtRaw) : undefined,
     paidAt: paidAtRaw ? new Date(paidAtRaw) : undefined,
     paidBy,
+    actualPaidAmount,
     paymentType,
     paymentNotes,
     isUndone,
     undoneAt: undoneAtRaw ? new Date(undoneAtRaw) : undefined,
     undoneBy,
     undoneReason,
+    paymentLinkSentAt: paymentLinkSentAtRaw ? new Date(paymentLinkSentAtRaw) : undefined,
     waivedAt: waivedAtRaw ? new Date(waivedAtRaw) : undefined,
     waivedBy,
     waivedReason,
@@ -91,11 +98,18 @@ export function buildDepositInfoExtensions(depositInfo: DepositInfo): { url: str
   if (depositInfo.paidBy) {
     extensions.push({ url: 'paidBy', valueReference: depositInfo.paidBy });
   }
+  if (depositInfo.actualPaidAmount !== undefined) {
+    extensions.push({ url: 'actualPaidAmount', valueInteger: depositInfo.actualPaidAmount });
+  }
   if (depositInfo.paymentType) {
     extensions.push({ url: 'paymentType', valueString: depositInfo.paymentType });
   }
   if (depositInfo.paymentNotes) {
     extensions.push({ url: 'paymentNotes', valueString: depositInfo.paymentNotes });
+  }
+  // Payment link tracking
+  if (depositInfo.paymentLinkSentAt) {
+    extensions.push({ url: 'paymentLinkSentAt', valueDateTime: depositInfo.paymentLinkSentAt.toISOString() });
   }
   // Undo tracking
   if (depositInfo.isUndone) {

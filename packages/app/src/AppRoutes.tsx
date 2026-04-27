@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { JSX } from 'react';
 import { Navigate, Route, Routes, useParams } from 'react-router';
+import { AccessPoliciesPage } from './admin/AccessPoliciesPage';
 import { BotsPage } from './admin/BotsPage';
 import { ClientsPage } from './admin/ClientsPage';
 import { CreateBotPage } from './admin/CreateBotPage';
@@ -154,9 +155,10 @@ export function AppRoutes(): JSX.Element {
           <Route path="users" element={<UsersPage />} />
           <Route path="project" element={<ProjectDetailsPage />} />
           <Route path="secrets" element={<SecretsPage />} />
-            <Route path="sites" element={<SitesPage />} />
-            <Route path="services" element={<ServiceCatalogPage />} />
-          </Route>
+          <Route path="sites" element={<SitesPage />} />
+          <Route path="accesspolicies" element={<AccessPoliciesPage />} />
+          <Route path="services" element={<ServiceCatalogPage />} />
+        </Route>
       {/* Lab routes - Admin only */}
       <Route
         path="/lab/assays"

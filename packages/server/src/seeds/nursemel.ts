@@ -267,9 +267,11 @@ async function createProviderAccessPolicy(systemRepo: SystemRepository, project:
     { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
     { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
     { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
-    // Service catalog (ActivityDefinitions)
-    { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
-  ],
+  // Service catalog (ActivityDefinitions)
+      { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
+      // Equipment management
+      { resourceType: 'Device', interaction: ['read', 'vread', 'search'] },
+    ],
 });
 
 globalLogger.info(`Created Provider AccessPolicy: ${policy.id}`);
@@ -323,8 +325,10 @@ async function createCoordinatorAccessPolicy(systemRepo: SystemRepository, proje
       { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
-    // Service catalog (ActivityDefinitions) - needed for booking
-    { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
+      // Service catalog (ActivityDefinitions) - needed for booking
+      { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
+      // Equipment management
+      { resourceType: 'Device', interaction: ['read', 'vread', 'search'] },
     ],
   });
 
@@ -381,6 +385,8 @@ async function createProjectAdminAccessPolicy(systemRepo: SystemRepository, proj
       { resourceType: 'User', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       { resourceType: 'ProjectMembership', interaction: ['read', 'vread', 'create', 'update', 'delete', 'search'] },
       { resourceType: 'UserConfiguration', interaction: ['read', 'vread', 'create', 'update', 'search'] },
+      // Equipment management (admin full access)
+      { resourceType: 'Device', interaction: ['read', 'vread', 'create', 'update', 'search'] },
     ],
   });
 
@@ -1627,4 +1633,102 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
 
     globalLogger.info(`Created ActivityDefinition: ${svc.name}`);
   }
+}
+
+
+///**
+// * Create equipment
+// * Seed initial equipment for the practice
+// */
+//
+//async function createEquipment(
+//  systemRepo: SystemRepository,
+//  project: Project,
+//  type: string,
+//  name: string,
+//  serialNumber: string,
+//  assignedRoomId?: string
+//): Promise<Device> {
+//  const existing = await systemRepo.searchOne<Device>({
+//    resourceType: 'Device',
+//    filters: [{ code: 'name', operator: 'eq', value: name }],
+//  });
+
+//  if (existing) {
+//    globalLogger.info(`Equipment ${name} already exists: ${existing.id}`);
+//    return existing;
+//  }
+
+//  const code = EQUIPMENT_TYPES.find((t) => t.label.toLowerCase().includes(type.toLowerCase()))?.code || 'other';
+//  const uniqueCode = generateEquipmentCode(code, []); // Simplified for seeding
+
+//  return systemRepo.createResource<Device>({
+//    resourceType: 'Device',
+//    meta: { project: project.id },
+//    deviceName: [{ name, type: { coding: [{ system: 'http://melissaknudson.com/equipment-type', code, display: name }] } }],
+//    identifier: [
+//      { system: 'http://melissaknudson.com/equipment-code', value: uniqueCode },
+//      { system: 'http://melissaknudson.com/serial-number', value: serialNumber },
+//    ],
+//    status: 'active',
+//    location: assignedRoomId ? { reference: `Location/${assignedRoomId}` } : undefined,
+//    extension: [
+//      {
+//        url: 'http://melissaknudson.com/fhir/StructureDefinition/purchase-date',
+//        valueDate: dayjs().format('YYYY-MM-DD'),
+//      },
+//      {
+//        url: 'http://melissaknudson.com/fhir/StructureDefinition/purchase-cost',
+//        valueMoney: { currency: 'USD', value: Math.floor(Math.random() * 20000) + 5000 }, // Random cost $5-25k
+//      },
+//    ],
+//  });
+//}
+await seedEquipment(systemRepo, project, room1, room2);
+
+// Seed equipment after rooms are created
+await createEquipment(systemRepo, project, 'laser-hair-removal', 'Cynosure Elite+ Laser', 'SN-2024-001', room1.id);
+await createEquipment(systemRepo, project, 'laser-hair-removal', 'Lumenis Lightsheer', 'SN-2024-002', room2.id);
+await createEquipment(systemRepo, project, 'botox-station', 'Botox Supply Station #1', 'N/A'); // Floating
+await createEquipment(systemRepo, project, 'filler-cart', 'Dermal Filler Cart Primary', 'N/A', room1.id);
+await createEquipment(systemRepo, project, 'photo-setup', 'Photography Setup Kit', 'N/A'); // Floating
+await createEquipment(systemRepo, project, 'numbing-station', 'Numbing Cream Station', 'N/A', room2.id);
+await createEquipment(systemRepo, project, 'emergency-kit', 'Emergency Response Kit', 'N/A'); // Floating
+
+globalLogger.info('Equipment seeding completed for practice');
+
+async function createEquipment(
+  systemRepo: SystemRepository,
+  project: Project,
+  type: string,
+  name: string,
+  serialNumber: string,
+  assignedRoomId?: string
+): Promise<Device> {
+  const existing = await systemRepo.searchOne<Device>({
+    resourceType: 'Device',
+    filters: [
+      { code: '_filter', operator: 'eq', value: `device-name eq "${name}"` }
+    ],
+  });
+
+  if (existing) {
+    globalLogger.info(`Equipment ${name} already exists: ${existing.id}`);
+    return existing;
+  }
+
+  const code = EQUIPMENT_TYPES.find((t) => t.code === type || t.label.toLowerCase().includes(type.toLowerCase()))?.code || 'other';
+  const uniqueCode = type + '-' + Math.floor(Math.random() * 1000); // Simplified for seeding
+
+  return systemRepo.createResource<Device>({
+    resourceType: 'Device',
+    meta: { project: project.id },
+    deviceName: [{ name, type: { coding: [{ system: 'http://melissaknudson.com/equipment-type', code, display: name }] } }],
+    identifier: [
+      { system: 'http://melissaknudson.com/equipment-code', value: uniqueCode },
+      { system: 'http://melissaknudson.com/serial-number', value: serialNumber },
+    ],
+    status: 'active',
+    location: assignedRoomId ? { reference: `Location/${assignedRoomId}` } : undefined,
+  });
 }
