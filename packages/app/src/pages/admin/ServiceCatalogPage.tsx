@@ -19,12 +19,12 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import { showNotification } from '@mantine/notifications';
 import { normalizeErrorString } from '@medplum/core';
-import type { ActivityDefinition } from '@medplum/fhirtypes';
+import type { ActivityDefinition, Device } from '@medplum/fhirtypes';
 import { useMedplum, useSearchResources } from '@medplum/react';
 import { IconEdit, IconPlus } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useCallback, useMemo, useState } from 'react';
-import { EQUIPMENT_TYPES, getEquipmentLabel } from '../../admin/equipmentTypes';
+
 import type { ServiceConfig } from '../../utils/fhir-extensions';
 import { buildServiceConfigExtensions, parseServiceConfig } from '../../utils/fhir-extensions';
 
@@ -85,6 +85,30 @@ function getRoomDisplay(roomValue: string): string {
   return roomValue;
 }
 
+// Helper function to get equipment display info
+function getEquipmentDisplayInfo(
+  equipmentType: string,
+  equipmentReference?: string,
+  equipmentName?: string,
+  allEquipment?: Device[]
+): { label: string; subtitle?: string } {
+  // If we have a specific device reference, show device details
+  if (equipmentReference && allEquipment) {
+    const device = allEquipment.find((d) => `Device/${d.id}` === equipmentReference);
+    if (device) {
+      const serial = device.identifier?.find((id) => id.type?.text === 'serial-number')?.value;
+      const room = device.location?.display || device.location?.reference?.split('/')?.[1];
+      const deviceName = device.deviceName && device.deviceName.length > 0 ? device.deviceName[0].name : undefined;
+      const subtitle = [serial ? `SN: ${serial}` : undefined, room ? `Room: ${getRoomDisplay(room)}` : undefined]
+        .filter(Boolean)
+        .join(' | ');
+      return { label: deviceName || equipmentName || 'Unknown Device', subtitle };
+    }
+  }
+  // Fallback to equipment type label
+  return { label: equipmentName || equipmentType || 'Unknown Equipment' };
+}
+
 export function ServiceCatalogPage(): JSX.Element {
   const medplum = useMedplum();
   const [opened, { open, close }] = useDisclosure(false);
@@ -121,6 +145,15 @@ export function ServiceCatalogPage(): JSX.Element {
   });
 
   const services = servicesResult as ActivityDefinition[] | undefined;
+
+  // Load actual equipment (Device resources)
+  const [equipmentResult, equipmentLoading] = useSearchResources('Device', {
+    status: 'active',
+    _count: '100',
+  });
+
+  const equipment = equipmentResult as Device[] | undefined;
+  const allEquipment = useMemo(() => equipment ?? [], [equipment]);
 
   const refresh = useCallback(async () => {
     // Force re-render by modifying state - useSearchResources will refetch
@@ -314,27 +347,35 @@ export function ServiceCatalogPage(): JSX.Element {
                   )}
                 </Badge>
               </Table.Td>
-              <Table.Td>
-                {config.equipmentRequirements && config.equipmentRequirements.length > 0 ? (
-                  <Group gap={4}>
-                    {config.equipmentRequirements.slice(0, 2).map((eq, i) => (
+            <Table.Td>
+              {config.equipmentRequirements && config.equipmentRequirements.length > 0 ? (
+                <Group gap={4}>
+                  {config.equipmentRequirements.slice(0, 2).map((eq, i) => {
+                    const equipmentInfo = getEquipmentDisplayInfo(
+                      eq.equipmentType,
+                      eq.equipmentReference?.reference,
+                      eq.equipmentName,
+                      allEquipment
+                    );
+                    return (
                       <Badge key={i} size="xs" variant="light" color="blue">
-                        {getEquipmentLabel(eq.equipmentType)}
+                        {equipmentInfo.label}
                         {!eq.movable && ' ⚓'}
                       </Badge>
-                    ))}
-                    {config.equipmentRequirements.length > 2 && (
-                      <Text size="xs" c="dimmed">
-                        +{config.equipmentRequirements.length - 2}
-                      </Text>
-                    )}
-                  </Group>
-                ) : (
-                  <Text size="xs" c="dimmed">
-                    None
-                  </Text>
-                )}
-              </Table.Td>
+                    );
+                  })}
+                  {config.equipmentRequirements.length > 2 && (
+                    <Text size="xs" c="dimmed">
+                      +{config.equipmentRequirements.length - 2}
+                    </Text>
+                  )}
+                </Group>
+              ) : (
+                <Text size="xs" c="dimmed">
+                  None
+                </Text>
+              )}
+            </Table.Td>
               <Table.Td></Table.Td>
               <Table.Td>
                 <Badge variant="light">{config.gfeCategory || 'N/A'}</Badge>
@@ -631,103 +672,176 @@ export function ServiceCatalogPage(): JSX.Element {
             Equipment required for this service
           </Text>
           <Stack gap="xs">
-            {(formData.config.equipmentRequirements?.length ?? 0) === 0 ? (
-              <Text size="sm" c="dimmed">
-                No equipment requirements. Add equipment below.
-              </Text>
-            ) : (
-              formData.config.equipmentRequirements?.map((req, index) => (
+          {(formData.config.equipmentRequirements?.length ?? 0) === 0 ? (
+            <Text size="sm" c="dimmed">
+              No equipment requirements. Add equipment below.
+            </Text>
+          ) : (
+            formData.config.equipmentRequirements?.map((req, index) => {
+              const equipmentInfo = getEquipmentDisplayInfo(
+                req.equipmentType,
+                req.equipmentReference?.reference,
+                req.equipmentName,
+                allEquipment
+              );
+              return (
                 <Card key={index} withBorder p="xs">
-                  <Group align="flex-start">
-                    <Select
-                      label="Equipment Type"
-                      value={req.equipmentType}
-                      onChange={(val) =>
-                        setFormData((d) => {
-                          const newReqs = [...(d.config.equipmentRequirements ?? [])];
-                          newReqs[index] = { ...req, equipmentType: val || '' };
+                  <Stack gap="xs">
+                    <Group align="flex-start">
+                      <Select
+                        label="Default Equipment"
+                        description="Select a specific device instance"
+                        value={req.equipmentReference?.reference || req.equipmentType}
+                        onChange={(val) => {
+                          setFormData((d) => {
+                            const newReqs = [...(d.config.equipmentRequirements ?? [])];
+                            if (!val) {
+                              newReqs[index] = { ...req, equipmentType: '', equipmentReference: undefined, equipmentName: undefined };
+                            } else if (val.startsWith('Device/')) {
+                              // Selected a specific device
+                              const device = allEquipment.find((de) => `Device/${de.id}` === val);
+                              const deviceName = device?.deviceName?.[0]?.name;
+                              const deviceType = device?.type?.text || '';
+                              newReqs[index] = {
+                                ...req,
+                                equipmentReference: { reference: val },
+                                equipmentName: deviceName,
+                                equipmentType: deviceType || '',
+                              };
+                            } else {
+                              // Selected a generic type (legacy fallback)
+                              newReqs[index] = { ...req, equipmentType: val, equipmentReference: undefined, equipmentName: undefined };
+                            }
+                            return {
+                              ...d,
+                              config: { ...d.config, equipmentRequirements: newReqs },
+                            };
+                          });
+                        }}
+                        data={allEquipment.map((device) => {
+                          const serial = device.identifier?.find((id) => id.type?.text === 'serial-number')?.value;
+                          const room = device.location?.display || device.location?.reference?.split('/')?.[1];
                           return {
-                            ...d,
-                            config: { ...d.config, equipmentRequirements: newReqs },
+                            value: `Device/${device.id}`,
+                            label: `${device.deviceName?.[0]?.name || 'Unnamed Device'}${serial ? ` (SN: ${serial})` : ''}`,
+                            description: room ? `Room: ${getRoomDisplay(room)}` : undefined,
                           };
-                        })
-                      }
-                      data={EQUIPMENT_TYPES.map((t) => ({
-                        value: t.code,
-                        label: t.label,
-                      }))}
-                      style={{ flex: 1 }}
-                      searchable
-                      clearable
-                      placeholder="Select equipment type..."
-                    />
-                    <Switch
-                      label="Required"
-                      checked={req.required}
-                      onChange={(e) =>
-                        setFormData((d) => {
-                          const newReqs = [...(d.config.equipmentRequirements ?? [])];
-                          newReqs[index] = { ...req, required: e.currentTarget.checked as any };
-                          return {
-                            ...d,
-                            config: { ...d.config, equipmentRequirements: newReqs },
-                          };
-                        })
-                      }
-                    />
-                    <Switch
-                      label="Movable"
-                      checked={req.movable}
-                      onChange={(e) =>
-                        setFormData((d) => {
-                          const newReqs = [...(d.config.equipmentRequirements ?? [])];
-                          newReqs[index] = { ...req, movable: e.currentTarget.checked as any };
-                          return {
-                            ...d,
-                            config: { ...d.config, equipmentRequirements: newReqs },
-                          };
-                        })
-                      }
-                    />
-                    <Button
-                      color="red"
-                      variant="light"
-                      size="xs"
-                      onClick={() =>
-                        setFormData((d) => {
-                          const newReqs = (d.config.equipmentRequirements ?? []).filter((_, i) => i !== index);
-                          return {
-                            ...d,
-                            config: { ...d.config, equipmentRequirements: newReqs },
-                          };
-                        })
-                      }
-                    >
-                      Remove
-                    </Button>
-                  </Group>
+                        })}
+                        style={{ flex: 2 }}
+                        searchable
+                        clearable
+                        placeholder="Select equipment..."
+                        disabled={equipmentLoading}
+                        rightSection={equipmentLoading ? <Text size="xs">Loading...</Text> : undefined}
+                      />
+                      <Select
+                        label="Equipment Type Filter"
+                        description="Filter for booking"
+                        value={req.equipmentType || ''}
+                        onChange={(val) =>
+                          setFormData((d) => {
+                            const newReqs = [...(d.config.equipmentRequirements ?? [])];
+                            newReqs[index] = { ...req, equipmentType: val || '' };
+                            return {
+                              ...d,
+                              config: { ...d.config, equipmentRequirements: newReqs },
+                            };
+                          })
+                        }
+                        data={[
+                          { value: 'laser-hair-removal', label: 'Laser Hair Removal' },
+                          { value: 'laser-skin-resurfacing', label: 'Laser Skin Resurfacing' },
+                          { value: 'laser-vasculature', label: 'Vasculature Laser' },
+                          { value: 'coolsculpting', label: 'CoolSculpting' },
+                          { value: 'emsculpt', label: 'Emsculpt' },
+                          { value: 'vaginal-rejuvenation', label: 'Vaginal Rejuvenation' },
+                          { value: 'injection-botox', label: 'Botox' },
+                          { value: 'injection-filler', label: 'Dermal Filler' },
+                          { value: 'microneedling', label: 'Microneedling' },
+                          { value: 'facial', label: 'Facial Device' },
+                        ]}
+                        style={{ flex: 1 }}
+                        searchable
+                        clearable
+                        placeholder="Filter type..."
+                      />
+                    </Group>
+                    {equipmentInfo.subtitle && (
+                      <Text size="xs" c="dimmed">
+                        {equipmentInfo.subtitle}
+                      </Text>
+                    )}
+                    <Group align="center">
+                      <Switch
+                        label="Required"
+                        checked={req.required}
+                        onChange={(e) =>
+                          setFormData((d) => {
+                            const newReqs = [...(d.config.equipmentRequirements ?? [])];
+                            newReqs[index] = { ...req, required: e.currentTarget.checked as any };
+                            return {
+                              ...d,
+                              config: { ...d.config, equipmentRequirements: newReqs },
+                            };
+                          })
+                        }
+                      />
+                      <Switch
+                        label="Movable"
+                        description="Can be moved to other rooms"
+                        checked={req.movable}
+                        onChange={(e) =>
+                          setFormData((d) => {
+                            const newReqs = [...(d.config.equipmentRequirements ?? [])];
+                            newReqs[index] = { ...req, movable: e.currentTarget.checked as any };
+                            return {
+                              ...d,
+                              config: { ...d.config, equipmentRequirements: newReqs },
+                            };
+                          })
+                        }
+                      />
+                      <Button
+                        color="red"
+                        variant="light"
+                        size="xs"
+                        onClick={() =>
+                          setFormData((d) => {
+                            const newReqs = (d.config.equipmentRequirements ?? []).filter((_, i) => i !== index);
+                            return {
+                              ...d,
+                              config: { ...d.config, equipmentRequirements: newReqs },
+                            };
+                          })
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </Group>
+                  </Stack>
                 </Card>
-              ))
-            )}
-            <Button
-              variant="light"
-              size="sm"
-              onClick={() =>
-                setFormData((d) => ({
-                  ...d,
-                  config: {
-                    ...d.config,
-                    equipmentRequirements: [
-                      ...(d.config.equipmentRequirements ?? []),
-                      { equipmentType: '', required: true, movable: true },
-                    ],
-                  },
-                }))
-              }
-            >
-              + Add Equipment Requirement
-            </Button>
-          </Stack>
+              );
+            })
+          )}
+          <Button
+            variant="light"
+            size="sm"
+            onClick={() =>
+              setFormData((d) => ({
+                ...d,
+                config: {
+                  ...d.config,
+                  equipmentRequirements: [
+                    ...(d.config.equipmentRequirements ?? []),
+                    { equipmentType: '', required: true, movable: true },
+                  ],
+                },
+              }))
+            }
+          >
+            + Add Equipment Requirement
+          </Button>
+        </Stack>
 
           <Title order={4} mt="md">
             Recommended Accompanying Services

@@ -9,7 +9,7 @@
  * room assignment, and cost tracking.
  */
 
-import type { ActivityDefinition, Extension, Reference, ServiceRequest } from '@medplum/fhirtypes';
+import type { ActivityDefinition, Device, Extension, Reference, ServiceRequest } from '@medplum/fhirtypes';
 
 // ============================================================================
 // Extension URLs
@@ -46,7 +46,9 @@ export const EXTENSION_URLS = {
 // ============================================================================
 
 export interface EquipmentRequirement {
-  equipmentType: string; // e.g., 'laser', 'cooling-system'
+  equipmentReference?: Reference<Device>; // Specific device instance (e.g., Device/cynosure-001)
+  equipmentName?: string; // Display name (e.g., "Cynosure Elite+ Laser")
+  equipmentType: string; // Type code (e.g., 'laser-hair-removal') for filtering/fallback
   required: boolean;
   movable: boolean; // Can equipment be moved to different room
 }
