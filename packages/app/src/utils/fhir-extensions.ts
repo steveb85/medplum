@@ -77,9 +77,10 @@ export interface ServiceConfig {
   icon: string;
   color: string;
   category: string;
-  depositAmount: number;
-  depositReminders: number;
-  depositReminderInterval: number;
+  // Deposit configuration removed - now handled at booking level
+  // depositAmount: number;
+  // depositReminders: number;
+  // depositReminderInterval: number;
   followUpSchedule: { hours: number; message: string }[];
   providerRates: { providerId: string; providerName: string; pricePerUnit: number }[];
   // New fields
@@ -206,6 +207,39 @@ export function buildServiceRequestExtensions(details: ServiceRequestDetails): E
 export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig {
   const ext = activity.extension?.find((e) => e.url === EXTENSION_URLS.activityDefinition.serviceConfig);
 
+  // NEW FORMAT: Parse single JSON string value
+  if (ext?.valueString) {
+    try {
+      const parsed = JSON.parse(ext.valueString);
+      return {
+        numbingTime: parsed.numbingTime ?? 0,
+        defaultRoom: parsed.defaultRoom ?? 'room-1',
+        roomMovable: parsed.roomMovable ?? true,
+        minPrice: parsed.minPrice ?? 0,
+        maxPrice: parsed.maxPrice ?? 0,
+        pricePerUnit: parsed.pricePerUnit ?? false,
+        unitType: parsed.unitType ?? 'unit',
+        gfeCategory: parsed.gfeCategory ?? '',
+        requiresConsult: parsed.requiresConsult ?? false,
+        icon: parsed.icon ?? '',
+        color: parsed.color ?? 'blue',
+        category: parsed.category ?? 'other',
+        // Deposit configuration removed - now handled at booking level
+        // depositAmount: parsed.depositAmount ?? 250,
+        // depositReminders: parsed.depositReminders ?? 4,
+        // depositReminderInterval: parsed.depositReminderInterval ?? 24,
+        followUpSchedule: parsed.followUpSchedule || [],
+        providerRates: parsed.providerRates || [],
+        equipmentRequirements: parsed.equipmentRequirements || [],
+        recommendedAccompanyingServices: parsed.recommendedAccompanyingServices || [],
+        internalCost: parsed.internalCost || { productCost: 0, costPerUnit: false, unitType: 'unit' },
+      };
+    } catch (err) {
+      console.error('Failed to parse service config JSON:', err);
+    }
+  }
+
+  // OLD FORMAT: Backward compatibility - parse individual extensions (for existing services)
   // Parse follow-up schedule from JSON string
   const followUpScheduleRaw = ext?.extension?.find((e) => e.url === 'followUpSchedule')?.valueString;
   let followUpSchedule: { hours: number; message: string }[] = [];
@@ -280,9 +314,11 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
     icon: ext?.extension?.find((e) => e.url === 'icon')?.valueString ?? '',
     color: ext?.extension?.find((e) => e.url === 'color')?.valueString ?? 'blue',
     category: ext?.extension?.find((e) => e.url === 'category')?.valueString ?? 'other',
-    depositAmount: ext?.extension?.find((e) => e.url === 'depositAmount')?.valueInteger ?? 250,
-    depositReminders: ext?.extension?.find((e) => e.url === 'depositReminders')?.valueInteger ?? 4,
-    depositReminderInterval: ext?.extension?.find((e) => e.url === 'depositReminderInterval')?.valueInteger ?? 24,
+    // Deposit configuration removed - now handled at booking level
+    // For backward compatibility, return undefined/zero values
+    // depositAmount: ext?.extension?.find((e) => e.url === 'depositAmount')?.valueInteger ?? 250,
+    // depositReminders: ext?.extension?.find((e) => e.url === 'depositReminders')?.valueInteger ?? 4,
+    // depositReminderInterval: ext?.extension?.find((e) => e.url === 'depositReminderInterval')?.valueInteger ?? 24,
     followUpSchedule,
     providerRates,
     // New fields
@@ -293,55 +329,35 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
 }
 
 export function buildServiceConfigExtensions(config: ServiceConfig): Extension[] {
-  const extensions: { url: string; [key: string]: unknown }[] = [
-    { url: 'numbingTime', valueInteger: config.numbingTime },
-    { url: 'defaultRoom', valueString: config.defaultRoom },
-    { url: 'roomMovable', valueBoolean: config.roomMovable },
-    { url: 'minPrice', valueInteger: config.minPrice },
-    { url: 'maxPrice', valueInteger: config.maxPrice },
-    { url: 'pricePerUnit', valueBoolean: config.pricePerUnit },
-    { url: 'unitType', valueString: config.unitType },
-    { url: 'requiresConsult', valueBoolean: config.requiresConsult },
-    { url: 'color', valueString: config.color },
-    { url: 'category', valueString: config.category },
-    { url: 'depositAmount', valueInteger: config.depositAmount },
-    { url: 'depositReminders', valueInteger: config.depositReminders },
-    { url: 'depositReminderInterval', valueInteger: config.depositReminderInterval },
-  ];
-
-  // Only add optional fields if they have values
-  if (config.gfeCategory) {
-    extensions.push({ url: 'gfeCategory', valueString: config.gfeCategory });
-  }
-  if (config.icon) {
-    extensions.push({ url: 'icon', valueString: config.icon });
-  }
-  if (config.followUpSchedule && config.followUpSchedule.length > 0) {
-    extensions.push({ url: 'followUpSchedule', valueString: JSON.stringify(config.followUpSchedule) });
-  }
-  if (config.providerRates && config.providerRates.length > 0) {
-    extensions.push({ url: 'providerRates', valueString: JSON.stringify(config.providerRates) });
-  }
-  if (config.equipmentRequirements && config.equipmentRequirements.length > 0) {
-    extensions.push({
-      url: 'equipmentRequirements',
-      valueString: JSON.stringify(config.equipmentRequirements),
-    });
-  }
-  if (config.recommendedAccompanyingServices && config.recommendedAccompanyingServices.length > 0) {
-    extensions.push({
-      url: 'recommendedAccompanyingServices',
-      valueString: JSON.stringify(config.recommendedAccompanyingServices),
-    });
-  }
-  if (config.internalCost) {
-    extensions.push({ url: 'internalCost', valueString: JSON.stringify(config.internalCost) });
-  }
+  // Store entire config as a single JSON string to avoid nested extension validation issues
+  // This is simpler and avoids FHIR constraint ext-1 violations
+  const configForSerialization = {
+    numbingTime: config.numbingTime,
+    defaultRoom: config.defaultRoom,
+    roomMovable: config.roomMovable,
+    minPrice: config.minPrice,
+    maxPrice: config.maxPrice,
+    pricePerUnit: config.pricePerUnit,
+    unitType: config.unitType,
+    requiresConsult: config.requiresConsult,
+    icon: config.icon || '',
+    color: config.color,
+    category: config.category,
+    // depositAmount: config.depositAmount,
+    // depositReminders: config.depositReminders,
+    // depositReminderInterval: config.depositReminderInterval,
+    gfeCategory: config.gfeCategory || '',
+    followUpSchedule: config.followUpSchedule || [],
+    providerRates: config.providerRates || [],
+    equipmentRequirements: config.equipmentRequirements || [],
+    recommendedAccompanyingServices: config.recommendedAccompanyingServices || [],
+    internalCost: config.internalCost || { productCost: 0, costPerUnit: false },
+  };
 
   return [
     {
       url: EXTENSION_URLS.activityDefinition.serviceConfig,
-      extension: extensions,
+      valueString: JSON.stringify(configForSerialization),
     },
   ];
 }

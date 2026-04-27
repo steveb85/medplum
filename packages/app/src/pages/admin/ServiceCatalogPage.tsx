@@ -5,7 +5,6 @@ import {
   Badge,
   Button,
   Card,
-  ColorInput,
   Group,
   Modal,
   NumberInput,
@@ -108,9 +107,6 @@ export function ServiceCatalogPage(): JSX.Element {
       icon: '',
       color: 'blue',
       category: 'other',
-      depositAmount: 250,
-      depositReminders: 4,
-      depositReminderInterval: 24,
       followUpSchedule: [],
       providerRates: [],
       equipmentRequirements: [],
@@ -172,9 +168,6 @@ export function ServiceCatalogPage(): JSX.Element {
         icon: '',
         color: 'blue',
         category: 'other',
-        depositAmount: 250,
-        depositReminders: 4,
-        depositReminderInterval: 24,
         followUpSchedule: [],
         providerRates: [],
         equipmentRequirements: [],
@@ -342,9 +335,7 @@ export function ServiceCatalogPage(): JSX.Element {
                   </Text>
                 )}
               </Table.Td>
-              <Table.Td>
-                <Badge variant="light">${config.depositAmount}</Badge>
-              </Table.Td>
+              <Table.Td></Table.Td>
               <Table.Td>
                 <Badge variant="light">{config.gfeCategory || 'N/A'}</Badge>
               </Table.Td>
@@ -382,7 +373,7 @@ export function ServiceCatalogPage(): JSX.Element {
 
       <Text size="sm" c="dimmed">
         Manage services available for booking. Configure duration, pricing, room requirements, GFE categories, and
-        deposit settings.
+        Manage services available for booking. Configure duration, pricing, room requirements, and GFE categories.
       </Text>
 
       <Card withBorder>
@@ -396,7 +387,6 @@ export function ServiceCatalogPage(): JSX.Element {
               <Table.Th>Price Range</Table.Th>
               <Table.Th>Internal Cost</Table.Th>
               <Table.Th>Equipment</Table.Th>
-              <Table.Th>Deposit</Table.Th>
               <Table.Th>GFE</Table.Th>
               <Table.Th>Room</Table.Th>
               <Table.Th>Status</Table.Th>
@@ -504,10 +494,10 @@ export function ServiceCatalogPage(): JSX.Element {
             <Switch
               label="Room Movable"
               checked={formData.config.roomMovable}
-              onChange={(checked) =>
+              onChange={(e) =>
                 setFormData((d) => ({
                   ...d,
-                  config: { ...d.config, roomMovable: checked as any },
+                  config: { ...d.config, roomMovable: e.currentTarget?.checked ?? (false as any) },
                 }))
               }
             />
@@ -546,7 +536,7 @@ export function ServiceCatalogPage(): JSX.Element {
               onChange={(e) =>
                 setFormData((d) => ({
                   ...d,
-                  config: { ...d.config, pricePerUnit: e.currentTarget.checked },
+                  config: { ...d.config, pricePerUnit: e.currentTarget?.checked ?? false },
                 }))
               }
             />
@@ -569,73 +559,10 @@ export function ServiceCatalogPage(): JSX.Element {
             label="Requires Consult"
             description="Patient must have current GFE for this category"
             checked={formData.config.requiresConsult}
-            onChange={(checked) =>
-              setFormData((d): any => ({
-                ...d,
-                config: { ...d.config, requiresConsult: checked },
-              }))
-            }
-          />
-
-          <Title order={4} mt="md">
-            Deposit Settings
-          </Title>
-
-          <Group grow>
-            <NumberInput
-              label="Deposit Amount ($)"
-              description="Default deposit for this service"
-              value={formData.config.depositAmount}
-              onChange={(val) =>
-                setFormData((d) => ({
-                  ...d,
-                  config: { ...d.config, depositAmount: Number(val) || 250 },
-                }))
-              }
-              min={0}
-              max={10000}
-              step={25}
-            />
-
-            <NumberInput
-              label="Max Reminders"
-              description="# of deposit reminders (max 4)"
-              value={formData.config.depositReminders}
-              onChange={(val) => {
-                const numVal = Number(val) || 4;
-                setFormData((d) => ({
-                  ...d,
-                  config: { ...d.config, depositReminders: Math.min(numVal, 4) },
-                }));
-              }}
-              min={1}
-              max={4}
-              step={1}
-            />
-
-            <NumberInput
-              label="Reminder Interval (hours)"
-              description="Hours between reminders"
-              value={formData.config.depositReminderInterval}
-              onChange={(val) =>
-                setFormData((d) => ({
-                  ...d,
-                  config: { ...d.config, depositReminderInterval: Number(val) || 24 },
-                }))
-              }
-              min={1}
-              max={72}
-              step={1}
-            />
-          </Group>
-
-          <ColorInput
-            label="Color"
-            value={formData.config.color}
-            onChange={(val) =>
+            onChange={(e) =>
               setFormData((d) => ({
                 ...d,
-                config: { ...d.config, color: val },
+                config: { ...d.config, requiresConsult: e.currentTarget?.checked ?? false },
               }))
             }
           />
@@ -674,15 +601,15 @@ export function ServiceCatalogPage(): JSX.Element {
                 label="Cost is per unit"
                 description="Cost scales with units used (e.g., per Botox unit)"
                 checked={formData.config.internalCost?.costPerUnit ?? false}
-                onChange={(checked) =>
-                  setFormData((d): any => ({
+                onChange={(e) =>
+                  setFormData((d) => ({
                     ...d,
                     config: {
                       ...d.config,
                       internalCost: {
                         ...(d.config.internalCost ?? { productCost: 0 }),
-                        costPerUnit: checked,
-                        unitType: checked ? d.config.unitType || 'unit' : undefined,
+                        costPerUnit: e.currentTarget?.checked ?? false,
+                        unitType: e.currentTarget?.checked ? d.config.unitType || 'unit' : undefined,
                       },
                     },
                   }))
@@ -737,10 +664,10 @@ export function ServiceCatalogPage(): JSX.Element {
                     <Switch
                       label="Required"
                       checked={req.required}
-                      onChange={(checked) =>
+                      onChange={(e) =>
                         setFormData((d) => {
                           const newReqs = [...(d.config.equipmentRequirements ?? [])];
-                          newReqs[index] = { ...req, required: checked as any };
+                          newReqs[index] = { ...req, required: e.currentTarget.checked as any };
                           return {
                             ...d,
                             config: { ...d.config, equipmentRequirements: newReqs },
@@ -751,10 +678,10 @@ export function ServiceCatalogPage(): JSX.Element {
                     <Switch
                       label="Movable"
                       checked={req.movable}
-                      onChange={(checked) =>
+                      onChange={(e) =>
                         setFormData((d) => {
                           const newReqs = [...(d.config.equipmentRequirements ?? [])];
-                          newReqs[index] = { ...req, movable: checked as any };
+                          newReqs[index] = { ...req, movable: e.currentTarget.checked as any };
                           return {
                             ...d,
                             config: { ...d.config, equipmentRequirements: newReqs },

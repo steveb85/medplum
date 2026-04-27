@@ -1497,7 +1497,11 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
     category: string;
     // New fields for equipment and cost tracking
     equipmentRequirements: { equipmentType: string; required: boolean; movable: boolean }[];
-    recommendedAccompanyingServices: { serviceCode: string; timing: 'before' | 'after' | 'concurrent'; offsetMinutes: number }[];
+    recommendedAccompanyingServices: {
+      serviceCode: string;
+      timing: 'before' | 'after' | 'concurrent';
+      offsetMinutes: number;
+    }[];
     internalCost: { productCost: number; notes?: string };
   }[] = [
     {
@@ -1535,9 +1539,7 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       color: 'blue',
       category: 'injection',
       equipmentRequirements: [],
-      recommendedAccompanyingServices: [
-        { serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -15 },
-      ],
+      recommendedAccompanyingServices: [{ serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -15 }],
       internalCost: { productCost: 120, notes: 'Botox product cost per average treatment' },
     },
     {
@@ -1556,9 +1558,7 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       color: 'violet',
       category: 'injection',
       equipmentRequirements: [],
-      recommendedAccompanyingServices: [
-        { serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -30 },
-      ],
+      recommendedAccompanyingServices: [{ serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -30 }],
       internalCost: { productCost: 300, notes: 'Filler product per syringe' },
     },
     {
@@ -1576,12 +1576,8 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       icon: 'laser',
       color: 'red',
       category: 'laser',
-      equipmentRequirements: [
-        { equipmentType: 'laser-hair-removal', required: true, movable: false },
-      ],
-      recommendedAccompanyingServices: [
-        { serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -45 },
-      ],
+      equipmentRequirements: [{ equipmentType: 'laser-hair-removal', required: true, movable: false }],
+      recommendedAccompanyingServices: [{ serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -45 }],
       internalCost: { productCost: 50, notes: 'Laser consumables and cooling gel' },
     },
     {
@@ -1618,6 +1614,59 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       globalLogger.info(`ActivityDefinition ${svc.name} already exists: ${existing.id}`);
       continue;
     }
+
+    // Create service config as single JSON string to avoid FHIR extension validation errors
+    const serviceConfig = {
+      numbingTime: svc.numbingTime,
+      defaultRoom: svc.defaultRoom,
+      roomMovable: true,
+      minPrice: svc.minPrice,
+      maxPrice: svc.maxPrice,
+      pricePerUnit: svc.pricePerUnit,
+      unitType: svc.unitType,
+      requiresConsult: svc.requiresConsult,
+      icon: svc.icon || '',
+      color: svc.color,
+      category: svc.category,
+      gfeCategory: svc.gfeCategory || '',
+      equipmentRequirements: svc.equipmentRequirements || [],
+      recommendedAccompanyingServices: svc.recommendedAccompanyingServices || [],
+      internalCost: svc.internalCost || { productCost: 0, costPerUnit: false },
+      followUpSchedule: [],
+      providerRates: [],
+    };
+
+    await systemRepo.createResource<ActivityDefinition>({
+      resourceType: 'ActivityDefinition',
+      id: svc.id,
+      meta: { project: project.id },
+      status: 'active',
+      name: svc.id,
+      title: svc.name,
+      kind: 'ServiceRequest',
+      code: {
+        coding: [
+          {
+            system: 'http://melissaknudson.com/services',
+            code: svc.id,
+            display: svc.name,
+          },
+        ],
+        text: svc.name,
+      },
+      timingDuration: {
+        value: svc.duration,
+        unit: 'min',
+      },
+      extension: [
+        {
+          url: 'http://melissaknudson.com/fhir/StructureDefinition/service-config',
+          valueString: JSON.stringify(serviceConfig),
+        },
+      ],
+    });
+
+    globalLogger.info(`Created ActivityDefinition: ${svc.name}`);
 
     const extensions: { url: string; [key: string]: unknown }[] = [
       { url: 'numbingTime', valueInteger: svc.numbingTime },
