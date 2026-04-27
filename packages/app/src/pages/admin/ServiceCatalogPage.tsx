@@ -25,9 +25,9 @@ import { useMedplum, useSearchResources } from '@medplum/react';
 import { IconEdit, IconPlus } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useCallback, useMemo, useState } from 'react';
+import { EQUIPMENT_TYPES, getEquipmentLabel } from '../../admin/equipmentTypes';
 import type { ServiceConfig } from '../../utils/fhir-extensions';
 import { buildServiceConfigExtensions, parseServiceConfig } from '../../utils/fhir-extensions';
-import { EQUIPMENT_TYPES, getEquipmentLabel } from '../../admin/equipmentTypes';
 
 interface ServiceFormData {
   id: string;
@@ -314,7 +314,10 @@ export function ServiceCatalogPage(): JSX.Element {
                 <Badge variant="light" color="teal">
                   ${config.internalCost?.productCost ?? 0}
                   {config.internalCost?.costPerUnit && (
-                    <Text component="span" size="xs"> /{config.internalCost?.unitType || config.unitType || 'unit'}</Text>
+                    <Text component="span" size="xs">
+                      {' '}
+                      /{config.internalCost?.unitType || config.unitType || 'unit'}
+                    </Text>
                   )}
                 </Badge>
               </Table.Td>
@@ -354,11 +357,7 @@ export function ServiceCatalogPage(): JSX.Element {
                 )}
               </Table.Td>
               <Table.Td>
-                <Switch
-                  checked={service.status === 'active'}
-                  onChange={() => handleToggleStatus(service)}
-                  size="sm"
-                />
+                <Switch checked={service.status === 'active'} onChange={() => handleToggleStatus(service)} size="sm" />
               </Table.Td>
               <Table.Td>
                 <Button variant="light" size="xs" onClick={() => handleEdit(service)}>
@@ -505,10 +504,10 @@ export function ServiceCatalogPage(): JSX.Element {
             <Switch
               label="Room Movable"
               checked={formData.config.roomMovable}
-              onChange={(e) =>
+              onChange={(checked) =>
                 setFormData((d) => ({
                   ...d,
-                  config: { ...d.config, roomMovable: e.currentTarget.checked },
+                  config: { ...d.config, roomMovable: checked as any },
                 }))
               }
             />
@@ -570,10 +569,10 @@ export function ServiceCatalogPage(): JSX.Element {
             label="Requires Consult"
             description="Patient must have current GFE for this category"
             checked={formData.config.requiresConsult}
-            onChange={(e) =>
-              setFormData((d) => ({
+            onChange={(checked) =>
+              setFormData((d): any => ({
                 ...d,
-                config: { ...d.config, requiresConsult: e.currentTarget.checked },
+                config: { ...d.config, requiresConsult: checked },
               }))
             }
           />
@@ -648,7 +647,11 @@ export function ServiceCatalogPage(): JSX.Element {
             <Group grow>
               <NumberInput
                 label="Product Cost ($)"
-                description={formData.config.internalCost?.costPerUnit ? `Cost per ${formData.config.internalCost?.unitType || formData.config.unitType || 'unit'}` : 'Flat cost per service'}
+                description={
+                  formData.config.internalCost?.costPerUnit
+                    ? `Cost per ${formData.config.internalCost?.unitType || formData.config.unitType || 'unit'}`
+                    : 'Flat cost per service'
+                }
                 value={formData.config.internalCost?.productCost ?? 0}
                 onChange={(val) =>
                   setFormData((d) => ({
@@ -671,15 +674,15 @@ export function ServiceCatalogPage(): JSX.Element {
                 label="Cost is per unit"
                 description="Cost scales with units used (e.g., per Botox unit)"
                 checked={formData.config.internalCost?.costPerUnit ?? false}
-                onChange={(e) =>
-                  setFormData((d) => ({
+                onChange={(checked) =>
+                  setFormData((d): any => ({
                     ...d,
                     config: {
                       ...d.config,
                       internalCost: {
                         ...(d.config.internalCost ?? { productCost: 0 }),
-                        costPerUnit: e.currentTarget.checked,
-                        unitType: e.currentTarget.checked ? (d.config.unitType || 'unit') : undefined,
+                        costPerUnit: checked,
+                        unitType: checked ? d.config.unitType || 'unit' : undefined,
                       },
                     },
                   }))
@@ -687,7 +690,8 @@ export function ServiceCatalogPage(): JSX.Element {
               />
               {formData.config.internalCost?.costPerUnit && (
                 <Text size="sm" c="dimmed">
-                  e.g., 35 units × ${formData.config.internalCost?.productCost} = ${35 * (formData.config.internalCost?.productCost || 0)} total cost
+                  e.g., 35 units × ${formData.config.internalCost?.productCost} = $
+                  {35 * (formData.config.internalCost?.productCost || 0)} total cost
                 </Text>
               )}
             </Group>
@@ -733,10 +737,10 @@ export function ServiceCatalogPage(): JSX.Element {
                     <Switch
                       label="Required"
                       checked={req.required}
-                      onChange={(e) =>
+                      onChange={(checked) =>
                         setFormData((d) => {
                           const newReqs = [...(d.config.equipmentRequirements ?? [])];
-                          newReqs[index] = { ...req, required: e.currentTarget.checked };
+                          newReqs[index] = { ...req, required: checked as any };
                           return {
                             ...d,
                             config: { ...d.config, equipmentRequirements: newReqs },
@@ -747,10 +751,10 @@ export function ServiceCatalogPage(): JSX.Element {
                     <Switch
                       label="Movable"
                       checked={req.movable}
-                      onChange={(e) =>
+                      onChange={(checked) =>
                         setFormData((d) => {
                           const newReqs = [...(d.config.equipmentRequirements ?? [])];
-                          newReqs[index] = { ...req, movable: e.currentTarget.checked };
+                          newReqs[index] = { ...req, movable: checked as any };
                           return {
                             ...d,
                             config: { ...d.config, equipmentRequirements: newReqs },
@@ -764,9 +768,7 @@ export function ServiceCatalogPage(): JSX.Element {
                       size="xs"
                       onClick={() =>
                         setFormData((d) => {
-                          const newReqs = (d.config.equipmentRequirements ?? []).filter(
-                            (_, i) => i !== index
-                          );
+                          const newReqs = (d.config.equipmentRequirements ?? []).filter((_, i) => i !== index);
                           return {
                             ...d,
                             config: { ...d.config, equipmentRequirements: newReqs },

@@ -105,16 +105,13 @@ export function parseServiceRequestExtensions(sr: ServiceRequest): ServiceReques
   const result: ServiceRequestDetails = {};
 
   // Assigned Room
-  const roomExt = sr.extension?.find(
-    (e) => e.url === EXTENSION_URLS.serviceRequest.assignedRoom
-  );
+  const roomExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.assignedRoom);
   if (roomExt?.valueReference) {
     result.assignedRoom = roomExt.valueReference;
   }
 
   // Assigned Equipment (array)
-  const equipmentExts =
-    sr.extension?.filter((e) => e.url === EXTENSION_URLS.serviceRequest.assignedEquipment) || [];
+  const equipmentExts = sr.extension?.filter((e) => e.url === EXTENSION_URLS.serviceRequest.assignedEquipment) || [];
   if (equipmentExts.length > 0) {
     result.assignedEquipment = equipmentExts
       .map((e) => e.valueReference)
@@ -122,16 +119,13 @@ export function parseServiceRequestExtensions(sr: ServiceRequest): ServiceReques
   }
 
   // Service Sequence
-  const sequenceExt = sr.extension?.find(
-    (e) => e.url === EXTENSION_URLS.serviceRequest.serviceSequence
-  );
+  const sequenceExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.serviceSequence);
   if (sequenceExt?.valueInteger !== undefined) {
     result.serviceSequence = sequenceExt.valueInteger;
   }
 
   // Linked Services
-  const linkedExts =
-    sr.extension?.filter((e) => e.url === EXTENSION_URLS.serviceRequest.linkedServices) || [];
+  const linkedExts = sr.extension?.filter((e) => e.url === EXTENSION_URLS.serviceRequest.linkedServices) || [];
   if (linkedExts.length > 0) {
     result.linkedServices = linkedExts
       .map((e) => e.valueReference)
@@ -139,17 +133,13 @@ export function parseServiceRequestExtensions(sr: ServiceRequest): ServiceReques
   }
 
   // Service Status
-  const statusExt = sr.extension?.find(
-    (e) => e.url === EXTENSION_URLS.serviceRequest.serviceStatus
-  );
+  const statusExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.serviceStatus);
   if (statusExt?.valueString) {
     result.serviceStatus = statusExt.valueString as ServiceRequestDetails['serviceStatus'];
   }
 
   // Actual Duration
-  const durationExt = sr.extension?.find(
-    (e) => e.url === EXTENSION_URLS.serviceRequest.actualDuration
-  );
+  const durationExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.actualDuration);
   if (durationExt?.valueInteger !== undefined) {
     result.actualDuration = durationExt.valueInteger;
   }
@@ -214,9 +204,7 @@ export function buildServiceRequestExtensions(details: ServiceRequestDetails): E
 // ============================================================================
 
 export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig {
-  const ext = activity.extension?.find(
-    (e) => e.url === EXTENSION_URLS.activityDefinition.serviceConfig
-  );
+  const ext = activity.extension?.find((e) => e.url === EXTENSION_URLS.activityDefinition.serviceConfig);
 
   // Parse follow-up schedule from JSON string
   const followUpScheduleRaw = ext?.extension?.find((e) => e.url === 'followUpSchedule')?.valueString;
@@ -241,9 +229,7 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
   }
 
   // Parse equipment requirements
-  const equipmentReqsRaw = ext?.extension?.find(
-    (e) => e.url === 'equipmentRequirements'
-  )?.valueString;
+  const equipmentReqsRaw = ext?.extension?.find((e) => e.url === 'equipmentRequirements')?.valueString;
   let equipmentRequirements: EquipmentRequirement[] = [];
   if (equipmentReqsRaw) {
     try {
@@ -254,9 +240,7 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
   }
 
   // Parse recommended accompanying services
-  const recommendedServicesRaw = ext?.extension?.find(
-    (e) => e.url === 'recommendedAccompanyingServices'
-  )?.valueString;
+  const recommendedServicesRaw = ext?.extension?.find((e) => e.url === 'recommendedAccompanyingServices')?.valueString;
   let recommendedAccompanyingServices: RecommendedAccompanyingService[] = [];
   if (recommendedServicesRaw) {
     try {
@@ -298,8 +282,7 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
     category: ext?.extension?.find((e) => e.url === 'category')?.valueString ?? 'other',
     depositAmount: ext?.extension?.find((e) => e.url === 'depositAmount')?.valueInteger ?? 250,
     depositReminders: ext?.extension?.find((e) => e.url === 'depositReminders')?.valueInteger ?? 4,
-    depositReminderInterval:
-      ext?.extension?.find((e) => e.url === 'depositReminderInterval')?.valueInteger ?? 24,
+    depositReminderInterval: ext?.extension?.find((e) => e.url === 'depositReminderInterval')?.valueInteger ?? 24,
     followUpSchedule,
     providerRates,
     // New fields
@@ -372,7 +355,7 @@ export function validateRoomEquipmentCompatibility(
   equipment: { equipmentType: string; movable: boolean }[]
 ): { compatible: boolean; warnings: string[] } {
   const warnings: string[] = [];
-  let compatible = true;
+  const compatible = true;
 
   for (const eq of equipment) {
     if (!eq.movable) {
