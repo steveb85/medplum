@@ -9,7 +9,7 @@
  * provider, and timing configuration.
  */
 
-import { createReference, getReferenceString } from '@medplum/core';
+import { createReference } from '@medplum/core';
 import type {
   ActivityDefinition,
   Appointment,
@@ -21,11 +21,8 @@ import type {
   ServiceRequest,
 } from '@medplum/fhirtypes';
 import dayjs from 'dayjs';
-import {
-  buildServiceRequestExtensions,
-  parseServiceConfig,
-  type ServiceRequestDetails,
-} from './fhir-extensions';
+import type { ServiceRequestDetails } from './fhir-extensions';
+import { buildServiceRequestExtensions, parseServiceConfig } from './fhir-extensions';
 
 // ============================================================================
 // Types
@@ -79,6 +76,9 @@ export interface ConflictCheck {
 /**
  * Calculate timing for sequential services
  * Each service starts after the previous one ends
+ * @param services - List of services with durations and sequence
+ * @param baseStartTime - Start time for the first service
+ * @returns List of calculated timings for each service
  */
 export function calculateSequentialTimings(
   services: ServiceConfiguration[],
@@ -107,6 +107,8 @@ export function calculateSequentialTimings(
 
 /**
  * Calculate total duration for all services
+ * @param services - List of services with durations
+ * @returns Total duration in minutes
  */
 export function calculateTotalDuration(services: ServiceConfiguration[]): number {
   return services.reduce((sum, svc) => sum + svc.duration, 0);
@@ -118,6 +120,10 @@ export function calculateTotalDuration(services: ServiceConfiguration[]): number
 
 /**
  * Build default service configuration from ActivityDefinition
+ * @param activityDefinition  - The ActivityDefinition to build from
+ * @param sequence - The sequence number for this service in the booking
+ * @param defaultProvider - default provider to assign (optional)
+ * @returns ServiceConfiguration with defaults applied
  */
 export function buildDefaultServiceConfig(
   activityDefinition: ActivityDefinition,
@@ -129,9 +135,7 @@ export function buildDefaultServiceConfig(
   return {
     activityDefinition,
     duration: activityDefinition.timingDuration?.value ?? 30,
-    assignedRoom: config.defaultRoom
-      ? { reference: `Location/${config.defaultRoom}` }
-      : undefined,
+    assignedRoom: config.defaultRoom ? { reference: `Location/${config.defaultRoom}` } : undefined,
     assignedProvider: defaultProvider ? createReference(defaultProvider) : undefined,
     serviceSequence: sequence,
     assignedEquipment: [],
@@ -140,6 +144,9 @@ export function buildDefaultServiceConfig(
 
 /**
  * Auto-suggest accompanying services based on recommendations
+ * @param primaryService - The primary service for which to suggest accompaniments
+ * @param availableServices - List of available services to choose from
+ * @returns List of suggested accompanying services
  */
 export function suggestAccompanyingServices(
   primaryService: ActivityDefinition,
@@ -165,10 +172,10 @@ export function suggestAccompanyingServices(
 /**
  * Create a multi-service booking
  * Creates one Appointment as container + multiple ServiceRequests
+ * @param input - Input data for the booking
+ * @returns Created Appointment and ServiceRequests ready for submission
  */
-export function createMultiServiceBooking(
-  input: MultiServiceBookingInput
-): MultiServiceBookingResult {
+export function createMultiServiceBooking(input: MultiServiceBookingInput): MultiServiceBookingResult {
   const { patient, services, baseStartTime, notes, depositAmount = 250 } = input;
 
   // Calculate timings
@@ -180,15 +187,18 @@ export function createMultiServiceBooking(
   const participantSet = new Map<string, { actor: Reference; status: string }>();
 
   // Add patient
-  participantSet.set(getReferenceString(patient), {
-    actor: createReference(patient),
-    status: 'tentative',
-  });
+  const patientRef = createReference(patient);
+  if (patientRef.reference) {
+    participantSet.set(patientRef.reference, {
+      actor: patientRef,
+      status: 'tentative',
+    });
+  }
 
   // Add all service providers
   for (const service of services) {
-    if (service.assignedProvider) {
-      participantSet.set(getReferenceString(service.assignedProvider), {
+    if (service.assignedProvider?.reference) {
+      participantSet.set(service.assignedProvider.reference, {
         actor: service.assignedProvider,
         status: 'tentative',
       });
@@ -206,7 +216,7 @@ export function createMultiServiceBooking(
     start: baseStartTime.toISOString(),
     end: endTime.toISOString(),
     description: notes || undefined,
-    participant: Array.from(participantSet.values()),
+    participant: Array.from(participantSet.values()) as any,
     extension: [
       {
         url: 'http://melissaknudson.com/fhir/StructureDefinition/total-services',
@@ -289,11 +299,18 @@ export function createMultiServiceBooking(
 /**
  * Check for scheduling conflicts
  * Returns warnings for overlapping bookings
+ * @param services - List of services with assigned resources and timings
+ * @param timings - Calculated timings for each service
+ * @param medplum - Medplum client for performing searches
+ * @param medplum.search -  Function to perform FHIR searches against the server
+ * @returns List of detected conflicts with severity and messages
  */
 export async function checkConflicts(
   services: ServiceConfiguration[],
   timings: CalculatedServiceTiming[],
-  medplum: { search: (resourceType: string, params: Record<string, string>) => Promise<{ entry?: { resource: unknown }[] }> }
+  medplum: {
+    search: (resourceType: string, params: Record<string, string>) => Promise<{ entry?: { resource: unknown }[] }>;
+  }
 ): Promise<ConflictCheck[]> {
   const conflicts: ConflictCheck[] = [];
 
@@ -305,12 +322,7 @@ export async function checkConflicts(
     if (timing.serviceConfig.assignedProvider) {
       const providerId = timing.serviceConfig.assignedProvider.reference?.split('/')[1];
       if (providerId) {
-        const providerConflicts = await checkProviderConflicts(
-          medplum,
-          providerId,
-          start,
-          end
-        );
+        const providerConflicts = await checkProviderConflicts(medplum, providerId, start, end);
         conflicts.push(...providerConflicts);
       }
     }
@@ -329,12 +341,7 @@ export async function checkConflicts(
       for (const equipment of timing.serviceConfig.assignedEquipment) {
         const equipmentId = equipment.reference?.split('/')[1];
         if (equipmentId) {
-          const equipmentConflicts = await checkEquipmentConflicts(
-            medplum,
-            equipmentId,
-            start,
-            end
-          );
+          const equipmentConflicts = await checkEquipmentConflicts(medplum, equipmentId, start, end);
           conflicts.push(...equipmentConflicts);
         }
       }
@@ -345,7 +352,9 @@ export async function checkConflicts(
 }
 
 async function checkProviderConflicts(
-  medplum: { search: (resourceType: string, params: Record<string, string>) => Promise<{ entry?: { resource: unknown }[] }> },
+  medplum: {
+    search: (resourceType: string, params: Record<string, string>) => Promise<{ entry?: { resource: unknown }[] }>;
+  },
   providerId: string,
   start: string,
   end: string
@@ -364,9 +373,7 @@ async function checkProviderConflicts(
       .map((e) => e.resource as Appointment)
       .filter(
         (a) =>
-          a.participant?.some(
-            (p) => p.actor?.reference?.includes(providerId)
-          ) &&
+          a.participant?.some((p) => p.actor?.reference?.includes(providerId)) &&
           // Overlapping check
           ((a.start && a.start < end && a.start >= start) ||
             (a.end && a.end > start && a.end <= end) ||
@@ -391,7 +398,9 @@ async function checkProviderConflicts(
 }
 
 async function checkRoomConflicts(
-  medplum: { search: (resourceType: string, params: Record<string, string>) => Promise<{ entry?: { resource: unknown }[] }> },
+  medplum: {
+    search: (resourceType: string, params: Record<string, string>) => Promise<{ entry?: { resource: unknown }[] }>;
+  },
   roomId: string,
   start: string,
   end: string
@@ -411,9 +420,7 @@ async function checkRoomConflicts(
     const appointments = (result.entry || [])
       .map((e) => e.resource as Appointment)
       .filter((a) => {
-        const roomExt = a.extension?.find(
-          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
-        );
+        const roomExt = a.extension?.find((e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room');
         return (
           roomExt?.valueString?.includes(roomId) &&
           ((a.start && a.start < end && a.start >= start) ||
@@ -440,7 +447,9 @@ async function checkRoomConflicts(
 }
 
 async function checkEquipmentConflicts(
-  medplum: { search: (resourceType: string, params: Record<string, string>) => Promise<{ entry?: { resource: unknown }[] }> },
+  medplum: {
+    search: (resourceType: string, params: Record<string, string>) => Promise<{ entry?: { resource: unknown }[] }>;
+  },
   equipmentId: string,
   start: string,
   end: string
@@ -459,9 +468,7 @@ async function checkEquipmentConflicts(
       .map((e) => e.resource as ServiceRequest)
       .filter((sr) => {
         const equipmentExts = sr.extension?.filter(
-          (e) =>
-            e.url ===
-            'http://melissaknudson.com/fhir/StructureDefinition/assigned-equipment'
+          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/assigned-equipment'
         );
         return (
           equipmentExts?.some((e) => e.valueReference?.reference?.includes(equipmentId)) &&
@@ -496,10 +503,13 @@ async function checkEquipmentConflicts(
 /**
  * Validate room/equipment compatibility
  * Returns warnings if equipment is not available in selected room
+ * @param service - Service configuration to validate
+ * @returns Validation result with warnings if any
  */
-export function validateRoomEquipmentCompatibility(
-  service: ServiceConfiguration
-): { valid: boolean; warnings: string[] } {
+export function validateRoomEquipmentCompatibility(service: ServiceConfiguration): {
+  valid: boolean;
+  warnings: string[];
+} {
   const warnings: string[] = [];
   const config = parseServiceConfig(service.activityDefinition);
 
@@ -515,9 +525,7 @@ export function validateRoomEquipmentCompatibility(
       if (assignedEquipment && service.assignedRoom) {
         // This would check the equipment's actual location
         // For now, just add an informational warning
-        warnings.push(
-          `${equipmentReq.equipmentType} is typically fixed to a specific room`
-        );
+        warnings.push(`${equipmentReq.equipmentType} is typically fixed to a specific room`);
       }
     }
   }
@@ -527,10 +535,10 @@ export function validateRoomEquipmentCompatibility(
 
 /**
  * Validate the entire booking configuration
+ * @param services - List of services to validate
+ * @returns Validation result with errors if any
  */
-export function validateBookingConfiguration(
-  services: ServiceConfiguration[]
-): { valid: boolean; errors: string[] } {
+export function validateBookingConfiguration(services: ServiceConfiguration[]): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
   if (services.length === 0) {

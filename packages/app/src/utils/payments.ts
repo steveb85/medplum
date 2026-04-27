@@ -1,9 +1,7 @@
-/**
- * Payment utility functions for deposit management
- * Handles deposit status, payment link expiry calculation, and amount calculations
- */
+// SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
+// SPDX-License-Identifier: Apache-2.0
 
-import type { Appointment, ActivityDefinition } from '@medplum/fhirtypes';
+import type { ActivityDefinition, Appointment } from '@medplum/fhirtypes';
 import dayjs from 'dayjs';
 
 export type DepositStatus = 'pending' | 'requested' | 'paid' | 'waived';
@@ -33,6 +31,8 @@ export interface DepositInfo {
 
 /**
  * Get deposit status from appointment extensions
+ * @param appointment - Appointment resource to extract deposit info from
+ * @returns DepositInfo object with status and related details
  */
 export function getDepositStatus(appointment: Appointment): DepositInfo {
   const ext = appointment.extension?.find(
@@ -47,17 +47,20 @@ export function getDepositStatus(appointment: Appointment): DepositInfo {
   const amount = ext.extension.find((e) => e.url === 'amount')?.valueInteger ?? 0;
   const requestedAtRaw = ext.extension.find((e) => e.url === 'requestedAt')?.valueDateTime;
   const paidAtRaw = ext.extension.find((e) => e.url === 'paidAt')?.valueDateTime;
-  const paidBy = ext.extension.find((e) => e.url === 'paidBy')?.valueReference;
+  const paidBy = ext.extension.find((e) => e.url === 'paidBy')?.valueReference as any;
   const actualPaidAmount = ext.extension.find((e) => e.url === 'actualPaidAmount')?.valueInteger;
-  const paymentType = ext.extension.find((e) => e.url === 'paymentType')?.valueString as 'online' | 'manual' | undefined;
+  const paymentType = ext.extension.find((e) => e.url === 'paymentType')?.valueString as
+    | 'online'
+    | 'manual'
+    | undefined;
   const paymentNotes = ext.extension.find((e) => e.url === 'paymentNotes')?.valueString;
   const isUndone = ext.extension.find((e) => e.url === 'isUndone')?.valueBoolean;
   const undoneAtRaw = ext.extension.find((e) => e.url === 'undoneAt')?.valueDateTime;
-  const undoneBy = ext.extension.find((e) => e.url === 'undoneBy')?.valueReference;
+  const undoneBy = ext.extension.find((e) => e.url === 'undoneBy')?.valueReference as any;
   const undoneReason = ext.extension.find((e) => e.url === 'undoneReason')?.valueString;
   const paymentLinkSentAtRaw = ext.extension.find((e) => e.url === 'paymentLinkSentAt')?.valueDateTime;
   const waivedAtRaw = ext.extension.find((e) => e.url === 'waivedAt')?.valueDateTime;
-  const waivedBy = ext.extension.find((e) => e.url === 'waivedBy')?.valueReference;
+  const waivedBy = ext.extension.find((e) => e.url === 'waivedBy')?.valueReference as any;
   const waivedReason = ext.extension.find((e) => e.url === 'waivedReason')?.valueString;
 
   return {
@@ -82,9 +85,14 @@ export function getDepositStatus(appointment: Appointment): DepositInfo {
 
 /**
  * Build deposit info extensions for saving to appointment
+ * @param depositInfo - DepositInfo object containing status and related details to convert into FHIR extensions
+ * @returns Object containing url and extension array to be added to Appointment resource
  */
-export function buildDepositInfoExtensions(depositInfo: DepositInfo): { url: string; extension: Array<{ url: string; [key: string]: unknown }> } {
-  const extensions: Array<{ url: string; [key: string]: unknown }> = [
+export function buildDepositInfoExtensions(depositInfo: DepositInfo): {
+  url: string;
+  extension: { url: string; [key: string]: unknown }[];
+} {
+  const extensions: { url: string; [key: string]: unknown }[] = [
     { url: 'status', valueString: depositInfo.status },
     { url: 'amount', valueInteger: depositInfo.amount },
   ];
@@ -147,6 +155,8 @@ export function buildDepositInfoExtensions(depositInfo: DepositInfo): { url: str
  * - If appointment < 96h away: Use (appointment_time - 48h)
  * - If appointment < 48h away: Use 24 hours
  * - If appointment < 24h away: Use 12 hours
+ * @param appointmentStart - Appointment start time to calculate expiry against
+ * @returns Expiry Date for payment link
  */
 export function calculatePaymentLinkExpiry(appointmentStart: Date | string): Date {
   const now = dayjs();
@@ -170,6 +180,8 @@ export function calculatePaymentLinkExpiry(appointmentStart: Date | string): Dat
 
 /**
  * Get default deposit amount for a service
+ * @param service - ActivityDefinition resource to extract default deposit from
+ * @returns Default deposit amount (defaults to 250 if not specified)
  */
 export function getDefaultDepositAmount(service: ActivityDefinition): number {
   const ext = service.extension?.find(
@@ -182,9 +194,13 @@ export function getDefaultDepositAmount(service: ActivityDefinition): number {
 /**
  * Calculate total deposit for multiple services
  * Uses highest deposit amount if services have different defaults
+ * @param services - List of ActivityDefinition resources to calculate total deposit for
+ * @returns Total deposit amount (highest default among services)
  */
 export function calculateTotalDeposit(services: ActivityDefinition[]): number {
-  if (services.length === 0) return 0;
+  if (services.length === 0) {
+    return 0;
+  }
 
   const amounts = services.map(getDefaultDepositAmount);
   return Math.max(...amounts);
@@ -196,6 +212,8 @@ export function calculateTotalDeposit(services: ActivityDefinition[]): number {
  * 1. 96 hours have passed since deposit request
  * OR
  * 2. Within 48 hours of appointment and deposit not paid/waived
+ * @param appointment - Appointment resource to check for auto-cancellation
+ * @returns True if appointment should be auto-cancelled, false otherwise
  */
 export function shouldAutoCancel(appointment: Appointment): boolean {
   const depositInfo = getDepositStatus(appointment);
@@ -215,9 +233,7 @@ export function shouldAutoCancel(appointment: Appointment): boolean {
   const hoursUntilAppointment = appointmentTime.diff(now, 'hours');
 
   // Get deposit requested timestamp
-  const hoursSinceRequest = depositInfo.requestedAt
-    ? now.diff(depositInfo.requestedAt, 'hours')
-    : 0;
+  const hoursSinceRequest = depositInfo.requestedAt ? now.diff(depositInfo.requestedAt, 'hours') : 0;
 
   // Auto-cancel if 96 hours passed since request
   if (hoursSinceRequest >= 96) {
@@ -234,6 +250,8 @@ export function shouldAutoCancel(appointment: Appointment): boolean {
 
 /**
  * Format deposit amount for display
+ * @param amount - Deposit amount in cents (e.g. 25000 for $250.00)
+ * @returns Formatted currency string (e.g. "$250.00")
  */
 export function formatDepositAmount(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -244,6 +262,8 @@ export function formatDepositAmount(amount: number): string {
 
 /**
  * Get deposit status display color
+ * @param status - Deposit status to determine color for
+ * @returns Color string for display (e.g. "green" for paid, "yellow" for requested)
  */
 export function getDepositStatusColor(status: DepositStatus): string {
   switch (status) {
@@ -261,6 +281,8 @@ export function getDepositStatusColor(status: DepositStatus): string {
 
 /**
  * Check if deposit can be requested
+ * @param status - Current deposit status
+ * @returns True if deposit can be requested (only if status is 'pending'), false otherwise
  */
 export function canRequestDeposit(status: DepositStatus): boolean {
   return status === 'pending';
@@ -268,6 +290,8 @@ export function canRequestDeposit(status: DepositStatus): boolean {
 
 /**
  * Check if deposit can be marked as paid
+ * @param status - Current deposit status
+ * @returns True if deposit can be marked as paid (if status is 'pending' or 'requested'), false otherwise
  */
 export function canMarkPaid(status: DepositStatus): boolean {
   return status === 'pending' || status === 'requested';
@@ -275,6 +299,8 @@ export function canMarkPaid(status: DepositStatus): boolean {
 
 /**
  * Check if deposit can be waived
+ * @param status - Current deposit status
+ * @returns True if deposit can be waived (if status is 'pending' or 'requested'), false otherwise
  */
 export function canWaiveDeposit(status: DepositStatus): boolean {
   return status === 'pending' || status === 'requested';

@@ -6,8 +6,7 @@ import { showNotification } from '@mantine/notifications';
 import type { Location } from '@medplum/fhirtypes';
 import { useMedplum } from '@medplum/react';
 import type { JSX } from 'react';
-import { useEffect, useMemo, useState } from 'react';
-import { getMedSpaRole } from '../auth/role';
+import { useCallback, useEffect, useState } from 'react';
 import { RoomCard } from './RoomCard';
 import { RoomEditor } from './RoomEditor';
 
@@ -26,11 +25,7 @@ export function RoomsPage(): JSX.Element {
   const [editRoomId, setEditRoomId] = useState<string | undefined>(undefined);
   const [equipmentCounts, setEquipmentCounts] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    loadRooms();
-  }, []);
-
-  const loadRooms = async (): Promise<void> => {
+  const loadRooms = useCallback(async (): Promise<void> => {
     try {
       setLoading(true);
       const bundle = await medplum.search('Location', {
@@ -39,21 +34,21 @@ export function RoomsPage(): JSX.Element {
         _count: '50',
       });
       const locations = (bundle.entry || []).map((e) => e.resource as Location);
-      
+
       // Also get other room types
       const otherBundle = await medplum.search('Location', {
         _sort: 'name',
         _count: '50',
       });
       const otherLocations = (otherBundle.entry || []).map((e) => e.resource as Location);
-      
+
       // Combine and deduplicate
       const allLocations = [...locations, ...otherLocations].filter(
         (room, index, self) => index === self.findIndex((r) => r.id === room.id)
       );
-      
+
       setRooms(allLocations);
-      
+
       // Calculate equipment counts
       const counts = await Promise.all(
         allLocations.map(async (room) => {
@@ -75,10 +70,20 @@ export function RoomsPage(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  };
+  }, [medplum]);
+
+  useEffect(() => {
+    const loadRoomsAsync = async (): Promise<void> => {
+      await loadRooms();
+    };
+    loadRoomsAsync().catch(console.error);
+  }, [loadRooms]);
 
   const hasLaser = (room: Location): boolean => {
-    return room.extension?.find((e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/has-laser')?.valueBoolean ?? false;
+    return (
+      room.extension?.find((e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/has-laser')
+        ?.valueBoolean ?? false
+    );
   };
 
   const handleCreateNew = (): void => {
@@ -102,7 +107,7 @@ export function RoomsPage(): JSX.Element {
         title: 'Success',
         message: `Room ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully`,
       });
-      loadRooms();
+      await loadRooms();
     } catch (err) {
       console.error('Error toggling room status:', err);
       showNotification({
@@ -113,9 +118,9 @@ export function RoomsPage(): JSX.Element {
     }
   };
 
-  const handleSave = (room: Location): void => {
+  const handleSave = async (room: Location): Promise<void> => {
     setShowEditor(false);
-    loadRooms();
+    await loadRooms();
   };
 
   const handleCancel = (): void => {
@@ -133,10 +138,14 @@ export function RoomsPage(): JSX.Element {
           <Button onClick={handleCreateNew}>+ New Room</Button>
         </Group>
 
-        <Text size="sm" c="dimmed">Manage rooms and their configurations for appointments.</Text>
+        <Text size="sm" c="dimmed">
+          Manage rooms and their configurations for appointments.
+        </Text>
 
         {loading ? (
-          <Group justify="center" p="xl"><Loader /></Group>
+          <Group justify="center" p="xl">
+            <Loader />
+          </Group>
         ) : (
           <Stack gap="lg">
             {activeRooms.length > 0 && (
@@ -149,7 +158,7 @@ export function RoomsPage(): JSX.Element {
                       <RoomCard
                         key={room.id}
                         room={room}
-                        assignedEquipmentCount={equipmentCounts[room.id] || 0}
+                        assignedEquipmentCount={equipmentCounts[room.id || 0] || 0}
                         usage={usage}
                         getEquipmentCount={(id) => equipmentCounts[id] || 0}
                         onEdit={handleEdit}
@@ -169,7 +178,7 @@ export function RoomsPage(): JSX.Element {
                     <RoomCard
                       key={room.id}
                       room={room}
-                      assignedEquipmentCount={equipmentCounts[room.id] || 0}
+                      assignedEquipmentCount={equipmentCounts[room.id || 0] || 0}
                       usage={{ bookingCount: 0, totalHours: 0 }}
                       getEquipmentCount={(id) => equipmentCounts[id] || 0}
                       onEdit={handleEdit}
@@ -183,13 +192,13 @@ export function RoomsPage(): JSX.Element {
         )}
       </Stack>
 
-      <Modal opened={showEditor} onClose={handleCancel} title={editMode === 'create' ? 'Create Room' : 'Edit Room'} size="lg">
-        <RoomEditor
-          mode={editMode}
-          roomId={editRoomId}
-          onCancel={handleCancel}
-          onSave={handleSave}
-        />
+      <Modal
+        opened={showEditor}
+        onClose={handleCancel}
+        title={editMode === 'create' ? 'Create Room' : 'Edit Room'}
+        size="lg"
+      >
+        <RoomEditor mode={editMode} roomId={editRoomId} onCancel={handleCancel} onSave={handleSave} />
       </Modal>
     </Paper>
   );

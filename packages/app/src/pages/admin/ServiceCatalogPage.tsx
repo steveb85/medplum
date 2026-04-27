@@ -27,6 +27,7 @@ import type { JSX } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import type { ServiceConfig } from '../../utils/fhir-extensions';
 import { buildServiceConfigExtensions, parseServiceConfig } from '../../utils/fhir-extensions';
+import { EQUIPMENT_TYPES, getEquipmentLabel } from '../../admin/equipmentTypes';
 
 interface ServiceFormData {
   id: string;
@@ -41,6 +42,7 @@ const SERVICE_CATEGORIES = [
   { value: 'injection', label: 'Injection' },
   { value: 'laser', label: 'Laser' },
   { value: 'consult', label: 'Consultation' },
+  { value: 'prep', label: 'Prep' },
   { value: 'other', label: 'Other' },
 ];
 
@@ -66,6 +68,8 @@ function getCategoryBadgeColor(category: string): string {
       return 'red';
     case 'consult':
       return 'green';
+    case 'prep':
+      return 'gray';
     default:
       return 'gray';
   }
@@ -111,7 +115,7 @@ export function ServiceCatalogPage(): JSX.Element {
       providerRates: [],
       equipmentRequirements: [],
       recommendedAccompanyingServices: [],
-      internalCost: { productCost: 0 },
+      internalCost: { productCost: 0, costPerUnit: false, unitType: 'unit' },
     },
   });
 
@@ -175,7 +179,7 @@ export function ServiceCatalogPage(): JSX.Element {
         providerRates: [],
         equipmentRequirements: [],
         recommendedAccompanyingServices: [],
-        internalCost: { productCost: 0 },
+        internalCost: { productCost: 0, costPerUnit: false, unitType: 'unit' },
       },
     });
     open();
@@ -258,7 +262,7 @@ export function ServiceCatalogPage(): JSX.Element {
     if (loading) {
       return (
         <Table.Tr>
-          <Table.Td colSpan={10}>
+          <Table.Td colSpan={12}>
             <Text ta="center">Loading...</Text>
           </Table.Td>
         </Table.Tr>
@@ -268,7 +272,7 @@ export function ServiceCatalogPage(): JSX.Element {
     if (allServices.length === 0) {
       return (
         <Table.Tr>
-          <Table.Td colSpan={10}>
+          <Table.Td colSpan={12}>
             <Text ta="center" c="dimmed">
               No services found. Create your first service.
             </Text>
@@ -307,6 +311,35 @@ export function ServiceCatalogPage(): JSX.Element {
               <Table.Td>{config.numbingTime > 0 ? `${config.numbingTime} min` : 'None'}</Table.Td>
               <Table.Td>{priceText}</Table.Td>
               <Table.Td>
+                <Badge variant="light" color="teal">
+                  ${config.internalCost?.productCost ?? 0}
+                  {config.internalCost?.costPerUnit && (
+                    <Text component="span" size="xs"> /{config.internalCost?.unitType || config.unitType || 'unit'}</Text>
+                  )}
+                </Badge>
+              </Table.Td>
+              <Table.Td>
+                {config.equipmentRequirements && config.equipmentRequirements.length > 0 ? (
+                  <Group gap={4}>
+                    {config.equipmentRequirements.slice(0, 2).map((eq, i) => (
+                      <Badge key={i} size="xs" variant="light" color="blue">
+                        {getEquipmentLabel(eq.equipmentType)}
+                        {!eq.movable && ' ⚓'}
+                      </Badge>
+                    ))}
+                    {config.equipmentRequirements.length > 2 && (
+                      <Text size="xs" c="dimmed">
+                        +{config.equipmentRequirements.length - 2}
+                      </Text>
+                    )}
+                  </Group>
+                ) : (
+                  <Text size="xs" c="dimmed">
+                    None
+                  </Text>
+                )}
+              </Table.Td>
+              <Table.Td>
                 <Badge variant="light">${config.depositAmount}</Badge>
               </Table.Td>
               <Table.Td>
@@ -321,7 +354,11 @@ export function ServiceCatalogPage(): JSX.Element {
                 )}
               </Table.Td>
               <Table.Td>
-                <Switch checked={service.status === 'active'} onChange={() => handleToggleStatus(service)} size="sm" />
+                <Switch
+                  checked={service.status === 'active'}
+                  onChange={() => handleToggleStatus(service)}
+                  size="sm"
+                />
               </Table.Td>
               <Table.Td>
                 <Button variant="light" size="xs" onClick={() => handleEdit(service)}>
@@ -358,6 +395,8 @@ export function ServiceCatalogPage(): JSX.Element {
               <Table.Th>Duration</Table.Th>
               <Table.Th>Numbing</Table.Th>
               <Table.Th>Price Range</Table.Th>
+              <Table.Th>Internal Cost</Table.Th>
+              <Table.Th>Equipment</Table.Th>
               <Table.Th>Deposit</Table.Th>
               <Table.Th>GFE</Table.Th>
               <Table.Th>Room</Table.Th>
@@ -370,7 +409,7 @@ export function ServiceCatalogPage(): JSX.Element {
       </Card>
 
       {/* Edit/Create Modal */}
-      <Modal opened={opened} onClose={close} title={editingService ? 'Edit Service' : 'Create Service'} size="lg">
+      <Modal opened={opened} onClose={close} title={editingService ? 'Edit Service' : 'Create Service'} size="xl">
         <Stack>
           <TextInput
             label="Service Name"
@@ -601,6 +640,280 @@ export function ServiceCatalogPage(): JSX.Element {
               }))
             }
           />
+
+          <Title order={4} mt="md">
+            Internal Cost Tracking
+          </Title>
+          <Stack gap="xs">
+            <Group grow>
+              <NumberInput
+                label="Product Cost ($)"
+                description={formData.config.internalCost?.costPerUnit ? `Cost per ${formData.config.internalCost?.unitType || formData.config.unitType || 'unit'}` : 'Flat cost per service'}
+                value={formData.config.internalCost?.productCost ?? 0}
+                onChange={(val) =>
+                  setFormData((d) => ({
+                    ...d,
+                    config: {
+                      ...d.config,
+                      internalCost: {
+                        ...(d.config.internalCost ?? { productCost: 0, costPerUnit: false }),
+                        productCost: Number(val) || 0,
+                      },
+                    },
+                  }))
+                }
+                min={0}
+                step={formData.config.internalCost?.costPerUnit ? 1 : 5}
+              />
+            </Group>
+            <Group>
+              <Switch
+                label="Cost is per unit"
+                description="Cost scales with units used (e.g., per Botox unit)"
+                checked={formData.config.internalCost?.costPerUnit ?? false}
+                onChange={(e) =>
+                  setFormData((d) => ({
+                    ...d,
+                    config: {
+                      ...d.config,
+                      internalCost: {
+                        ...(d.config.internalCost ?? { productCost: 0 }),
+                        costPerUnit: e.currentTarget.checked,
+                        unitType: e.currentTarget.checked ? (d.config.unitType || 'unit') : undefined,
+                      },
+                    },
+                  }))
+                }
+              />
+              {formData.config.internalCost?.costPerUnit && (
+                <Text size="sm" c="dimmed">
+                  e.g., 35 units × ${formData.config.internalCost?.productCost} = ${35 * (formData.config.internalCost?.productCost || 0)} total cost
+                </Text>
+              )}
+            </Group>
+          </Stack>
+
+          <Title order={4} mt="md">
+            Equipment Requirements
+          </Title>
+          <Text size="sm" c="dimmed" mb="xs">
+            Equipment required for this service
+          </Text>
+          <Stack gap="xs">
+            {(formData.config.equipmentRequirements?.length ?? 0) === 0 ? (
+              <Text size="sm" c="dimmed">
+                No equipment requirements. Add equipment below.
+              </Text>
+            ) : (
+              formData.config.equipmentRequirements?.map((req, index) => (
+                <Card key={index} withBorder p="xs">
+                  <Group align="flex-start">
+                    <Select
+                      label="Equipment Type"
+                      value={req.equipmentType}
+                      onChange={(val) =>
+                        setFormData((d) => {
+                          const newReqs = [...(d.config.equipmentRequirements ?? [])];
+                          newReqs[index] = { ...req, equipmentType: val || '' };
+                          return {
+                            ...d,
+                            config: { ...d.config, equipmentRequirements: newReqs },
+                          };
+                        })
+                      }
+                      data={EQUIPMENT_TYPES.map((t) => ({
+                        value: t.code,
+                        label: t.label,
+                      }))}
+                      style={{ flex: 1 }}
+                      searchable
+                      clearable
+                      placeholder="Select equipment type..."
+                    />
+                    <Switch
+                      label="Required"
+                      checked={req.required}
+                      onChange={(e) =>
+                        setFormData((d) => {
+                          const newReqs = [...(d.config.equipmentRequirements ?? [])];
+                          newReqs[index] = { ...req, required: e.currentTarget.checked };
+                          return {
+                            ...d,
+                            config: { ...d.config, equipmentRequirements: newReqs },
+                          };
+                        })
+                      }
+                    />
+                    <Switch
+                      label="Movable"
+                      checked={req.movable}
+                      onChange={(e) =>
+                        setFormData((d) => {
+                          const newReqs = [...(d.config.equipmentRequirements ?? [])];
+                          newReqs[index] = { ...req, movable: e.currentTarget.checked };
+                          return {
+                            ...d,
+                            config: { ...d.config, equipmentRequirements: newReqs },
+                          };
+                        })
+                      }
+                    />
+                    <Button
+                      color="red"
+                      variant="light"
+                      size="xs"
+                      onClick={() =>
+                        setFormData((d) => {
+                          const newReqs = (d.config.equipmentRequirements ?? []).filter(
+                            (_, i) => i !== index
+                          );
+                          return {
+                            ...d,
+                            config: { ...d.config, equipmentRequirements: newReqs },
+                          };
+                        })
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </Group>
+                </Card>
+              ))
+            )}
+            <Button
+              variant="light"
+              size="sm"
+              onClick={() =>
+                setFormData((d) => ({
+                  ...d,
+                  config: {
+                    ...d.config,
+                    equipmentRequirements: [
+                      ...(d.config.equipmentRequirements ?? []),
+                      { equipmentType: '', required: true, movable: true },
+                    ],
+                  },
+                }))
+              }
+            >
+              + Add Equipment Requirement
+            </Button>
+          </Stack>
+
+          <Title order={4} mt="md">
+            Recommended Accompanying Services
+          </Title>
+          <Text size="sm" c="dimmed" mb="xs">
+            Services automatically suggested when this service is selected (e.g., numbing)
+          </Text>
+          <Stack gap="xs">
+            {(formData.config.recommendedAccompanyingServices?.length ?? 0) === 0 ? (
+              <Text size="sm" c="dimmed">
+                No recommended services. Add recommendations below.
+              </Text>
+            ) : (
+              formData.config.recommendedAccompanyingServices?.map((rec, index) => (
+                <Card key={index} withBorder p="xs">
+                  <Group align="flex-start">
+                    <Select
+                      label="Service"
+                      placeholder="Select accompanying service..."
+                      value={rec.serviceCode}
+                      onChange={(val) =>
+                        setFormData((d) => {
+                          const newRecs = [...(d.config.recommendedAccompanyingServices ?? [])];
+                          newRecs[index] = { ...rec, serviceCode: val || '' };
+                          return {
+                            ...d,
+                            config: { ...d.config, recommendedAccompanyingServices: newRecs },
+                          };
+                        })
+                      }
+                      data={allServices
+                        .filter((s) => s.name !== formData.name) // Can't recommend self
+                        .map((s) => ({
+                          value: s.name || '',
+                          label: s.title || s.name || 'Unknown',
+                        }))}
+                      style={{ flex: 1 }}
+                      searchable
+                      clearable
+                    />
+                    <Select
+                      label="Timing"
+                      value={rec.timing}
+                      onChange={(val) =>
+                        setFormData((d) => {
+                          const newRecs = [...(d.config.recommendedAccompanyingServices ?? [])];
+                          newRecs[index] = { ...rec, timing: (val as 'before' | 'after' | 'concurrent') ?? 'before' };
+                          return {
+                            ...d,
+                            config: { ...d.config, recommendedAccompanyingServices: newRecs },
+                          };
+                        })
+                      }
+                      data={[
+                        { value: 'before', label: 'Before' },
+                        { value: 'after', label: 'After' },
+                        { value: 'concurrent', label: 'Concurrent' },
+                      ]}
+                    />
+                    <NumberInput
+                      label="Offset (min)"
+                      value={rec.offsetMinutes}
+                      onChange={(val) =>
+                        setFormData((d) => {
+                          const newRecs = [...(d.config.recommendedAccompanyingServices ?? [])];
+                          newRecs[index] = { ...rec, offsetMinutes: Number(val) || 0 };
+                          return {
+                            ...d,
+                            config: { ...d.config, recommendedAccompanyingServices: newRecs },
+                          };
+                        })
+                      }
+                      w={100}
+                    />
+                    <Button
+                      color="red"
+                      variant="light"
+                      size="xs"
+                      onClick={() =>
+                        setFormData((d) => {
+                          const newRecs = (d.config.recommendedAccompanyingServices ?? []).filter(
+                            (_, i) => i !== index
+                          );
+                          return {
+                            ...d,
+                            config: { ...d.config, recommendedAccompanyingServices: newRecs },
+                          };
+                        })
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </Group>
+                </Card>
+              ))
+            )}
+            <Button
+              variant="light"
+              size="sm"
+              onClick={() =>
+                setFormData((d) => ({
+                  ...d,
+                  config: {
+                    ...d.config,
+                    recommendedAccompanyingServices: [
+                      ...(d.config.recommendedAccompanyingServices ?? []),
+                      { serviceCode: '', timing: 'before', offsetMinutes: 15 },
+                    ],
+                  },
+                }))
+              }
+            >
+              + Add Recommended Service
+            </Button>
+          </Stack>
 
           <Group justify="flex-end" mt="md">
             <Button variant="light" color="gray" onClick={close}>

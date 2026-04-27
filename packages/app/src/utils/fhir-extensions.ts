@@ -58,7 +58,9 @@ export interface RecommendedAccompanyingService {
 }
 
 export interface InternalCost {
-  productCost: number; // Cost of materials/products used
+  productCost: number; // Cost of materials/products used (flat OR per unit)
+  costPerUnit: boolean; // If true, cost is per unit (e.g., per Botox unit)
+  unitType?: string; // e.g., 'unit', 'syringe', 'area' - for display purposes
   notes?: string;
 }
 
@@ -266,12 +268,18 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
 
   // Parse internal cost
   const internalCostRaw = ext?.extension?.find((e) => e.url === 'internalCost')?.valueString;
-  let internalCost: InternalCost = { productCost: 0 };
+  let internalCost: InternalCost = { productCost: 0, costPerUnit: false };
   if (internalCostRaw) {
     try {
-      internalCost = JSON.parse(internalCostRaw);
+      const parsed = JSON.parse(internalCostRaw);
+      internalCost = {
+        productCost: parsed.productCost ?? 0,
+        costPerUnit: parsed.costPerUnit ?? false,
+        unitType: parsed.unitType,
+        notes: parsed.notes,
+      };
     } catch {
-      internalCost = { productCost: 0 };
+      internalCost = { productCost: 0, costPerUnit: false };
     }
   }
 
