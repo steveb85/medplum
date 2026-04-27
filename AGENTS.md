@@ -146,16 +146,26 @@ packages/app/src/
 - ✅ Photos linked to Procedure via `http://melissaknudson.com/fhir/StructureDefinition/related-procedure`
 - ✅ ReadOnly mode based on treatment status
 
-### ✅ COMPLETED (Sprint 3.2 - Staff Approval Workflow)
+### ✅ COMPLETED (Sprint 3.2 - Staff Approval Workflow) [CORRECTED]
 
-- ✅ Booking approval workflow (pending → approved → booked)
-- ✅ Staff notification system (on create/approve/cancel)
-- ✅ Appointment status management (pending, approved, booked, arrived, no-show, cancelled)
+- ✅ Booking approval workflow - CORRECTED: All bookings start as `pending`
+- ✅ Staff notification system (on create/deposit paid/cancel)
+- ✅ Appointment status management (`pending` → `booked` → `arrived` → `fulfilled`)
 - ✅ Status audit trail extensions (`status-change-audit`)
 - ✅ Deposit amount override (custom amount per booking)
 - ✅ Calendar event styling (cancelled, no-show, pending badges)
 - ✅ Auto-cancel logic (96h or 48h before treatment)
-- ✅ Role-based booking creation (coordinator → pending, provider → booked)
+- ✅ Role-based booking creation - CORRECTED: ALL users create bookings as `pending` first
+
+**WORKFLOW CORRECTION (April 27, 2026):**
+```
+OLD (WRONG): coordinator → pending, provider → booked (skipped deposit!)
+NEW (CORRECT): ALL bookings → PENDING → Send Payment Link → PAID/WAIVED → BOOKED
+
+All bookings start as PENDING regardless of who creates them.
+Booking stays PENDING until deposit is paid or waived.
+"Approve" button replaced with "Send Payment Link" button.
+```
 
 ### 🔄 IN PROGRESS
 

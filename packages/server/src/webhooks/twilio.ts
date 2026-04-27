@@ -1,13 +1,11 @@
-/**
- * Twilio webhook handler
- * Receives incoming SMS messages from patients
- */
+// SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
+// SPDX-License-Identifier: Apache-2.0
 
+import { createReference, Operator } from '@medplum/core';
+import type { Communication, CommunicationPayload, Patient } from '@medplum/fhirtypes';
 import type { Request, Response } from 'express';
 import { getGlobalSystemRepo } from '../fhir/repo';
-import type { Patient, Communication, CommunicationPayload } from '@medplum/fhirtypes';
 import { getLogger } from '../logger';
-import { createReference } from '@medplum/core';
 
 interface TwilioWebhookBody {
   MessageSid: string;
@@ -21,6 +19,8 @@ interface TwilioWebhookBody {
 
 /**
  * Find patient by phone number
+ * @param phone - The phone number to search for
+ * @returns Patient or undefined if no  t found
  */
 async function findPatientByPhone(phone: string): Promise<Patient | undefined> {
   const repo = getGlobalSystemRepo();
@@ -30,8 +30,15 @@ async function findPatientByPhone(phone: string): Promise<Patient | undefined> {
 
   try {
     // Search for patient with this phone number
-    const bundle = await repo.search('Patient', {
-      'phone': normalizedPhone,
+    const bundle = await repo.search({
+      resourceType: 'Patient',
+      filters: [
+        {
+          code: 'phone',
+          operator: Operator.EQUALS,
+          value: normalizedPhone,
+        },
+      ],
     });
 
     const patient = bundle.entry?.[0]?.resource as Patient;
@@ -43,13 +50,12 @@ async function findPatientByPhone(phone: string): Promise<Patient | undefined> {
 
 /**
  * Create a Communication resource for the incoming message
+ * @param patient - The patient associated with the message
+ * @param from - The phone number the message was sent from
+ * @param body - The content of the message
+ * @param messageSid - The Twilio message SID for reference
  */
-async function createCommunication(
-  patient: Patient,
-  from: string,
-  body: string,
-  messageSid: string
-): Promise<void> {
+async function createCommunication(patient: Patient, from: string, body: string, messageSid: string): Promise<void> {
   const repo = getGlobalSystemRepo();
 
   const communication: Communication = {
@@ -94,6 +100,8 @@ async function createCommunication(
 
 /**
  * Handle incoming SMS webhook
+ * @param req - The Express request object containing the Twilio webhook data
+ * @param res - The Express response object to send the TwiML response
  */
 export async function twilioWebhookHandler(req: Request, res: Response): Promise<void> {
   const logger = getLogger();
@@ -135,19 +143,25 @@ export async function twilioWebhookHandler(req: Request, res: Response): Promise
     const lowerBody = Body.toLowerCase().trim();
 
     if (lowerBody.includes('cancel')) {
-      autoResponse = 'We received your cancellation request. A coordinator will contact you shortly to confirm. Reply STOP to opt out of SMS notifications.';
+      autoResponse =
+        'We received your cancellation request. A coordinator will contact you shortly to confirm. Reply STOP to opt out of SMS notifications.';
     } else if (lowerBody.includes('reschedule')) {
-      autoResponse = 'We received your reschedule request. A coordinator will contact you shortly. Reply STOP to opt out of SMS notifications.';
+      autoResponse =
+        'We received your reschedule request. A coordinator will contact you shortly. Reply STOP to opt out of SMS notifications.';
     } else if (lowerBody.includes('confirm') || lowerBody.includes('yes')) {
-      autoResponse = 'Thank you for confirming! We look forward to seeing you. Reply STOP to opt out of SMS notifications.';
+      autoResponse =
+        'Thank you for confirming! We look forward to seeing you. Reply STOP to opt out of SMS notifications.';
     } else if (lowerBody.includes('stop')) {
-      autoResponse = 'You have been opted out of SMS notifications. To opt back in, reply START or call us at (212) 555-0100.';
+      autoResponse =
+        'You have been opted out of SMS notifications. To opt back in, reply START or call us at (212) 555-0100.';
       // TODO: Update patient preferences
     } else if (lowerBody.includes('question') || lowerBody.includes('?')) {
-      autoResponse = 'Thank you for your question. A coordinator will respond shortly. For urgent matters, please call us at (212) 555-0100.';
+      autoResponse =
+        'Thank you for your question. A coordinator will respond shortly. For urgent matters, please call us at (212) 555-0100.';
     } else {
       // Generic response
-      autoResponse = 'Thank you for your message. Our team will review and respond during business hours. Reply STOP to opt out of SMS notifications.';
+      autoResponse =
+        'Thank you for your message. Our team will review and respond during business hours. Reply STOP to opt out of SMS notifications.';
     }
 
     // Send TwiML response
@@ -162,7 +176,16 @@ export async function twilioWebhookHandler(req: Request, res: Response): Promise
     try {
       const repo = getGlobalSystemRepo();
       // Find the notification bot
-      const bots = await repo.search('Bot', { name: 'notification-bot' });
+      const bots = await repo.search({
+        resourceType: 'Bot',
+        filters: [
+          {
+            code: 'name',
+            operator: Operator.EQUALS,
+            value: 'notification-bot',
+          },
+        ],
+      });
       if (bots.entry?.[0]) {
         // Trigger notification
         await repo.createResource({
@@ -204,6 +227,8 @@ export async function twilioWebhookHandler(req: Request, res: Response): Promise
 /**
  * Handle Twilio status callback webhook
  * Tracks message delivery status
+ * @param req - The Express request object containing the Twilio status callback data
+ * @param res - The Express response object to send the status update
  */
 export async function twilioStatusCallbackHandler(req: Request, res: Response): Promise<void> {
   const logger = getLogger();

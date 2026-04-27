@@ -4,7 +4,7 @@
 import { Badge, Button, Card, Group, Stack, Text } from '@mantine/core';
 import type { Location } from '@medplum/fhirtypes';
 import type { JSX } from 'react';
-import { getRoomTypeLabel } from '../../../types/rooms';
+import { getRoomTypeLabel } from '../types/rooms';
 
 interface RoomCardProps {
   room: Location;
@@ -19,7 +19,13 @@ export function RoomCard(props: RoomCardProps): JSX.Element {
   const { room, assignedEquipmentCount, usage, onEdit, onToggleStatus, getEquipmentCount } = props;
 
   const roomName = room.name || 'Unnamed Room';
-  const roomType = room.type?.[0]?.coding?.[0]?.code as 'treatment' | 'waiting' | 'numbing' | 'photo' | 'other' | undefined;
+  const roomType = room.type?.[0]?.coding?.[0]?.code as
+    | 'treatment'
+    | 'waiting'
+    | 'numbing'
+    | 'photo'
+    | 'other'
+    | undefined;
   const status = room.status;
 
   return (
@@ -33,10 +39,7 @@ export function RoomCard(props: RoomCardProps): JSX.Element {
                 {getRoomTypeLabel(roomType)}
               </Badge>
             )}
-            <Badge
-              size="sm"
-              color={status === 'active' ? 'green' : 'gray'}
-            >
+            <Badge size="sm" color={status === 'active' ? 'green' : 'gray'}>
               {status}
             </Badge>
           </Group>
@@ -52,21 +55,11 @@ export function RoomCard(props: RoomCardProps): JSX.Element {
             Edit
           </Button>
           {status === 'active' ? (
-            <Button
-              size="xs"
-              variant="outline"
-              color="red"
-              onClick={() => onToggleStatus(room, 'inactive')}
-            >
+            <Button size="xs" variant="outline" color="red" onClick={() => onToggleStatus(room, 'inactive')}>
               Deactivate
             </Button>
           ) : (
-            <Button
-              size="xs"
-              variant="outline"
-              color="green"
-              onClick={() => onToggleStatus(room, 'active')}
-            >
+            <Button size="xs" variant="outline" color="green" onClick={() => onToggleStatus(room, 'active')}>
               Activate
             </Button>
           )}

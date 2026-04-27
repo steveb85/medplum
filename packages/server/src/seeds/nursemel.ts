@@ -7,6 +7,7 @@ import type {
   Appointment,
   Binary,
   Bot,
+  Device,
   Location,
   Organization,
   Patient,
@@ -114,8 +115,8 @@ export async function seedNurseMelData(systemRepo: SystemRepository, project: Pr
   const organization = await createOrganization(systemRepo, project);
 
   // Create Locations (Rooms)
-  const room1 = await createTreatmentRoom(systemRepo, project, 'room-1', 'Treatment Room 1', false);
-  const room2 = await createTreatmentRoom(systemRepo, project, 'room-2', 'Treatment Room 2', true);
+  const room1 = await createTreatmentRoom(systemRepo, project, 'room-1', 'Treatment Room 1');
+  const room2 = await createTreatmentRoom(systemRepo, project, 'room-2', 'Treatment Room 2');
   globalLogger.info(`Created treatment rooms: Room 1 (id: ${room1.id}), Room 2 (id: ${room2.id})`);
 
   // Create Service Catalog (ActivityDefinitions)
@@ -260,22 +261,22 @@ async function createProviderAccessPolicy(systemRepo: SystemRepository, project:
       { resourceType: 'Coverage', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Account', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Subscription', interaction: ['read', 'create', 'delete'] },
-    // Clinical resources that may be queried
-    { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'create', 'search'] },
-    { resourceType: 'DiagnosticReport', interaction: ['read', 'vread', 'search'] },
-    { resourceType: 'MedicationRequest', interaction: ['read', 'vread', 'search'] },
-    { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
-    { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
-    { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
-  // Service catalog (ActivityDefinitions)
+      // Clinical resources that may be queried
+      { resourceType: 'ServiceRequest', interaction: ['read', 'vread', 'create', 'search'] },
+      { resourceType: 'DiagnosticReport', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'MedicationRequest', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
+      { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
+      // Service catalog (ActivityDefinitions)
       { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
       // Equipment management
       { resourceType: 'Device', interaction: ['read', 'vread', 'search'] },
     ],
-});
+  });
 
-globalLogger.info(`Created Provider AccessPolicy: ${policy.id}`);
-return policy;
+  globalLogger.info(`Created Provider AccessPolicy: ${policy.id}`);
+  return policy;
 }
 
 async function createCoordinatorAccessPolicy(systemRepo: SystemRepository, project: Project): Promise<AccessPolicy> {
@@ -438,8 +439,8 @@ async function createAssistantAccessPolicy(systemRepo: SystemRepository, project
       { resourceType: 'AllergyIntolerance', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Condition', interaction: ['read', 'vread', 'search'] },
       { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
-    // Service catalog (ActivityDefinitions) - needed for booking
-    { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
+      // Service catalog (ActivityDefinitions) - needed for booking
+      { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
     ],
   });
 
@@ -1274,10 +1275,7 @@ async function createPushBotAccessPolicy(systemRepo: SystemRepository, project: 
   return policy;
 }
 
-async function createPushNotificationBot(
-  systemRepo: SystemRepository,
-  project: Project
-): Promise<Bot> {
+async function createPushNotificationBot(systemRepo: SystemRepository, project: Project): Promise<Bot> {
   // Create AccessPolicy for the Bot first
   const accessPolicy = await createPushBotAccessPolicy(systemRepo, project);
 
@@ -1425,15 +1423,13 @@ async function createPushNotificationSubscription(
  * @param project - The project
  * @param id - Room ID
  * @param name - Room name
- * @param hasLaser - Whether room has laser equipment
  * @returns The created Location
  */
 async function createTreatmentRoom(
   systemRepo: SystemRepository,
   project: Project,
   id: string,
-  name: string,
-  hasLaser: boolean
+  name: string
 ): Promise<Location> {
   const existing = await systemRepo.searchOne<Location>({
     resourceType: 'Location',
@@ -1472,7 +1468,6 @@ async function createTreatmentRoom(
     extension: [
       {
         url: 'http://melissaknudson.com/fhir/StructureDefinition/has-laser',
-        valueBoolean: hasLaser,
       },
     ],
   });
@@ -1484,11 +1479,12 @@ async function createTreatmentRoom(
  * @param project - The project
  */
 async function createServiceCatalog(systemRepo: SystemRepository, project: Project): Promise<void> {
+  // Service definition with new equipment and cost tracking fields
   const services: {
     id: string;
     name: string;
     duration: number;
-    numbingTime: number;
+    numbingTime: number; // For display/recommendation only
     defaultRoom: string;
     minPrice: number;
     maxPrice: number;
@@ -1499,12 +1495,35 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
     icon: string;
     color: string;
     category: string;
+    // New fields for equipment and cost tracking
+    equipmentRequirements: { equipmentType: string; required: boolean; movable: boolean }[];
+    recommendedAccompanyingServices: { serviceCode: string; timing: 'before' | 'after' | 'concurrent'; offsetMinutes: number }[];
+    internalCost: { productCost: number; notes?: string };
   }[] = [
+    {
+      id: 'topical-numbing',
+      name: 'Topical Numbing',
+      duration: 15,
+      numbingTime: 0,
+      defaultRoom: 'room-2', // Numbing room
+      minPrice: 0, // Free to patient
+      maxPrice: 0,
+      pricePerUnit: false,
+      unitType: 'session',
+      gfeCategory: '',
+      requiresConsult: false,
+      icon: 'cream',
+      color: 'gray',
+      category: 'prep',
+      equipmentRequirements: [],
+      recommendedAccompanyingServices: [],
+      internalCost: { productCost: 15, notes: 'Numbing cream supplies' },
+    },
     {
       id: 'botox-cosmetic',
       name: 'Botox Cosmetic',
       duration: 30,
-      numbingTime: 0,
+      numbingTime: 15, // Recommended numbing time
       defaultRoom: 'room-1',
       minPrice: 300,
       maxPrice: 800,
@@ -1515,6 +1534,11 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       icon: 'syringe',
       color: 'blue',
       category: 'injection',
+      equipmentRequirements: [],
+      recommendedAccompanyingServices: [
+        { serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -15 },
+      ],
+      internalCost: { productCost: 120, notes: 'Botox product cost per average treatment' },
     },
     {
       id: 'filler',
@@ -1531,11 +1555,16 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       icon: 'syringe',
       color: 'violet',
       category: 'injection',
+      equipmentRequirements: [],
+      recommendedAccompanyingServices: [
+        { serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -30 },
+      ],
+      internalCost: { productCost: 300, notes: 'Filler product per syringe' },
     },
     {
       id: 'laser',
       name: 'Laser Treatment',
-      duration: 45,
+      duration: 60, // 15 min numbing + 45 min treatment
       numbingTime: 45,
       defaultRoom: 'room-2',
       minPrice: 250,
@@ -1547,6 +1576,13 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       icon: 'laser',
       color: 'red',
       category: 'laser',
+      equipmentRequirements: [
+        { equipmentType: 'laser-hair-removal', required: true, movable: false },
+      ],
+      recommendedAccompanyingServices: [
+        { serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -45 },
+      ],
+      internalCost: { productCost: 50, notes: 'Laser consumables and cooling gel' },
     },
     {
       id: 'consultation',
@@ -1563,6 +1599,9 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       icon: 'clipboard',
       color: 'green',
       category: 'consult',
+      equipmentRequirements: [],
+      recommendedAccompanyingServices: [],
+      internalCost: { productCost: 0, notes: 'No consumables' },
     },
   ];
 
@@ -1600,6 +1639,25 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
     if (svc.icon) {
       extensions.push({ url: 'icon', valueString: svc.icon });
     }
+    // Add new fields for equipment requirements and cost tracking
+    if (svc.equipmentRequirements && svc.equipmentRequirements.length > 0) {
+      extensions.push({
+        url: 'equipmentRequirements',
+        valueString: JSON.stringify(svc.equipmentRequirements),
+      });
+    }
+    if (svc.recommendedAccompanyingServices && svc.recommendedAccompanyingServices.length > 0) {
+      extensions.push({
+        url: 'recommendedAccompanyingServices',
+        valueString: JSON.stringify(svc.recommendedAccompanyingServices),
+      });
+    }
+    if (svc.internalCost) {
+      extensions.push({
+        url: 'internalCost',
+        valueString: JSON.stringify(svc.internalCost),
+      });
+    }
 
     await systemRepo.createResource<ActivityDefinition>({
       resourceType: 'ActivityDefinition',
@@ -1635,68 +1693,6 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
   }
 }
 
-
-///**
-// * Create equipment
-// * Seed initial equipment for the practice
-// */
-//
-//async function createEquipment(
-//  systemRepo: SystemRepository,
-//  project: Project,
-//  type: string,
-//  name: string,
-//  serialNumber: string,
-//  assignedRoomId?: string
-//): Promise<Device> {
-//  const existing = await systemRepo.searchOne<Device>({
-//    resourceType: 'Device',
-//    filters: [{ code: 'name', operator: 'eq', value: name }],
-//  });
-
-//  if (existing) {
-//    globalLogger.info(`Equipment ${name} already exists: ${existing.id}`);
-//    return existing;
-//  }
-
-//  const code = EQUIPMENT_TYPES.find((t) => t.label.toLowerCase().includes(type.toLowerCase()))?.code || 'other';
-//  const uniqueCode = generateEquipmentCode(code, []); // Simplified for seeding
-
-//  return systemRepo.createResource<Device>({
-//    resourceType: 'Device',
-//    meta: { project: project.id },
-//    deviceName: [{ name, type: { coding: [{ system: 'http://melissaknudson.com/equipment-type', code, display: name }] } }],
-//    identifier: [
-//      { system: 'http://melissaknudson.com/equipment-code', value: uniqueCode },
-//      { system: 'http://melissaknudson.com/serial-number', value: serialNumber },
-//    ],
-//    status: 'active',
-//    location: assignedRoomId ? { reference: `Location/${assignedRoomId}` } : undefined,
-//    extension: [
-//      {
-//        url: 'http://melissaknudson.com/fhir/StructureDefinition/purchase-date',
-//        valueDate: dayjs().format('YYYY-MM-DD'),
-//      },
-//      {
-//        url: 'http://melissaknudson.com/fhir/StructureDefinition/purchase-cost',
-//        valueMoney: { currency: 'USD', value: Math.floor(Math.random() * 20000) + 5000 }, // Random cost $5-25k
-//      },
-//    ],
-//  });
-//}
-await seedEquipment(systemRepo, project, room1, room2);
-
-// Seed equipment after rooms are created
-await createEquipment(systemRepo, project, 'laser-hair-removal', 'Cynosure Elite+ Laser', 'SN-2024-001', room1.id);
-await createEquipment(systemRepo, project, 'laser-hair-removal', 'Lumenis Lightsheer', 'SN-2024-002', room2.id);
-await createEquipment(systemRepo, project, 'botox-station', 'Botox Supply Station #1', 'N/A'); // Floating
-await createEquipment(systemRepo, project, 'filler-cart', 'Dermal Filler Cart Primary', 'N/A', room1.id);
-await createEquipment(systemRepo, project, 'photo-setup', 'Photography Setup Kit', 'N/A'); // Floating
-await createEquipment(systemRepo, project, 'numbing-station', 'Numbing Cream Station', 'N/A', room2.id);
-await createEquipment(systemRepo, project, 'emergency-kit', 'Emergency Response Kit', 'N/A'); // Floating
-
-globalLogger.info('Equipment seeding completed for practice');
-
 async function createEquipment(
   systemRepo: SystemRepository,
   project: Project,
@@ -1707,9 +1703,7 @@ async function createEquipment(
 ): Promise<Device> {
   const existing = await systemRepo.searchOne<Device>({
     resourceType: 'Device',
-    filters: [
-      { code: '_filter', operator: 'eq', value: `device-name eq "${name}"` }
-    ],
+    filters: [{ code: 'name', operator: 'eq', value: name }],
   });
 
   if (existing) {
@@ -1717,18 +1711,63 @@ async function createEquipment(
     return existing;
   }
 
-  const code = EQUIPMENT_TYPES.find((t) => t.code === type || t.label.toLowerCase().includes(type.toLowerCase()))?.code || 'other';
-  const uniqueCode = type + '-' + Math.floor(Math.random() * 1000); // Simplified for seeding
+  const equipmentTypes = [
+    { code: 'laser-hair-removal', label: 'Laser Hair Removal Device' },
+    { code: 'botox-station', label: 'Botox Supply Station' },
+    { code: 'filler-cart', label: 'Dermal Filler Cart' },
+    { code: 'photo-setup', label: 'Photography Setup' },
+    { code: 'numbing-station', label: 'Numbing Cream Station' },
+    { code: 'emergency-kit', label: 'Emergency Response Kit' },
+  ] as const;
 
-  return systemRepo.createResource<Device>({
+  const findCode = (type: string): string =>
+    equipmentTypes.find((t) => t.label.toLowerCase().includes(type.toLowerCase()) || t.code === type)?.code || 'other';
+
+  const code = findCode(type);
+  const uniqueCode = `${code}-${Math.floor(Math.random() * 1000)}`;
+
+  // Create Device with proper FHIR structure
+  const device: Device = {
     resourceType: 'Device',
     meta: { project: project.id },
-    deviceName: [{ name, type: { coding: [{ system: 'http://melissaknudson.com/equipment-type', code, display: name }] } }],
+    status: 'active',
+    deviceName: [
+      {
+        name,
+        // type must be valid FHIR DeviceNameType
+        type: 'user-friendly-name' as const,
+      },
+    ],
     identifier: [
       { system: 'http://melissaknudson.com/equipment-code', value: uniqueCode },
       { system: 'http://melissaknudson.com/serial-number', value: serialNumber },
     ],
-    status: 'active',
-    location: assignedRoomId ? { reference: `Location/${assignedRoomId}` } : undefined,
-  });
+  };
+
+  if (assignedRoomId) {
+    device.location = { reference: `Location/${assignedRoomId}` };
+  }
+
+  return systemRepo.createResource<Device>(device);
 }
+
+async function seedEquipment(
+  systemRepo: SystemRepository,
+  project: Project,
+  room1: Location,
+  room2: Location
+): Promise<void> {
+  // Seed equipment items
+  await createEquipment(systemRepo, project, 'laser-hair-removal', 'Cynosure Elite+ Laser', 'SN-2024-001', room1.id);
+  await createEquipment(systemRepo, project, 'laser-hair-removal', 'Lumenis Lightsheer', 'SN-2024-002', room2.id);
+  await createEquipment(systemRepo, project, 'botox-station', 'Botox Supply Station #1', 'N/A'); // Floating
+  await createEquipment(systemRepo, project, 'filler-cart', 'Dermal Filler Cart Primary', 'N/A', room1.id);
+  await createEquipment(systemRepo, project, 'photo-setup', 'Photography Setup Kit', 'N/A'); // Floating
+  await createEquipment(systemRepo, project, 'numbing-station', 'Numbing Cream Station', 'N/A', room2.id);
+  await createEquipment(systemRepo, project, 'emergency-kit', 'Emergency Response Kit', 'N/A'); // Floating
+
+  globalLogger.info('Equipment seeding completed for practice');
+}
+
+// Call seedEquipment in the main seeding flow (within seedNurseMelData)
+// This is added after the rooms are created

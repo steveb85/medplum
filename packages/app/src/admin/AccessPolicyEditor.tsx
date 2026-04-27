@@ -28,7 +28,7 @@ export function AccessPolicyEditor(props: AccessPolicyEditorProps): JSX.Element 
   const medplum = useMedplum();
 
   const [name, setName] = useState(sourcePolicy?.name ?? '');
-  const [description, setDescription] = useState(sourcePolicy ? getAccessPolicyDescription(sourcePolicy) ?? '' : '');
+  const [description, setDescription] = useState(sourcePolicy ? (getAccessPolicyDescription(sourcePolicy) ?? '') : '');
   const [affectedUsers, setAffectedUsers] = useState<AffectedUsers | null>(null);
   const [showWarning, setShowWarning] = useState(false);
 
@@ -58,17 +58,22 @@ export function AccessPolicyEditor(props: AccessPolicyEditorProps): JSX.Element 
           bots: bots.total ?? 0,
           clients: clients.total ?? 0,
         });
-      });
+      }).catch(console.error);
     }
   }, [mode, policyId, medplum]);
 
   const title = useMemo(() => {
-    if (mode === 'create') return 'Create Access Policy';
-    if (mode === 'edit') return 'Edit Access Policy';
+    if (mode === 'create') {
+      return 'Create Access Policy';
+    }
+    if (mode === 'edit') {
+      return 'Edit Access Policy';
+    }
     return '';
   }, [mode]);
 
-  const hasAssignments = affectedUsers && (affectedUsers.users > 0 || affectedUsers.bots > 0 || affectedUsers.clients > 0);
+  const hasAssignments =
+    affectedUsers && (affectedUsers.users > 0 || affectedUsers.bots > 0 || affectedUsers.clients > 0);
 
   const handleSave = async (): Promise<void> => {
     try {

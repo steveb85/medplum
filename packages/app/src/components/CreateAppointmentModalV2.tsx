@@ -544,13 +544,12 @@ const serviceRequest: ServiceRequest = {
         }
       }
 
-      showNotification({
-        title: initialStatus === 'booked' ? 'Booking Confirmed' : 'Booking Requested',
-        message: initialStatus === 'booked' 
-          ? `Booking for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} confirmed`
-          : `Booking for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} created and pending approval`,
-        color: 'green',
-      });
+// Notification shows booking created (always PENDING first, deposit required)
+    showNotification({
+      title: 'Booking Created',
+      message: `Booking for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} created and pending deposit payment`,
+      color: 'green',
+    });
 
       onSuccess();
       onClose();

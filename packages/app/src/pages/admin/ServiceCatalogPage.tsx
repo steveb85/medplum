@@ -25,37 +25,8 @@ import { useMedplum, useSearchResources } from '@medplum/react';
 import { IconEdit, IconPlus } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useCallback, useMemo, useState } from 'react';
-
-interface FollowUpMessage {
-  hours: number;
-  message: string;
-}
-
-interface ProviderRate {
-  providerId: string;
-  providerName: string;
-  pricePerUnit: number;
-}
-
-interface ServiceConfig {
-  numbingTime: number;
-  defaultRoom: string;
-  roomMovable: boolean;
-  minPrice: number;
-  maxPrice: number;
-  pricePerUnit: boolean;
-  unitType: string;
-  gfeCategory: string;
-  requiresConsult: boolean;
-  icon: string;
-  color: string;
-  category: string;
-  depositAmount: number;
-  depositReminders: number;
-  depositReminderInterval: number;
-  followUpSchedule: FollowUpMessage[];
-  providerRates: ProviderRate[];
-}
+import type { ServiceConfig } from '../../utils/fhir-extensions';
+import { buildServiceConfigExtensions, parseServiceConfig } from '../../utils/fhir-extensions';
 
 interface ServiceFormData {
   id: string;
@@ -86,93 +57,6 @@ const UNIT_TYPES = [
   { value: 'area', label: 'Area' },
   { value: 'session', label: 'Session' },
 ];
-
-function parseServiceConfig(activity: ActivityDefinition): ServiceConfig {
-  const ext = activity.extension?.find(
-    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-config'
-  );
-
-  // Parse follow-up schedule from JSON string
-  const followUpScheduleRaw = ext?.extension?.find((e) => e.url === 'followUpSchedule')?.valueString;
-  let followUpSchedule: FollowUpMessage[] = [];
-  if (followUpScheduleRaw) {
-    try {
-      followUpSchedule = JSON.parse(followUpScheduleRaw);
-    } catch {
-      followUpSchedule = [];
-    }
-  }
-
-  // Parse provider rates from JSON string
-  const providerRatesRaw = ext?.extension?.find((e) => e.url === 'providerRates')?.valueString;
-  let providerRates: ProviderRate[] = [];
-  if (providerRatesRaw) {
-    try {
-      providerRates = JSON.parse(providerRatesRaw);
-    } catch {
-      providerRates = [];
-    }
-  }
-
-  return {
-    numbingTime: ext?.extension?.find((e) => e.url === 'numbingTime')?.valueInteger ?? 0,
-    defaultRoom: ext?.extension?.find((e) => e.url === 'defaultRoom')?.valueString ?? 'room-1',
-    roomMovable: ext?.extension?.find((e) => e.url === 'roomMovable')?.valueBoolean ?? true,
-    minPrice: ext?.extension?.find((e) => e.url === 'minPrice')?.valueInteger ?? 0,
-    maxPrice: ext?.extension?.find((e) => e.url === 'maxPrice')?.valueInteger ?? 0,
-    pricePerUnit: ext?.extension?.find((e) => e.url === 'pricePerUnit')?.valueBoolean ?? false,
-    unitType: ext?.extension?.find((e) => e.url === 'unitType')?.valueString ?? 'unit',
-    gfeCategory: ext?.extension?.find((e) => e.url === 'gfeCategory')?.valueString ?? '',
-    requiresConsult: ext?.extension?.find((e) => e.url === 'requiresConsult')?.valueBoolean ?? false,
-    icon: ext?.extension?.find((e) => e.url === 'icon')?.valueString ?? '',
-    color: ext?.extension?.find((e) => e.url === 'color')?.valueString ?? 'blue',
-    category: ext?.extension?.find((e) => e.url === 'category')?.valueString ?? 'other',
-    depositAmount: ext?.extension?.find((e) => e.url === 'depositAmount')?.valueInteger ?? 250,
-    depositReminders: ext?.extension?.find((e) => e.url === 'depositReminders')?.valueInteger ?? 4,
-    depositReminderInterval: ext?.extension?.find((e) => e.url === 'depositReminderInterval')?.valueInteger ?? 24,
-    followUpSchedule,
-    providerRates,
-  };
-}
-
-function buildExtensions(config: ServiceConfig): ActivityDefinition['extension'] {
-  const extensions: { url: string; [key: string]: unknown }[] = [
-    { url: 'numbingTime', valueInteger: config.numbingTime },
-    { url: 'defaultRoom', valueString: config.defaultRoom },
-    { url: 'roomMovable', valueBoolean: config.roomMovable },
-    { url: 'minPrice', valueInteger: config.minPrice },
-    { url: 'maxPrice', valueInteger: config.maxPrice },
-    { url: 'pricePerUnit', valueBoolean: config.pricePerUnit },
-    { url: 'unitType', valueString: config.unitType },
-    { url: 'requiresConsult', valueBoolean: config.requiresConsult },
-    { url: 'color', valueString: config.color },
-    { url: 'category', valueString: config.category },
-    { url: 'depositAmount', valueInteger: config.depositAmount },
-    { url: 'depositReminders', valueInteger: config.depositReminders },
-    { url: 'depositReminderInterval', valueInteger: config.depositReminderInterval },
-  ];
-
-  // Only add optional fields if they have values
-  if (config.gfeCategory) {
-    extensions.push({ url: 'gfeCategory', valueString: config.gfeCategory });
-  }
-  if (config.icon) {
-    extensions.push({ url: 'icon', valueString: config.icon });
-  }
-  if (config.followUpSchedule && config.followUpSchedule.length > 0) {
-    extensions.push({ url: 'followUpSchedule', valueString: JSON.stringify(config.followUpSchedule) });
-  }
-  if (config.providerRates && config.providerRates.length > 0) {
-    extensions.push({ url: 'providerRates', valueString: JSON.stringify(config.providerRates) });
-  }
-
-  return [
-    {
-      url: 'http://melissaknudson.com/fhir/StructureDefinition/service-config',
-      extension: extensions,
-    },
-  ];
-}
 
 function getCategoryBadgeColor(category: string): string {
   switch (category) {
@@ -225,6 +109,9 @@ export function ServiceCatalogPage(): JSX.Element {
       depositReminderInterval: 24,
       followUpSchedule: [],
       providerRates: [],
+      equipmentRequirements: [],
+      recommendedAccompanyingServices: [],
+      internalCost: { productCost: 0 },
     },
   });
 
@@ -286,6 +173,9 @@ export function ServiceCatalogPage(): JSX.Element {
         depositReminderInterval: 24,
         followUpSchedule: [],
         providerRates: [],
+        equipmentRequirements: [],
+        recommendedAccompanyingServices: [],
+        internalCost: { productCost: 0 },
       },
     });
     open();
@@ -301,7 +191,7 @@ export function ServiceCatalogPage(): JSX.Element {
           title: formData.title,
           description: formData.description,
           timingDuration: { value: formData.duration, unit: 'min' },
-          extension: buildExtensions(formData.config),
+          extension: buildServiceConfigExtensions(formData.config),
         });
         showNotification({ title: 'Success', message: 'Service updated', color: 'green' });
       } else {
@@ -324,7 +214,7 @@ export function ServiceCatalogPage(): JSX.Element {
             text: formData.title,
           },
           timingDuration: { value: formData.duration, unit: 'min' },
-          extension: buildExtensions(formData.config),
+          extension: buildServiceConfigExtensions(formData.config),
         });
         showNotification({ title: 'Success', message: 'Service created', color: 'green' });
       }
@@ -414,9 +304,7 @@ export function ServiceCatalogPage(): JSX.Element {
                 <Badge color={getCategoryBadgeColor(config.category)}>{config.category}</Badge>
               </Table.Td>
               <Table.Td>{service.timingDuration?.value || 30} min</Table.Td>
-              <Table.Td>
-                {config.numbingTime > 0 ? `${config.numbingTime} min` : 'None'}
-              </Table.Td>
+              <Table.Td>{config.numbingTime > 0 ? `${config.numbingTime} min` : 'None'}</Table.Td>
               <Table.Td>{priceText}</Table.Td>
               <Table.Td>
                 <Badge variant="light">${config.depositAmount}</Badge>
@@ -433,11 +321,7 @@ export function ServiceCatalogPage(): JSX.Element {
                 )}
               </Table.Td>
               <Table.Td>
-                <Switch
-                  checked={service.status === 'active'}
-                  onChange={() => handleToggleStatus(service)}
-                  size="sm"
-                />
+                <Switch checked={service.status === 'active'} onChange={() => handleToggleStatus(service)} size="sm" />
               </Table.Td>
               <Table.Td>
                 <Button variant="light" size="xs" onClick={() => handleEdit(service)}>
@@ -450,7 +334,6 @@ export function ServiceCatalogPage(): JSX.Element {
       </>
     );
   };
-
 
   return (
     <Stack gap="md" p="md">
@@ -482,7 +365,7 @@ export function ServiceCatalogPage(): JSX.Element {
               <Table.Th>Actions</Table.Th>
             </Table.Tr>
           </Table.Thead>
-<Table.Tbody>{renderTableBody()}</Table.Tbody>
+          <Table.Tbody>{renderTableBody()}</Table.Tbody>
         </Table>
       </Card>
 

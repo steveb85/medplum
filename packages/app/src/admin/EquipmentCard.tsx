@@ -4,7 +4,6 @@
 import { Badge, Button, Card, Group, Stack, Text } from '@mantine/core';
 import type { Device } from '@medplum/fhirtypes';
 import type { JSX } from 'react';
-import { isEquipmentAvailable } from '../utils/equipment';
 
 interface EquipmentCardProps {
   equipment: Device;
@@ -22,10 +21,21 @@ export function EquipmentCard(props: EquipmentCardProps): JSX.Element {
   const { equipment, usage, getRoomName, onEdit, onMove, onStatusChange } = props;
 
   const name = equipment.deviceName?.[0]?.name || 'Unnamed Equipment';
-  const uniqueCode = equipment.identifier?.find((id) => id.system === 'http://melissaknudson.com/equipment-code')?.value || 'N/A';
-  const status = equipment.status;
+  const uniqueCode =
+    equipment.identifier?.find((id) => id.system === 'http://melissaknudson.com/equipment-code')?.value || 'N/A';
+  const status = (equipment as any).status;
   const assignedRoomId = equipment.location?.reference?.split('/')[1];
 
+  let badgeColor: string;
+  if (status === 'active') {
+    badgeColor = 'green';
+  } else if (status === 'unknown') {
+    badgeColor = 'yellow';
+  } else if (status === 'inactive') {
+    badgeColor = 'gray';
+  } else {
+    badgeColor = 'red';
+  }
   return (
     <Card withBorder padding="md">
       <Group justify="space-between" align="flex-start">
@@ -34,17 +44,9 @@ export function EquipmentCard(props: EquipmentCardProps): JSX.Element {
             <Text fw={500}>{name}</Text>
             <Badge
               size="sm"
-              color={
-                status === 'active'
-                  ? 'green'
-                  : status === 'maintenance'
-                  ? 'yellow'
-                  : status === 'retired'
-                  ? 'gray'
-                  : 'red'
-              }
+              color={badgeColor}
             >
-              {status}
+              {status || 'active'}
             </Badge>
           </Group>
           <Text size="xs" c="dimmed">
@@ -63,43 +65,23 @@ export function EquipmentCard(props: EquipmentCardProps): JSX.Element {
           </Text>
         </Stack>
         <Group gap="xs">
-          {status !== 'retired' && isEquipmentAvailable(equipment) && (
-            <Button size="xs" variant="outline" onClick={() => onMove(equipment)}>
-              Move
-            </Button>
-          )}
           {status !== 'retired' && (
             <Button size="xs" variant="outline" onClick={() => onEdit(equipment)}>
               Edit
             </Button>
           )}
           {status === 'active' && (
-            <Button
-              size="xs"
-              variant="outline"
-              color="yellow"
-              onClick={() => onStatusChange(equipment, 'maintenance')}
-            >
+            <Button size="xs" variant="outline" color="yellow" onClick={() => onStatusChange(equipment, 'maintenance')}>
               Service
             </Button>
           )}
-          {status === 'maintenance' && (
-            <Button
-              size="xs"
-              variant="outline"
-              color="green"
-              onClick={() => onStatusChange(equipment, 'active')}
-            >
+          {status === 'unknown' && (
+            <Button size="xs" variant="outline" color="green" onClick={() => onStatusChange(equipment, 'active')}>
               Ready
             </Button>
           )}
           {status === 'active' && (
-            <Button
-              size="xs"
-              color="red"
-              variant="outline"
-              onClick={() => onStatusChange(equipment, 'retired')}
-            >
+            <Button size="xs" color="red" variant="outline" onClick={() => onStatusChange(equipment, 'retired')}>
               Retire
             </Button>
           )}

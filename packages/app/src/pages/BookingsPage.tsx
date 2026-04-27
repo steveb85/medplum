@@ -44,9 +44,10 @@ import { getMedSpaRole } from '../auth/role';
 import { createNotification } from '../notifications/utils';
 
 // Appointment status configuration
+// STATUS FLOW: pending (deposit required) → booked (deposit paid/waived) → arrived → fulfilled
 const statusConfig: Record<string, { color: string; label: string }> = {
-  pending: { color: 'yellow', label: 'Pending' },
-  booked: { color: 'blue', label: 'Booked' },
+  pending: { color: 'yellow', label: 'Pending (Deposit Required)' },
+  booked: { color: 'blue', label: 'Booked (Deposit Paid)' },
   arrived: { color: 'teal', label: 'Arrived' },
   fulfilled: { color: 'green', label: 'Completed' },
   cancelled: { color: 'red', label: 'Cancelled' },
@@ -279,13 +280,15 @@ export function BookingsPage(): JSX.Element {
     [medplum, loadBookings]
   );
 
-  // Handle approve booking
-  const handleApprove = useCallback(
-    (row: BookingRow) => {
-      updateStatus(row, 'booked').catch(console.error);
-    },
-    [updateStatus]
-  );
+  // DEPRECATED: Old approve function - approval now requires deposit paid/waived
+  // Booking stays PENDING until deposit requirement is met
+  // See BookingDetailPage for deposit management workflow
+  // const handleApprove = useCallback(
+  //   (row: BookingRow) => {
+  //     updateStatus(row, 'booked').catch(console.error);
+  //   },
+  //   [updateStatus]
+  // );
 
   // Handle cancel with reason
   const handleCancel = useCallback((row: BookingRow) => {

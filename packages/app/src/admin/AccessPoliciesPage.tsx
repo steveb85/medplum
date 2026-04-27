@@ -7,7 +7,7 @@ import type { AccessPolicy } from '@medplum/fhirtypes';
 import { useMedplum } from '@medplum/react';
 import { IconLock } from '@tabler/icons-react';
 import type { JSX } from 'react';
-import { useEffect, useState } from 'react';
+import { startTransition, useCallback, useEffect, useState } from 'react';
 import { AccessPolicyCard } from './AccessPolicyCard';
 import { AccessPolicyEditor } from './AccessPolicyEditor';
 
@@ -25,12 +25,7 @@ export function AccessPoliciesPage(): JSX.Element {
   const [editPolicyId, setEditPolicyId] = useState<string | undefined>(undefined);
   const [cloneSourcePolicy, setCloneSourcePolicy] = useState<AccessPolicy | undefined>(undefined);
 
-  // Load all AccessPolicies
-  useEffect(() => {
-    loadPolicies().catch(console.error);
-  }, []);
-
-  const loadPolicies = async (): Promise<void> => {
+  const loadPolicies = useCallback(async (): Promise<void> => {
     try {
       setLoading(true);
       const policiesBundle = await medplum.search('AccessPolicy', { _count: '100' });
@@ -61,7 +56,9 @@ export function AccessPoliciesPage(): JSX.Element {
       policiesWithCount.sort((a, b) => {
         const aIsSystem = a.policy.name?.includes('Policy') ? 1 : 0;
         const bIsSystem = b.policy.name?.includes('Policy') ? 1 : 0;
-        if (aIsSystem !== bIsSystem) return bIsSystem - aIsSystem;
+        if (aIsSystem !== bIsSystem) {
+          return bIsSystem - aIsSystem;
+        }
         return b.usageCount - a.usageCount;
       });
 
@@ -76,7 +73,16 @@ export function AccessPoliciesPage(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  };
+  }, [medplum]);
+
+  // Load all AccessPolicies
+  useEffect(() => {
+    startTransition(() => {
+      loadPolicies().catch((error) => {
+        console.error(error);
+      });
+    });
+  }, [loadPolicies]);
 
   const handleCreateNew = (): void => {
     setEditMode('create');
@@ -111,8 +117,12 @@ export function AccessPoliciesPage(): JSX.Element {
     setCloneSourcePolicy(undefined);
   };
 
-  const systemPolicies = policies.filter((p) => p.policy.name?.includes('Policy') || p.policy.meta?.tag?.some((t) => t.code === 'system'));
-  const customPolicies = policies.filter((p) => !p.policy.name?.includes('Policy') && !p.policy.meta?.tag?.some((t) => t.code === 'system'));
+  const systemPolicies = policies.filter(
+    (p) => p.policy.name?.includes('Policy') || p.policy.meta?.tag?.some((t) => t.code === 'system')
+  );
+  const customPolicies = policies.filter(
+    (p) => !p.policy.name?.includes('Policy') && !p.policy.meta?.tag?.some((t) => t.code === 'system')
+  );
 
   return (
     <Paper p="md">
@@ -139,7 +149,9 @@ export function AccessPoliciesPage(): JSX.Element {
             {systemPolicies.length > 0 && (
               <Stack gap="md">
                 <Title order={4}>Seeded Policies (System)</Title>
-                <Text size="xs" c="dimmed">These policies are automatically created and managed by the system.</Text>
+                <Text size="xs" c="dimmed">
+                  These policies are automatically created and managed by the system.
+                </Text>
                 <SimpleGrid cols={1} spacing="sm">
                   {systemPolicies.map(({ policy, usageCount }) => (
                     <AccessPolicyCard

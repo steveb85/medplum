@@ -70,15 +70,22 @@ export function BackgroundSelector({
   }));
 
   // Current combined value
-  const currentValue =
-    config.type === 'template'
-      ? `${config.templateGender || effectiveGender}-${config.templateView}`
-      : config.photoId
-        ? `photo-${config.photoId}`
-        : '';
+  const currentValue = (() => {
+    if (config.type === 'template') {
+      return `${config.templateGender || effectiveGender}-${config.templateView}`;
+    }
+
+    if (config.photoId) {
+      return `photo-${config.photoId}`;
+    }
+
+    return '';
+  })();
 
   const handleChange = (value: string | null): void => {
-    if (!value) return;
+    if (!value) {
+      return;
+    }
 
     if (value.startsWith('photo-')) {
       const photoId = value.replace('photo-', '');

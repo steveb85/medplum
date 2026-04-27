@@ -222,6 +222,7 @@ function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRol
         },
 
         { label: 'Rooms', href: '/admin/rooms', icon: <IconDoor /> },
+        { label: 'Equipment', href: '/admin/equipment', icon: <IconDoor /> },
         { label: 'Access Policies', href: '/admin/accesspolicies', icon: <IconLock /> },
       ],
     });
