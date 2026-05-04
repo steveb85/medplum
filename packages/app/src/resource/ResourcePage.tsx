@@ -1,15 +1,15 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
-import { Button, Paper, ScrollArea, Title } from '@mantine/core';
+import { Button, Group, Paper, ScrollArea, Title } from '@mantine/core';
 import { showNotification } from '@mantine/notifications';
 import { getReferenceString, isGone, normalizeErrorString } from '@medplum/core';
-import type { OperationOutcome, Resource, ResourceType, ServiceRequest } from '@medplum/fhirtypes';
+import type { OperationOutcome, Practitioner, Resource, ResourceType, ServiceRequest } from '@medplum/fhirtypes';
 import { Document, LinkTabs, OperationOutcomeAlert, PatientHeader, useMedplum, useResource } from '@medplum/react';
 import type { JSX } from 'react';
 import { useState } from 'react';
-import { Outlet, useParams } from 'react-router';
+import { Outlet, useNavigate, useParams } from 'react-router';
+import type { MedSpaRole } from '../auth/role';
 import { filterPatientTabs, getMedSpaRole } from '../auth/role';
-import  type { MedSpaRole } from '../auth/role';
 import { QuickServiceRequests } from '../components/QuickServiceRequests';
 import { QuickStatus } from '../components/QuickStatus';
 import { ResourceHeader } from '../components/ResourceHeader';
@@ -92,7 +92,7 @@ function getTabs(resourceType: string, role: MedSpaRole): string[] {
   }
 
   // Base tabs - filtered by role
-  const baseTabs = ['Details', 'Edit', 'Event', 'History', 'Blame', 'Accounts','JSON', 'Apps', 'Profiles'];
+  const baseTabs = ['Details', 'Edit', 'Event', 'History', 'Blame', 'Accounts', 'JSON', 'Apps', 'Profiles'];
   const filteredBaseTabs = filterPatientTabs(baseTabs, role);
   result.push(...filteredBaseTabs);
 
@@ -108,19 +108,59 @@ function getTabs(resourceType: string, role: MedSpaRole): string[] {
     if (role === 'super-admin' || role === 'project-admin') {
       result.push('Export');
     }
+
+    // Patient Info tab - full intake form for editing patient data
+    result.push('Patient Info');
   }
 
   return result;
 }
 
+function canEditPractitioner(
+  medplum: ReturnType<typeof useMedplum>,
+  practitionerId: string | undefined,
+  role: MedSpaRole
+): boolean {
+  // Admin roles can edit any practitioner
+  if (role === 'super-admin' || role === 'project-admin') {
+    return true;
+  }
+  // Self-editing: check if current user is viewing their own profile
+  const currentProfile = medplum.getProfile() as Practitioner | undefined;
+  if (currentProfile?.id === practitionerId) {
+    return true;
+  }
+  return false;
+}
+
+function canEditPatient(role: MedSpaRole): boolean {
+  // All staff roles can edit patients (assistants, providers, coordinators, admins)
+  return role !== null;
+}
+
 export function ResourcePage(): JSX.Element | null {
   const medplum = useMedplum();
+  const navigate = useNavigate();
   const { resourceType, id } = useParams() as { resourceType: ResourceType; id: string };
   const reference = { reference: resourceType + '/' + id };
   const [outcome, setOutcome] = useState<OperationOutcome | undefined>();
   const value = useResource(reference, setOutcome);
   const role = getMedSpaRole(medplum);
   const tabs = getTabs(resourceType, role);
+
+  // Check if this is a Practitioner page and user can edit
+  const showEditStaffButton = resourceType === 'Practitioner' && canEditPractitioner(medplum, id, role);
+
+  // Check if this is a Patient page and user can edit
+  const showEditPatientButton = resourceType === 'Patient' && canEditPatient(role);
+
+  const handleEditStaff = async (): Promise<void> => {
+    await navigate(`/admin/staff/${id}/edit`);
+  };
+
+  const handleEditPatient = async (): Promise<void> => {
+    await navigate(`/Patient/${id}/edit`);
+  };
 
   async function restoreResource(): Promise<void> {
     const historyBundle = await medplum.readHistory(resourceType, id);
@@ -190,7 +230,30 @@ export function ResourcePage(): JSX.Element | null {
         <Paper>
           {patient && <PatientHeader patient={patient} />}
           {specimen && <SpecimenHeader specimen={specimen} />}
-          {resourceType !== 'Patient' && <ResourceHeader resource={reference} />}
+          {resourceType !== 'Patient' && (
+            <Group justify="space-between" align="flex-start">
+              <div style={{ flex: 1 }}>
+                <ResourceHeader resource={reference} />
+              </div>
+              {showEditStaffButton && (
+                <Button variant="light" size="sm" onClick={handleEditStaff}>
+                  Edit Staff
+                </Button>
+              )}
+            </Group>
+          )}
+          {resourceType === 'Patient' && (
+            <Group justify="space-between" align="flex-start">
+              <div style={{ flex: 1 }}>
+                <ResourceHeader resource={reference} />
+              </div>
+              {showEditPatientButton && (
+                <Button variant="light" size="sm" onClick={handleEditPatient}>
+                  Edit Patient
+                </Button>
+              )}
+            </Group>
+          )}
           <ScrollArea>
             <LinkTabs baseUrl={`/${resourceType}/${id}`} tabs={tabs} />
           </ScrollArea>

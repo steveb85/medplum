@@ -1468,6 +1468,7 @@ async function createTreatmentRoom(
     extension: [
       {
         url: 'http://melissaknudson.com/fhir/StructureDefinition/has-laser',
+        valueBoolean: id === 'room-1', // Room 1 has laser, Room 2 doesn't
       },
     ],
   });
@@ -1484,7 +1485,7 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
     id: string;
     name: string;
     duration: number;
-    numbingTime: number; // For display/recommendation only
+    // numbingTime removed - handled via recommended accompanying services
     defaultRoom: string;
     minPrice: number;
     maxPrice: number;
@@ -1496,19 +1497,24 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
     color: string;
     category: string;
     // New fields for equipment and cost tracking
-    equipmentRequirements: { equipmentType: string; required: boolean; movable: boolean }[];
+    // Note: required/movable are intrinsic equipment properties, not service-level
+    equipmentRequirements: { equipmentType: string; equipmentReference?: string; equipmentName?: string }[];
     recommendedAccompanyingServices: {
       serviceCode: string;
       timing: 'before' | 'after' | 'concurrent';
       offsetMinutes: number;
     }[];
     internalCost: { productCost: number; notes?: string };
+    // Provider requirements - NEW
+    mainProviderRequired: boolean;
+    assistantRequired: boolean;
+    // Consent - NEW
+    consentRequired: boolean;
   }[] = [
     {
       id: 'topical-numbing',
       name: 'Topical Numbing',
       duration: 15,
-      numbingTime: 0,
       defaultRoom: 'room-2', // Numbing room
       minPrice: 0, // Free to patient
       maxPrice: 0,
@@ -1522,12 +1528,14 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       equipmentRequirements: [],
       recommendedAccompanyingServices: [],
       internalCost: { productCost: 15, notes: 'Numbing cream supplies' },
+      mainProviderRequired: false, // Optional - can be done by assistant
+      assistantRequired: true, // Requires assistant (can be done by provider too)
+      consentRequired: false, // Prep service doesn't need patient consent
     },
     {
       id: 'botox-cosmetic',
       name: 'Botox Cosmetic',
       duration: 30,
-      numbingTime: 15, // Recommended numbing time
       defaultRoom: 'room-1',
       minPrice: 300,
       maxPrice: 800,
@@ -1539,14 +1547,16 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       color: 'blue',
       category: 'injection',
       equipmentRequirements: [],
-      recommendedAccompanyingServices: [{ serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -15 }],
+      recommendedAccompanyingServices: [{ serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: 0 }],
       internalCost: { productCost: 120, notes: 'Botox product cost per average treatment' },
+      mainProviderRequired: true, // Must have a provider
+      assistantRequired: false, // Optional assistant
+      consentRequired: true, // Injection requires consent
     },
     {
       id: 'filler',
       name: 'Dermal Filler',
       duration: 45,
-      numbingTime: 30,
       defaultRoom: 'room-1',
       minPrice: 600,
       maxPrice: 1200,
@@ -1560,44 +1570,30 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       equipmentRequirements: [],
       recommendedAccompanyingServices: [{ serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -30 }],
       internalCost: { productCost: 300, notes: 'Filler product per syringe' },
+      mainProviderRequired: true,
+      assistantRequired: false,
+      consentRequired: true, // Injection requires consent
     },
     {
       id: 'laser',
       name: 'Laser Treatment',
       duration: 60, // 15 min numbing + 45 min treatment
-      numbingTime: 45,
       defaultRoom: 'room-2',
       minPrice: 250,
       maxPrice: 500,
       pricePerUnit: false,
       unitType: 'area',
       gfeCategory: 'laser',
-      requiresConsult: true,
-      icon: 'laser',
-      color: 'red',
-      category: 'laser',
-      equipmentRequirements: [{ equipmentType: 'laser-hair-removal', required: true, movable: false }],
-      recommendedAccompanyingServices: [{ serviceCode: 'topical-numbing', timing: 'before', offsetMinutes: -45 }],
-      internalCost: { productCost: 50, notes: 'Laser consumables and cooling gel' },
-    },
-    {
-      id: 'consultation',
-      name: 'Annual Consultation',
-      duration: 30,
-      numbingTime: 0,
-      defaultRoom: 'room-1',
-      minPrice: 150,
-      maxPrice: 150,
-      pricePerUnit: false,
-      unitType: 'session',
-      gfeCategory: 'consult',
       requiresConsult: false,
+      consentRequired: true, // Laser requires consent
       icon: 'clipboard',
       color: 'green',
       category: 'consult',
       equipmentRequirements: [],
       recommendedAccompanyingServices: [],
       internalCost: { productCost: 0, notes: 'No consumables' },
+      mainProviderRequired: true,
+      assistantRequired: false,
     },
   ];
 
@@ -1617,7 +1613,6 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
 
     // Create service config as single JSON string to avoid FHIR extension validation errors
     const serviceConfig = {
-      numbingTime: svc.numbingTime,
       defaultRoom: svc.defaultRoom,
       roomMovable: true,
       minPrice: svc.minPrice,
@@ -1634,6 +1629,11 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
       internalCost: svc.internalCost || { productCost: 0, costPerUnit: false },
       followUpSchedule: [],
       providerRates: [],
+      // Consent configuration
+      consentRequired: svc.consentRequired ?? true, // Default to true for safety
+      // Provider requirements - NEW
+      mainProviderRequired: svc.mainProviderRequired ?? true,
+      assistantRequired: svc.assistantRequired ?? false,
     };
 
     await systemRepo.createResource<ActivityDefinition>({
@@ -1662,78 +1662,6 @@ async function createServiceCatalog(systemRepo: SystemRepository, project: Proje
         {
           url: 'http://melissaknudson.com/fhir/StructureDefinition/service-config',
           valueString: JSON.stringify(serviceConfig),
-        },
-      ],
-    });
-
-    globalLogger.info(`Created ActivityDefinition: ${svc.name}`);
-
-    const extensions: { url: string; [key: string]: unknown }[] = [
-      { url: 'numbingTime', valueInteger: svc.numbingTime },
-      { url: 'defaultRoom', valueString: svc.defaultRoom },
-      { url: 'roomMovable', valueBoolean: true },
-      { url: 'minPrice', valueInteger: svc.minPrice },
-      { url: 'maxPrice', valueInteger: svc.maxPrice },
-      { url: 'pricePerUnit', valueBoolean: svc.pricePerUnit },
-      { url: 'unitType', valueString: svc.unitType },
-      { url: 'requiresConsult', valueBoolean: svc.requiresConsult },
-      { url: 'color', valueString: svc.color },
-      { url: 'category', valueString: svc.category },
-    ];
-
-    // Only add optional fields if they have values
-    if (svc.gfeCategory) {
-      extensions.push({ url: 'gfeCategory', valueString: svc.gfeCategory });
-    }
-    if (svc.icon) {
-      extensions.push({ url: 'icon', valueString: svc.icon });
-    }
-    // Add new fields for equipment requirements and cost tracking
-    if (svc.equipmentRequirements && svc.equipmentRequirements.length > 0) {
-      extensions.push({
-        url: 'equipmentRequirements',
-        valueString: JSON.stringify(svc.equipmentRequirements),
-      });
-    }
-    if (svc.recommendedAccompanyingServices && svc.recommendedAccompanyingServices.length > 0) {
-      extensions.push({
-        url: 'recommendedAccompanyingServices',
-        valueString: JSON.stringify(svc.recommendedAccompanyingServices),
-      });
-    }
-    if (svc.internalCost) {
-      extensions.push({
-        url: 'internalCost',
-        valueString: JSON.stringify(svc.internalCost),
-      });
-    }
-
-    await systemRepo.createResource<ActivityDefinition>({
-      resourceType: 'ActivityDefinition',
-      id: svc.id,
-      meta: { project: project.id },
-      status: 'active',
-      name: svc.id,
-      title: svc.name,
-      kind: 'ServiceRequest',
-      code: {
-        coding: [
-          {
-            system: 'http://melissaknudson.com/services',
-            code: svc.id,
-            display: svc.name,
-          },
-        ],
-        text: svc.name,
-      },
-      timingDuration: {
-        value: svc.duration,
-        unit: 'min',
-      },
-      extension: [
-        {
-          url: 'http://melissaknudson.com/fhir/StructureDefinition/service-config',
-          extension: extensions,
         },
       ],
     });

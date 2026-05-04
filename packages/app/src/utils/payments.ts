@@ -34,6 +34,11 @@ export interface DepositInfo {
  * @param appointment - Appointment resource to extract deposit info from
  * @returns DepositInfo object with status and related details
  */
+/**
+ * @deprecated - Use getDepositStatusFromAuditEvents from audit-events.ts instead.
+ * This function reads from Appointment.extensions which are no longer written to.
+ * Kept for backwards compatibility with legacy display code (BookingsPage, reminders).
+ */
 export function getDepositStatus(appointment: Appointment): DepositInfo {
   const ext = appointment.extension?.find(
     (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
@@ -84,6 +89,10 @@ export function getDepositStatus(appointment: Appointment): DepositInfo {
 }
 
 /**
+ * @deprecated - DO NOT USE. Deposit data is now stored via FHIR AuditEvents, NOT extensions.
+ * Use recordDepositPaid, recordDepositRequested, etc. from audit-events.ts instead.
+ * This function is kept only for legacy compatibility and should be removed after migrating reminders.ts.
+ * 
  * Build deposit info extensions for saving to appointment
  * @param depositInfo - DepositInfo object containing status and related details to convert into FHIR extensions
  * @returns Object containing url and extension array to be added to Appointment resource

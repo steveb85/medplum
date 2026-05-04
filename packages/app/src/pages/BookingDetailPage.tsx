@@ -6,7 +6,6 @@ import {
   Badge,
   Button,
   Card,
-  Divider,
   Grid,
   Group,
   Modal,
@@ -23,6 +22,7 @@ import { useMedplum } from '@medplum/react';
 import {
   IconArrowLeft,
   IconCoin,
+  IconEdit,
   IconEye,
   IconMessage,
   IconRefresh,
@@ -35,18 +35,20 @@ import type { ReactElement } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getMedSpaRole } from '../auth/role';
+import {
+  getDepositStatusFromAuditEvents,
+  recordDepositAmountChanged,
+  recordDepositPaid,
+  recordDepositRequested,
+  recordDepositWaived,
+  recordPaymentUndone,
+  recordRefundIssued,
+} from '../utils/audit-events';
 import { sendDepositRequestEmail, sendPaymentConfirmationEmail } from '../utils/email';
 import type { DepositStatus } from '../utils/payments';
-import {
-  buildDepositInfoExtensions,
-  canMarkPaid,
-  canRequestDeposit,
-  canWaiveDeposit,
-  formatDepositAmount,
-  getDepositStatus,
-  getDepositStatusColor,
-} from '../utils/payments';
+import { formatDepositAmount, getDepositStatusColor } from '../utils/payments';
 import { sendDepositRequestSMS, sendPaymentConfirmationSMS } from '../utils/sms';
+import { CreateAppointmentModalV3 } from '../components/CreateAppointmentModalV3';
 
 // Appointment status configuration
 // STATUS FLOW: pending (deposit required) → booked (deposit paid/waived) → arrived → fulfilled
@@ -121,6 +123,7 @@ export function BookingDetailPage(): ReactElement {
   const [auditTrail, setAuditTrail] = useState<AuditEntry[]>([]);
 
   // Modal states
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [waiveModalOpen, setWaiveModalOpen] = useState(false);
   const [waiveReason, setWaiveReason] = useState('');
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -149,16 +152,12 @@ export function BookingDetailPage(): ReactElement {
       const appt = await medplum.readResource('Appointment', id);
       setAppointment(appt);
 
-      // Get deposit info
-      const depInfo = getDepositStatus(appt);
-      setDepositInfo(depInfo);
-      setDepositAmount(depInfo.amount || 250);
-
       // Load patient
       const patientParticipant = appt.participant?.find((p) => p.actor?.reference?.startsWith('Patient/'));
       const patientRef = patientParticipant?.actor?.reference;
+      let patientId = '';
       if (patientRef) {
-        const patientId = patientRef.split('/')[1];
+        patientId = patientRef.split('/')[1];
         try {
           const pat = await medplum.readResource('Patient', patientId);
           setPatient(pat);
@@ -166,6 +165,11 @@ export function BookingDetailPage(): ReactElement {
           // Patient not found
         }
       }
+
+      // Get deposit info from FHIR AuditEvents (single source of truth)
+      const depInfo = await getDepositStatusFromAuditEvents(medplum, patientId);
+      setDepositInfo(depInfo);
+      setDepositAmount(depInfo.amount || 250);
 
       // Load providers
       const practitionerParticipants =
@@ -221,177 +225,156 @@ export function BookingDetailPage(): ReactElement {
       }
       setServices(loadedServices);
 
-      // Build audit trail from extensions
+      // Build audit trail from FHIR AuditEvents
       const audits: AuditEntry[] = [];
 
-      // Status changes
-      const statusChanges =
-        appt.extension?.filter(
-          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit'
-        ) || [];
-
-      for (const change of statusChanges) {
-        const from = change.extension?.find((e) => e.url === 'from')?.valueString;
-        const to = change.extension?.find((e) => e.url === 'to')?.valueString;
-        const changedAt = change.extension?.find((e) => e.url === 'changedAt')?.valueDateTime;
-        const changedBy = change.extension?.find((e) => e.url === 'changedBy')?.valueReference?.display;
-
-        if (from && to && changedAt) {
-          audits.push({
-            timestamp: new Date(changedAt),
-            action: `Status changed: ${statusConfig[from]?.label || from} → ${statusConfig[to]?.label || to}`,
-            user: changedBy,
-          });
-        }
-      }
-
-      // Last edited
-      const lastEdited = appt.extension?.find(
-        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/last-edited'
-      )?.valueDateTime;
-      const editedBy = appt.extension?.find(
-        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/edited-by'
-      )?.valueReference;
-
-      if (lastEdited) {
-        audits.push({
-          timestamp: new Date(lastEdited),
-          action: 'Booking edited',
-          user: editedBy?.display,
+      try {
+        // Query AuditEvents for this patient
+        const auditBundle = await medplum.search('AuditEvent', {
+          patient: patientRef || '',
+          _count: '500',
         });
-      }
 
-      // Cancellation reason (show even if later uncancelled - preserve history)
-      const cancelReason = appt.extension?.find(
-        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/cancellation-reason'
-      )?.valueString;
-
-      if (cancelReason) {
-        // Find the cancellation status change audit
-        const cancelAudit = appt.extension?.find(
-          (e) =>
-            e.url === 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit' &&
-            e.extension?.find((ext) => ext.url === 'to' && ext.valueString === 'cancelled')
-        )?.extension;
-        const cancelledAt = cancelAudit?.find((e) => e.url === 'changedAt' && e.valueDateTime)?.valueDateTime;
-        const cancelledBy = cancelAudit?.find((e) => e.url === 'changedBy')?.valueReference;
-        audits.push({
-          timestamp: new Date(cancelledAt || appt.end || Date.now()),
-          action: 'Booking cancelled',
-          details: cancelReason,
-          user: cancelledBy?.display,
+        const auditEvents = (auditBundle.entry || []).map((e) => e.resource as any).sort((a: any, b: any) => {
+          return new Date(b.recorded || 0).getTime() - new Date(a.recorded || 0).getTime();
         });
-      }
 
-      // Deposit history
-      const depositInfoExt = appt.extension?.find(
-        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-      );
-      if (depositInfoExt) {
-        const depositStatus = depositInfoExt.extension?.find((e) => e.url === 'status')?.valueString;
-        const storedDepositAmount = depositInfoExt.extension?.find((e) => e.url === 'amount')?.valueInteger ?? 0;
-        const requestedAt = depositInfoExt.extension?.find((e) => e.url === 'requestedAt')?.valueDateTime;
-        const paidAt = depositInfoExt.extension?.find((e) => e.url === 'paidAt')?.valueDateTime;
-        const paidBy = depositInfoExt.extension?.find((e) => e.url === 'paidBy')?.valueReference;
-        const paymentType = depositInfoExt.extension?.find((e) => e.url === 'paymentType')?.valueString;
-        const paymentNotes = depositInfoExt.extension?.find((e) => e.url === 'paymentNotes')?.valueString;
-        const waivedAt = depositInfoExt.extension?.find((e) => e.url === 'waivedAt')?.valueDateTime;
-        const waivedBy = depositInfoExt.extension?.find((e) => e.url === 'waivedBy')?.valueReference;
-        const waivedReason = depositInfoExt.extension?.find((e) => e.url === 'waivedReason')?.valueString;
-
-        // Payment link sent (when staff clicks Send Payment Link)
-        const paymentLinkSentAt = depositInfoExt.extension?.find((e) => e.url === 'paymentLinkSentAt')?.valueDateTime;
-        if (paymentLinkSentAt) {
-          audits.push({
-            timestamp: new Date(paymentLinkSentAt),
-            action: 'Payment link sent',
-            details: `Amount: $${storedDepositAmount}`,
-          });
-        }
-
-        // Deposit paid (show even if undone - preserve history)
-        const actualPaidAmount =
-          depositInfoExt.extension?.find((e) => e.url === 'actualPaidAmount')?.valueInteger ?? storedDepositAmount;
-        if (paidAt) {
-          const paymentDetails = [`Amount: $${actualPaidAmount}`];
-          if (paymentType) {
-            paymentDetails.push(`Type: ${paymentType}`);
-          }
-          if (paymentNotes) {
-            paymentDetails.push(`Note: ${paymentNotes}`);
-          }
-          audits.push({
-            timestamp: new Date(paidAt),
-            action: 'Deposit paid',
-            details: paymentDetails.join(' • '),
-            user: paidBy?.display,
-          });
-        }
-
-        // Payment undone (if applicable)
-        const undoneAt = depositInfoExt.extension?.find((e) => e.url === 'undoneAt')?.valueDateTime;
-        const undoneBy = depositInfoExt.extension?.find((e) => e.url === 'undoneBy')?.valueReference;
-        const undoneReason = depositInfoExt.extension?.find((e) => e.url === 'undoneReason')?.valueString;
-        const isUndone = depositInfoExt.extension?.find((e) => e.url === 'isUndone')?.valueBoolean;
-        if (isUndone && undoneAt) {
-          audits.push({
-            timestamp: new Date(undoneAt),
-            action: 'Payment undone',
-            details: undoneReason || 'Payment reverted to requested',
-            user: undoneBy?.display,
-          });
-        }
-
-        if (waivedAt && depositStatus === 'waived') {
-          const waivedDetails = [`Amount: $${storedDepositAmount}`];
-          if (waivedReason) {
-            waivedDetails.push(`Reason: ${waivedReason}`);
-          }
-          audits.push({
-            timestamp: new Date(waivedAt),
-            action: 'Deposit waived',
-            details: waivedDetails.join(' • '),
-            user: waivedBy?.display,
-          });
-        }
-      }
-
-      // Uncancel reason (if present)
-      const uncancelReason = appt.extension?.find(
-        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/uncancel-reason'
-      )?.valueString;
-      if (uncancelReason && appt.status === 'booked') {
-        const uncancelAudit = appt.extension?.find(
-          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit'
-        )?.extension;
-        const uncancelledAt = uncancelAudit?.find((e) => e.url === 'changedAt' && e.valueDateTime)?.valueDateTime;
-        const uncancelledBy = uncancelAudit?.find((e) => e.url === 'changedBy')?.valueReference;
-        audits.push({
-          timestamp: new Date(uncancelledAt || Date.now()),
-          action: 'Booking uncancelled',
-          details: uncancelReason,
-          user: uncancelledBy?.display,
+        // Filter to only deposit/booking-related events
+        const relevantEvents = auditEvents.filter((event: any) => {
+          const desc = (event.description || '').toLowerCase();
+          return (
+            desc.includes('deposit') ||
+            desc.includes('payment') ||
+            desc.includes('refund') ||
+            desc.includes('booking status') ||
+            desc.includes('treatment service')
+          );
         });
-      }
 
-      // Deposit amount changes
-      const amountChanges =
-        appt.extension?.filter(
-          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/deposit-amount-change'
-        ) || [];
-      for (const change of amountChanges) {
-        const fromAmount = change.extension?.find((e) => e.url === 'fromAmount')?.valueInteger;
-        const toAmount = change.extension?.find((e) => e.url === 'toAmount')?.valueInteger;
-        const changedAt = change.extension?.find((e) => e.url === 'changedAt')?.valueDateTime;
-        const changedBy = change.extension?.find((e) => e.url === 'changedBy')?.valueReference;
-        if (fromAmount !== undefined && toAmount !== undefined && changedAt) {
-          audits.push({
-            timestamp: new Date(changedAt),
-            action: 'Deposit amount changed',
-            details: `From $${fromAmount} to $${toAmount}`,
-            user: changedBy?.display,
+        for (const event of relevantEvents) {
+          const desc = event.description || '';
+          const timestamp = new Date(event.recorded || Date.now());
+
+          // Extract user from agent
+          const agent = event.agent?.[0];
+          const user =
+            agent?.who?.display || agent?.name?.[0]
+              ? `${agent.name[0].given?.[0] || ''} ${agent.name[0].family || ''}`.trim()
+              : 'System';
+
+          // Parse entity details
+          const details: Record<string, string> = {};
+          event.entity?.forEach((entity: any) => {
+            entity.detail?.forEach((d: any) => {
+              if (d.type && d.valueString) {
+                details[d.type] = d.valueString;
+              }
+            });
           });
+
+          // Map to AuditEntry based on description
+          if (desc.includes('deposit paid')) {
+            const amount = details.amount || '0';
+            const paymentType = details.paymentType || 'manual';
+            const notes = details.notes;
+            audits.push({
+              timestamp,
+              action: 'Deposit paid',
+              details: `Amount: $${amount} • Type: ${paymentType}${notes ? ' • Notes: ' + notes : ''}`,
+              user,
+            });
+          } else if (desc.includes('deposit requested')) {
+            const amount = details.amount || '0';
+            const method = details.method || 'sms';
+            audits.push({
+              timestamp,
+              action: 'Payment link sent',
+              details: `Amount: $${amount} • Via: ${method}`,
+              user,
+            });
+          } else if (desc.includes('deposit waived')) {
+            const amount = details.amount || '0';
+            const waivedReason = details.waivedReason;
+            audits.push({
+              timestamp,
+              action: 'Deposit waived',
+              details: `Amount: $${amount}${waivedReason ? ' • Reason: ' + waivedReason : ''}`,
+              user,
+            });
+          } else if (desc.includes('payment undone')) {
+            const amount = details.amount || '0';
+            const reason = details.reason;
+            audits.push({
+              timestamp,
+              action: 'Payment undone',
+              details: `Amount: $${amount}${reason ? ' • Reason: ' + reason : ''}`,
+              user,
+            });
+          } else if (desc.includes('refund')) {
+            const amount = details.amount || '0';
+            const reason = details.reason;
+            audits.push({
+              timestamp,
+              action: 'Refund issued',
+              details: `Amount: $${amount}${reason ? ' • Reason: ' + reason : ''}`,
+              user,
+            });
+          } else if (desc.includes('deposit amount changed')) {
+            const previousAmount = details.previousAmount || '0';
+            const newAmount = details.newAmount || '0';
+            audits.push({
+              timestamp,
+              action: 'Deposit amount changed',
+              details: `From $${previousAmount} to $${newAmount}`,
+              user,
+            });
+          } else if (desc.includes('booking status changed')) {
+            const previousStatus = details.previousStatus || 'unknown';
+            const newStatus = details.newStatus || 'unknown';
+            const reason = details.reason;
+            audits.push({
+              timestamp,
+              action: `Status changed: ${statusConfig[previousStatus]?.label || previousStatus} → ${statusConfig[newStatus]?.label || newStatus}`,
+              details: reason,
+              user,
+            });
+          } else if (desc.includes('treatment service')) {
+            audits.push({
+              timestamp,
+              action: desc,
+              user,
+            });
+          }
         }
+
+        // Also check for status-change-audit extensions as fallback (legacy data)
+        const statusChanges =
+          appt.extension?.filter(
+            (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit'
+          ) || [];
+
+        for (const change of statusChanges) {
+          const from = change.extension?.find((e) => e.url === 'from')?.valueString;
+          const to = change.extension?.find((e) => e.url === 'to')?.valueString;
+          const changedAt = change.extension?.find((e) => e.url === 'changedAt')?.valueDateTime;
+          const changedBy = change.extension?.find((e) => e.url === 'changedBy')?.valueReference?.display;
+
+          if (from && to && changedAt) {
+            // Check if we already have this event from AuditEvents
+            const exists = audits.some(
+              (a) => a.timestamp.getTime() === new Date(changedAt).getTime() && a.action.includes('Status changed')
+            );
+            if (!exists) {
+              audits.push({
+                timestamp: new Date(changedAt),
+                action: `Status changed: ${statusConfig[from]?.label || from} → ${statusConfig[to]?.label || to}`,
+                user: changedBy,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading audit trail:', err);
       }
 
       // Sort by timestamp (newest first)
@@ -410,9 +393,10 @@ export function BookingDetailPage(): ReactElement {
   }, [medplum, id]);
 
   useEffect(() => {
-    (async () => {
+    const load = async (): Promise<void> => {
       await loadData();
-    })();
+    };
+    load().catch(() => {});
   }, [loadData]);
 
   // Update appointment status
@@ -490,14 +474,14 @@ export function BookingDetailPage(): ReactElement {
 
         updatedAppointment.extension = [...(updatedAppointment.extension || []), statusChangeExt];
 
-await medplum.updateResource(updatedAppointment);
-      setAppointment(updatedAppointment);
+        await medplum.updateResource(updatedAppointment);
+        setAppointment(updatedAppointment);
 
-      showNotification({
-        color: 'green',
-        title: 'Success',
-        message: `Booking ${newStatus === 'booked' ? 'confirmed (deposit paid)' : `marked as ${statusConfig[newStatus]?.label || newStatus}`}`,
-      });
+        showNotification({
+          color: 'green',
+          title: 'Success',
+          message: `Booking ${newStatus === 'booked' ? 'confirmed (deposit paid)' : `marked as ${statusConfig[newStatus]?.label || newStatus}`}`,
+        });
 
         // Refresh data to update activity history
         await loadData();
@@ -508,38 +492,38 @@ await medplum.updateResource(updatedAppointment);
           title: 'Error',
           message: 'Failed to update deposit amount',
         });
-    }
-  },
-  [appointment, medplum, loadData]
-);
+      }
+    },
+    [appointment, medplum, loadData]
+  );
 
   // Update deposit amount
   const updateDepositAmount = useCallback(async () => {
-    if (!appointment) {
+    if (!appointment || !patient) {
       return;
     }
 
     try {
-      const newDepositInfo = {
-        ...depositInfo,
-        amount: depositAmount,
+      const currentUser = medplum.getProfile();
+      const userName = currentUser?.name?.[0]
+        ? `${currentUser.name[0].given?.[0] || ''} ${currentUser.name[0].family || ''}`.trim()
+        : 'Unknown';
+
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
       };
 
-      const depositExt = buildDepositInfoExtensions(newDepositInfo);
-
-      const existingExts =
-        appointment.extension?.filter(
-          (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        ) || [];
-
-      const updatedAppointment: Appointment = {
-        ...appointment,
-        extension: [...existingExts, depositExt],
-      };
-
-      await medplum.updateResource(updatedAppointment);
-      setAppointment(updatedAppointment);
-      setDepositInfo(newDepositInfo);
+      // Record amount change via AuditEvent
+      await recordDepositAmountChanged(
+        medplum,
+        patient,
+        serviceRequests[0],
+        depositInfo.amount || depositAmount,
+        depositAmount,
+        currentUserPractitioner
+      );
 
       showNotification({
         color: 'green',
@@ -547,7 +531,6 @@ await medplum.updateResource(updatedAppointment);
         message: 'Deposit amount updated',
       });
 
-      // Refresh data to update activity history
       await loadData();
     } catch (err) {
       console.error('Error updating deposit:', err);
@@ -557,7 +540,7 @@ await medplum.updateResource(updatedAppointment);
         message: 'Failed to update deposit amount',
       });
     }
-  }, [appointment, depositAmount, depositInfo, medplum, loadData]);
+  }, [appointment, depositAmount, depositInfo.amount, medplum, loadData, patient, serviceRequests]);
 
   // Send payment link (SMS + Email)
   const sendPaymentLink = useCallback(async () => {
@@ -566,30 +549,37 @@ await medplum.updateResource(updatedAppointment);
     }
 
     try {
-      // Update deposit status to requested and track payment link sent
-      const newDepositInfo = {
-        ...depositInfo,
-        status: 'requested' as DepositStatus,
-        amount: depositAmount,
-        requestedAt: new Date(),
-        paymentLinkSentAt: new Date(),
+      const currentUser = medplum.getProfile();
+      const userName = currentUser?.name?.[0]
+        ? `${currentUser.name[0].given?.[0] || ''} ${currentUser.name[0].family || ''}`.trim()
+        : 'Unknown';
+
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
       };
 
-      const depositExt = buildDepositInfoExtensions(newDepositInfo);
+      let method: 'sms' | 'email' | 'sms+email';
+      const hasPhone = !!patient.telecom?.find((t) => t.system === 'phone');
+      const hasEmail = !!patient.telecom?.find((t) => t.system === 'email');
+      if (hasPhone && hasEmail) {
+        method = 'sms+email';
+      } else if (hasPhone) {
+        method = 'sms';
+      } else {
+        method = 'email';
+      }
 
-      const existingExts =
-        appointment.extension?.filter(
-          (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        ) || [];
-
-      const updatedAppointment: Appointment = {
-        ...appointment,
-        extension: [...existingExts, depositExt],
-      };
-
-      await medplum.updateResource(updatedAppointment);
-      setAppointment(updatedAppointment);
-      setDepositInfo(newDepositInfo);
+      // Record deposit requested via AuditEvent
+      await recordDepositRequested(
+        medplum,
+        patient,
+        serviceRequests[0],
+        depositAmount,
+        method,
+        currentUserPractitioner
+      );
 
       // Generate payment link (placeholder - will be Stripe URL)
       const paymentLink = `https://pay.studioassistant.io/d/${appointment.id}`;
@@ -610,7 +600,6 @@ await medplum.updateResource(updatedAppointment);
         message: 'Payment link sent via SMS and email',
       });
 
-      // Refresh data to update activity history
       await loadData();
     } catch (err) {
       console.error('Error sending payment link:', err);
@@ -620,67 +609,44 @@ await medplum.updateResource(updatedAppointment);
         message: 'Failed to send payment link',
       });
     }
-  }, [appointment, patient, depositAmount, depositInfo, services, medplum, loadData]);
+  }, [appointment, patient, depositAmount, services, medplum, loadData, serviceRequests]);
 
   // Mark deposit as paid
   const markAsPaid = useCallback(async () => {
-    if (!appointment) {
+    if (!appointment || !patient) {
       return;
     }
 
     try {
-      // Get current user info
       const currentUser = medplum.getProfile();
       const userName = currentUser?.name?.[0]
         ? `${currentUser.name[0].given?.[0] || ''} ${currentUser.name[0].family || ''}`.trim()
         : 'Unknown';
 
-      // Use the manual payment amount entered by user (or fall back to requested amount)
       const actualPaidAmount = manualPaymentAmount || depositAmount;
 
-      // DEBUG: Log the payment notes before saving
-      console.log('DEBUG - markAsPaid: paymentNotes state =', paymentNotes);
-      console.log('DEBUG - markAsPaid: actualPaidAmount =', actualPaidAmount);
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
+      };
 
-      const newDepositInfo = {
-        ...depositInfo,
-        status: 'paid' as DepositStatus,
-        paidAt: new Date(),
-        paidBy: {
-          reference: `Practitioner/${currentUser?.id}`,
-          display: userName,
-        },
-        paymentType: 'manual' as const,
-        paymentNotes: paymentNotes || undefined,
-        // TODO: When implementing final payment reconciliation,
-        // compare actualPaidAmount with requested depositAmount
-        // and handle overpayment/underpayment scenarios
+      // Record payment via AuditEvent
+      await recordDepositPaid(
+        medplum,
+        patient,
+        serviceRequests[0],
+        depositAmount,
+        currentUserPractitioner,
+        'manual',
         actualPaidAmount,
-      };
-
-      // DEBUG: Log the newDepositInfo object
-      console.log('DEBUG - markAsPaid: newDepositInfo =', newDepositInfo);
-
-      const depositExt = buildDepositInfoExtensions(newDepositInfo);
-
-      const existingExts =
-        appointment.extension?.filter(
-          (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        ) || [];
-
-      const updatedAppointment: Appointment = {
-        ...appointment,
-        extension: [...existingExts, depositExt],
-      };
-
-      await medplum.updateResource(updatedAppointment);
-      setAppointment(updatedAppointment);
-      setDepositInfo(newDepositInfo);
+        paymentNotes || undefined
+      );
 
       // Send confirmation with the actual amount paid
       if (patient) {
-        await sendPaymentConfirmationSMS(patient, updatedAppointment, services, actualPaidAmount);
-        await sendPaymentConfirmationEmail(patient, updatedAppointment, services, actualPaidAmount);
+        await sendPaymentConfirmationSMS(patient, appointment, services, actualPaidAmount);
+        await sendPaymentConfirmationEmail(patient, appointment, services, actualPaidAmount);
       }
 
       // Update booking status to booked (deposit requirement met)
@@ -698,7 +664,6 @@ await medplum.updateResource(updatedAppointment);
       setManualPaymentAmount(0);
       setPaymentNotes('');
 
-      // Refresh data to update activity history
       await loadData();
     } catch (err) {
       console.error('Error marking paid:', err);
@@ -708,47 +673,46 @@ await medplum.updateResource(updatedAppointment);
         message: 'Failed to mark deposit as paid',
       });
     }
-  }, [appointment, depositInfo, services, depositAmount, patient, medplum, loadData, manualPaymentAmount, paymentNotes, updateStatus]);
+  }, [
+    appointment,
+    services,
+    depositAmount,
+    patient,
+    medplum,
+    loadData,
+    manualPaymentAmount,
+    paymentNotes,
+    updateStatus,
+    serviceRequests,
+  ]);
 
   // Waive deposit
   const waiveDeposit = useCallback(async () => {
-    if (!appointment) {
+    if (!appointment || !patient) {
       return;
     }
 
     try {
-      // Get current user info
       const currentUser = medplum.getProfile();
       const userName = currentUser?.name?.[0]
         ? `${currentUser.name[0].given?.[0] || ''} ${currentUser.name[0].family || ''}`.trim()
         : 'Unknown';
 
-      const newDepositInfo = {
-        ...depositInfo,
-        status: 'waived' as DepositStatus,
-        waivedAt: new Date(),
-        waivedReason: waiveReason,
-        waivedBy: {
-          reference: `Practitioner/${currentUser?.id}`,
-          display: userName,
-        },
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
       };
 
-      const depositExt = buildDepositInfoExtensions(newDepositInfo);
-
-      const existingExts =
-        appointment.extension?.filter(
-          (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        ) || [];
-
-      const updatedAppointment: Appointment = {
-        ...appointment,
-        extension: [...existingExts, depositExt],
-      };
-
-      await medplum.updateResource(updatedAppointment);
-      setAppointment(updatedAppointment);
-      setDepositInfo(newDepositInfo);
+      // Record waiver via AuditEvent
+      await recordDepositWaived(
+        medplum,
+        patient,
+        serviceRequests[0],
+        depositAmount,
+        currentUserPractitioner,
+        waiveReason || undefined
+      );
 
       // Update booking status to booked (deposit requirement met via waiver)
       if (appointment.status === 'pending') {
@@ -764,7 +728,6 @@ await medplum.updateResource(updatedAppointment);
       setWaiveModalOpen(false);
       setWaiveReason('');
 
-      // Refresh data to update activity history
       await loadData();
     } catch (err) {
       console.error('Error waiving deposit:', err);
@@ -774,67 +737,40 @@ await medplum.updateResource(updatedAppointment);
         message: 'Failed to waive deposit',
       });
     }
-  }, [appointment, depositInfo, waiveReason, medplum, loadData, updateStatus]);
+  }, [appointment, waiveReason, medplum, loadData, updateStatus, patient, serviceRequests, depositAmount]);
 
   // Undo manual payment
   const undoPayment = useCallback(async () => {
-    if (!appointment) {
+    if (!appointment || !patient) {
       return;
     }
 
     try {
-      // Get current user info
       const currentUser = medplum.getProfile();
       const userName = currentUser?.name?.[0]
         ? `${currentUser.name[0].given?.[0] || ''} ${currentUser.name[0].family || ''}`.trim()
         : 'Unknown';
 
-      // Create deposit extension with undo info (preserve paid data)
-      const newDepositInfo = {
-        ...depositInfo,
-        status: 'requested' as DepositStatus,
-        isUndone: true,
-        undoneAt: new Date(),
-        undoneBy: {
-          reference: `Practitioner/${currentUser?.id}`,
-          display: userName,
-        },
-        undoneReason: undoPaymentReason,
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
       };
 
-      const depositExt = buildDepositInfoExtensions(newDepositInfo);
+      // Record undo via AuditEvent
+      await recordPaymentUndone(
+        medplum,
+        patient,
+        serviceRequests[0],
+        depositAmount,
+        currentUserPractitioner,
+        undoPaymentReason || undefined
+      );
 
-      // Add status change audit for booking status change (booked -> approved)
-      const statusChangeExt = {
-        url: 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit',
-        extension: [
-          { url: 'from', valueString: appointment.status || 'unknown' },
-          { url: 'to', valueString: 'approved' },
-          { url: 'changedAt', valueDateTime: new Date().toISOString() },
-          {
-            url: 'changedBy',
-            valueReference: {
-              reference: `Practitioner/${currentUser?.id}`,
-              display: userName,
-            },
-          },
-        ],
-      };
-
-      const existingExts =
-        appointment.extension?.filter(
-          (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        ) || [];
-
-      const updatedAppointment: Appointment = {
-        ...appointment,
-        status: 'pending' as Appointment['status'], // Revert booking status to pending (deposit no longer paid)
-        extension: [...existingExts, depositExt, statusChangeExt],
-      };
-
-      await medplum.updateResource(updatedAppointment);
-      setAppointment(updatedAppointment);
-      setDepositInfo(newDepositInfo);
+      // Revert booking status to pending (deposit no longer paid)
+      if (appointment.status === 'booked') {
+        await updateStatus('pending', 'Payment undone');
+      }
 
       showNotification({
         color: 'green',
@@ -845,7 +781,6 @@ await medplum.updateResource(updatedAppointment);
       setUndoPaymentModalOpen(false);
       setUndoPaymentReason('');
 
-      // Refresh data to update activity history
       await loadData();
     } catch (err) {
       console.error('Error undoing payment:', err);
@@ -855,20 +790,25 @@ await medplum.updateResource(updatedAppointment);
         message: 'Failed to undo payment',
       });
     }
-  }, [appointment, depositInfo, undoPaymentReason, medplum, loadData]);
+  }, [appointment, undoPaymentReason, medplum, loadData, updateStatus, patient, serviceRequests, depositAmount]);
 
   // Issue refund
   const issueRefund = useCallback(async () => {
-    if (!appointment) {
+    if (!appointment || !patient) {
       return;
     }
 
     try {
-      // Get current user info
       const currentUser = medplum.getProfile();
       const userName = currentUser?.name?.[0]
         ? `${currentUser.name[0].given?.[0] || ''} ${currentUser.name[0].family || ''}`.trim()
         : 'Unknown';
+
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
+      };
 
       // TODO: When implementing Stripe integration, add API call to Stripe here
       // to process the actual refund transaction. For now, this only updates
@@ -878,33 +818,15 @@ await medplum.updateResource(updatedAppointment);
       //   await stripe.refunds.create({ payment_intent: depositInfo.paymentIntentId, amount: refundAmount * 100 });
       // }
 
-      const newDepositInfo = {
-        ...depositInfo,
-        status: 'requested' as DepositStatus,
-        isUndone: true,
-        undoneAt: new Date(),
-        undoneBy: {
-          reference: `Practitioner/${currentUser?.id}`,
-          display: userName,
-        },
-        undoneReason: `Refund issued: $${refundAmount} - ${refundReason}`,
-      };
-
-      const depositExt = buildDepositInfoExtensions(newDepositInfo);
-
-      const existingExts =
-        appointment.extension?.filter(
-          (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        ) || [];
-
-      const updatedAppointment: Appointment = {
-        ...appointment,
-        extension: [...existingExts, depositExt],
-      };
-
-      await medplum.updateResource(updatedAppointment);
-      setAppointment(updatedAppointment);
-      setDepositInfo(newDepositInfo);
+      // Record refund via AuditEvent
+      await recordRefundIssued(
+        medplum,
+        patient,
+        serviceRequests[0],
+        refundAmount,
+        currentUserPractitioner,
+        refundReason || undefined
+      );
 
       showNotification({
         color: 'green',
@@ -916,7 +838,6 @@ await medplum.updateResource(updatedAppointment);
       setRefundAmount(0);
       setRefundReason('');
 
-      // Refresh data to update activity history
       await loadData();
     } catch (err) {
       console.error('Error issuing refund:', err);
@@ -926,11 +847,11 @@ await medplum.updateResource(updatedAppointment);
         message: 'Failed to issue refund',
       });
     }
-  }, [appointment, depositInfo, refundAmount, refundReason, medplum, loadData]);
+  }, [appointment, refundAmount, refundReason, medplum, loadData, patient, serviceRequests]);
 
   // Get the status to restore when uncancelling
   // This restores the booking to whatever state it was in BEFORE cancellation
-  const getUncancelTargetStatus = (): 'pending' | 'booked' | 'arrived' => {
+  const getUncancelTargetStatus = useCallback((): 'pending' | 'booked' | 'arrived' => {
     if (!appointment) {
       return 'pending';
     }
@@ -947,7 +868,7 @@ await medplum.updateResource(updatedAppointment);
       return 'arrived';
     }
     return 'pending'; // Default to pending if no pre-cancellation status or was pending
-  };
+  }, [appointment]);
 
   // Handle uncancel with proper status restoration
   const handleUncancel = useCallback(
@@ -955,11 +876,22 @@ await medplum.updateResource(updatedAppointment);
       const targetStatus = getUncancelTargetStatus();
       await updateStatus(targetStatus, reason);
     },
-  [appointment, updateStatus, getUncancelTargetStatus]
-);
+    [updateStatus, getUncancelTargetStatus]
+  );
 
   // Get available actions
-  const getAvailableActions = () => {
+  const getAvailableActions = (): {
+    canSendPaymentLink: boolean;
+    canMarkPaid: boolean;
+    canWaive: boolean;
+    canRefund: boolean;
+    canUndoPayment: boolean;
+    canArrive: boolean;
+    canNoShow: boolean;
+    canCancel: boolean;
+    canUncancel: boolean;
+    canUndoNoShow: boolean;
+  } => {
     if (!appointment) {
       return {
         canSendPaymentLink: false,
@@ -1006,46 +938,46 @@ await medplum.updateResource(updatedAppointment);
 
   const actions = getAvailableActions();
 
-// Format helpers
-const formatDate = (date: string | undefined): string => {
-  if (!date) {
-    return 'Not scheduled';
-  }
-  return dayjs(date).format('MMMM D, YYYY');
-};
+  // Format helpers
+  const formatDate = (date: string | undefined): string => {
+    if (!date) {
+      return 'Not scheduled';
+    }
+    return dayjs(date).format('MMMM D, YYYY');
+  };
 
-const formatTime = (date: string | undefined): string => {
-  if (!date) {
-    return '';
-  }
-  return dayjs(date).format('h:mm A');
-};
+  const formatTime = (date: string | undefined): string => {
+    if (!date) {
+      return '';
+    }
+    return dayjs(date).format('h:mm A');
+  };
 
-const getDuration = (appt: Appointment): string => {
-  if (!appt.start || !appt.end) {
+  const getDuration = (appt: Appointment): string => {
+    if (!appt.start || !appt.end) {
+      return '-';
+    }
+    const minutes = dayjs(appt.end).diff(dayjs(appt.start), 'minutes');
+    if (minutes < 60) {
+      return `${minutes} min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
+  };
+
+  const getRoom = (appt: Appointment): string => {
+    const roomExt = appt.extension?.find(
+      (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
+    )?.valueString;
+    if (roomExt === 'room-1') {
+      return 'Room 1';
+    }
+    if (roomExt === 'room-2') {
+      return 'Room 2';
+    }
     return '-';
-  }
-  const minutes = dayjs(appt.end).diff(dayjs(appt.start), 'minutes');
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remaining = minutes % 60;
-  return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
-};
-
-const getRoom = (appt: Appointment): string => {
-  const roomExt = appt.extension?.find(
-    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
-  )?.valueString;
-  if (roomExt === 'room-1') {
-    return 'Room 1';
-  }
-  if (roomExt === 'room-2') {
-    return 'Room 2';
-  }
-  return '-';
-};
+  };
 
   if (loading) {
     return (
@@ -1158,200 +1090,216 @@ const getRoom = (appt: Appointment): string => {
               </Grid>
             </Card>
 
-        {/* Unified Actions Card */}
-              <Card withBorder>
-                <Title order={5} mb="md">
-                  Actions
-                </Title>
+            {/* Unified Actions Card */}
+            <Card withBorder>
+              <Title order={5} mb="md">
+                Actions
+              </Title>
 
-                <Stack gap="lg">
-                  {/* Status Actions - Primary */}
-                  {(actions.canArrive || actions.canNoShow || actions.canUncancel || actions.canUndoNoShow) && (
-                    <Stack gap="xs">
-                      <Text size="sm" fw={500} c="dimmed">
-                        Status
-                      </Text>
-                      <Group>
-                        {actions.canArrive && (
-                          <Button
-                            color="teal"
-                            onClick={() => updateStatus('arrived')}
-                            leftSection={<IconUserCheck size={16} />}
-                          >
-                            Mark as Arrived
-                          </Button>
-                        )}
-                        {actions.canNoShow && (
-                          <Button
-                            color="gray"
-                            onClick={() => updateStatus('noshow')}
-                            leftSection={<IconUserX size={16} />}
-                          >
-                            Mark as No-Show
-                          </Button>
-                        )}
-                        {actions.canUndoNoShow && (
-                          <Button
-                            color="blue"
-                            variant="light"
-                            onClick={() => updateStatus('booked')}
-                            leftSection={<IconRefresh size={16} />}
-                          >
-                            Undo No-Show
-                          </Button>
-                        )}
-                        {actions.canUncancel && (
-                          <Button
-                            color="blue"
-                            variant="light"
-                            onClick={() => setUncancelModalOpen(true)}
-                            leftSection={<IconRefresh size={16} />}
-                          >
-                            Uncancel
-                          </Button>
-                        )}
-                        {actions.canUncancel && (
-                          <Text size="xs" c="dimmed">
-                            Will restore to:{' '}
-                            {(() => {
-                              const status = getUncancelTargetStatus();
-                              if (status === 'booked') return 'Booked';
-                              if (status === 'arrived') return 'Arrived';
-                              return 'Pending';
-                            })()}
-                          </Text>
-                        )}
-                      </Group>
-                    </Stack>
-                  )}
+              <Stack gap="lg">
+                {/* Edit Booking */}
+                {appointment.status !== 'fulfilled' && appointment.status !== 'cancelled' && (
+                  <Button
+                    variant="light"
+                    color="blue"
+                    onClick={() => setEditModalOpen(true)}
+                    leftSection={<IconEdit size={16} />}
+                  >
+                    Edit Booking
+                  </Button>
+                )}
 
-                  {/* Deposit Actions - Secondary */}
-                  {(actions.canSendPaymentLink ||
-                    actions.canMarkPaid ||
-                    actions.canWaive ||
-                    actions.canRefund ||
-                    actions.canUndoPayment) && (
-                    <Stack gap="xs">
-                      <Text size="sm" fw={500} c="dimmed">
-                        Deposit
-                      </Text>
-                      <Group>
-                        {actions.canSendPaymentLink && (
-                          <Button
-                            onClick={sendPaymentLink}
-                            leftSection={<IconMessage size={16} />}
-                            disabled={!patient?.telecom?.find((t) => t.system === 'phone')}
-                          >
-                            Send Payment Link
-                          </Button>
-                        )}
-                        {actions.canMarkPaid && (
-                          <Button
-                            color="green"
-                            variant="light"
-                            onClick={() => setMarkPaidModalOpen(true)}
-                            leftSection={<IconCoin size={16} />}
-                          >
-                            Mark as Paid
-                          </Button>
-                        )}
-                        {actions.canWaive && (
-                          <Button
-                            color="orange"
-                            variant="light"
-                            onClick={() => setWaiveModalOpen(true)}
-                            leftSection={<IconX size={16} />}
-                          >
-                            Waive Deposit
-                          </Button>
-                        )}
-                        {actions.canRefund && (
-                          <Button
-                            color="red"
-                            variant="light"
-                            onClick={() => setRefundModalOpen(true)}
-                            leftSection={<IconRefresh size={16} />}
-                          >
-                            Issue Refund
-                          </Button>
-                        )}
-                        {actions.canUndoPayment && (
-                          <Button
-                            color="orange"
-                            variant="light"
-                            onClick={() => setUndoPaymentModalOpen(true)}
-                            leftSection={<IconRefresh size={16} />}
-                          >
-                            Undo Payment
-                          </Button>
-                        )}
-                      </Group>
-                    </Stack>
-                  )}
+                {/* Status Actions - Primary */}
+                {(actions.canArrive || actions.canNoShow || actions.canUncancel || actions.canUndoNoShow) && (
+                  <Stack gap="xs">
+                    <Text size="sm" fw={500} c="dimmed">
+                      Status
+                    </Text>
+                    <Group>
+                      {actions.canArrive && (
+                        <Button
+                          color="teal"
+                          onClick={() => updateStatus('arrived')}
+                          leftSection={<IconUserCheck size={16} />}
+                        >
+                          Mark as Arrived
+                        </Button>
+                      )}
+                      {actions.canNoShow && (
+                        <Button
+                          color="gray"
+                          onClick={() => updateStatus('noshow')}
+                          leftSection={<IconUserX size={16} />}
+                        >
+                          Mark as No-Show
+                        </Button>
+                      )}
+                      {actions.canUndoNoShow && (
+                        <Button
+                          color="blue"
+                          variant="light"
+                          onClick={() => updateStatus('booked')}
+                          leftSection={<IconRefresh size={16} />}
+                        >
+                          Undo No-Show
+                        </Button>
+                      )}
+                      {actions.canUncancel && (
+                        <Button
+                          color="blue"
+                          variant="light"
+                          onClick={() => setUncancelModalOpen(true)}
+                          leftSection={<IconRefresh size={16} />}
+                        >
+                          Uncancel
+                        </Button>
+                      )}
+                      {actions.canUncancel && (
+                        <Text size="xs" c="dimmed">
+                          Will restore to:{' '}
+                          {(() => {
+                            const status = getUncancelTargetStatus();
+                            if (status === 'booked') {
+                              return 'Booked';
+                            }
+                            if (status === 'arrived') {
+                              return 'Arrived';
+                            }
+                            return 'Pending';
+                          })()}
+                        </Text>
+                      )}
+                    </Group>
+                  </Stack>
+                )}
 
-                  {/* Booking Management - Tertiary */}
-                  {actions.canCancel && (
-                    <Stack gap="xs">
-                      <Text size="sm" fw={500} c="dimmed">
-                        Booking
-                      </Text>
-                      <Group>
+                {/* Deposit Actions - Secondary */}
+                {(actions.canSendPaymentLink ||
+                  actions.canMarkPaid ||
+                  actions.canWaive ||
+                  actions.canRefund ||
+                  actions.canUndoPayment) && (
+                  <Stack gap="xs">
+                    <Text size="sm" fw={500} c="dimmed">
+                      Deposit
+                    </Text>
+                    <Group>
+                      {actions.canSendPaymentLink && (
+                        <Button
+                          onClick={sendPaymentLink}
+                          leftSection={<IconMessage size={16} />}
+                          disabled={!patient?.telecom?.find((t) => t.system === 'phone')}
+                        >
+                          Send Payment Link
+                        </Button>
+                      )}
+                      {actions.canMarkPaid && (
+                        <Button
+                          color="green"
+                          variant="light"
+                          onClick={() => setMarkPaidModalOpen(true)}
+                          leftSection={<IconCoin size={16} />}
+                        >
+                          Mark as Paid
+                        </Button>
+                      )}
+                      {actions.canWaive && (
+                        <Button
+                          color="orange"
+                          variant="light"
+                          onClick={() => setWaiveModalOpen(true)}
+                          leftSection={<IconX size={16} />}
+                        >
+                          Waive Deposit
+                        </Button>
+                      )}
+                      {actions.canRefund && (
                         <Button
                           color="red"
                           variant="light"
-                          onClick={() => setCancelModalOpen(true)}
-                          leftSection={<IconX size={16} />}
+                          onClick={() => setRefundModalOpen(true)}
+                          leftSection={<IconRefresh size={16} />}
                         >
-                          Cancel Booking
+                          Issue Refund
                         </Button>
-                      </Group>
-                    </Stack>
-                  )}
-                </Stack>
-              </Card>
-            </Stack>
-          </Grid.Col>
+                      )}
+                      {actions.canUndoPayment && (
+                        <Button
+                          color="orange"
+                          variant="light"
+                          onClick={() => setUndoPaymentModalOpen(true)}
+                          leftSection={<IconRefresh size={16} />}
+                        >
+                          Undo Payment
+                        </Button>
+                      )}
+                    </Group>
+                  </Stack>
+                )}
 
-          {/* Right Column - Deposit Management & Activity History */}
-          <Grid.Col span={{ base: 12, md: 4 }}>
-            <Stack gap="md">
-              {/* Deposit Management - Info Only */}
-              <Card withBorder>
-                <Title order={5} mb="md">
-                  Deposit Management
-                </Title>
-
-                <Stack gap="md">
-                  {/* Deposit Status */}
-                  <Group justify="space-between">
-                    <Text size="sm" c="dimmed">
-                      Status
+                {/* Booking Management - Tertiary */}
+                {actions.canCancel && (
+                  <Stack gap="xs">
+                    <Text size="sm" fw={500} c="dimmed">
+                      Booking
                     </Text>
-                    <Badge color={getDepositStatusColor(depositInfo.status)}>
-                      {depositInfo.status.charAt(0).toUpperCase() + depositInfo.status.slice(1)}
-                    </Badge>
-                  </Group>
-
-                  {/* Deposit Amount - Editable if not paid/waived */}
-                  <Group justify="space-between" align="flex-end">
-                    <NumberInput
-                      label="Amount"
-                      value={depositAmount}
-                      onChange={(val) => setDepositAmount(Number(val) || 0)}
-                      min={0}
-                      step={25}
-                      prefix="$"
-                      disabled={depositInfo.status === 'paid' || depositInfo.status === 'waived'}
-                      style={{ flex: 1 }}
-                    />
-                    {depositInfo.status !== 'paid' && depositInfo.status !== 'waived' && (
-                      <Button size="sm" variant="light" onClick={updateDepositAmount}>
-                        Save
+                    <Group>
+                      <Button
+                        color="red"
+                        variant="light"
+                        onClick={() => setCancelModalOpen(true)}
+                        leftSection={<IconX size={16} />}
+                      >
+                        Cancel Booking
                       </Button>
-                    )}
-                  </Group>
-                </Stack>
-              </Card>
+                    </Group>
+                  </Stack>
+                )}
+              </Stack>
+            </Card>
+          </Stack>
+        </Grid.Col>
+
+        {/* Right Column - Deposit Management & Activity History */}
+        <Grid.Col span={{ base: 12, md: 4 }}>
+          <Stack gap="md">
+            {/* Deposit Management - Info Only */}
+            <Card withBorder>
+              <Title order={5} mb="md">
+                Deposit Management
+              </Title>
+
+              <Stack gap="md">
+                {/* Deposit Status */}
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Status
+                  </Text>
+                  <Badge color={getDepositStatusColor(depositInfo.status)}>
+                    {depositInfo.status.charAt(0).toUpperCase() + depositInfo.status.slice(1)}
+                  </Badge>
+                </Group>
+
+                {/* Deposit Amount - Editable if not paid/waived */}
+                <Group justify="space-between" align="flex-end">
+                  <NumberInput
+                    label="Amount"
+                    value={depositAmount}
+                    onChange={(val) => setDepositAmount(Number(val) || 0)}
+                    min={0}
+                    step={25}
+                    prefix="$"
+                    disabled={depositInfo.status === 'paid' || depositInfo.status === 'waived'}
+                    style={{ flex: 1 }}
+                  />
+                  {depositInfo.status !== 'paid' && depositInfo.status !== 'waived' && (
+                    <Button size="sm" variant="light" onClick={updateDepositAmount}>
+                      Save
+                    </Button>
+                  )}
+                </Group>
+              </Stack>
+            </Card>
 
             {/* Activity History */}
             <Card withBorder>
@@ -1434,7 +1382,7 @@ const getRoom = (appt: Appointment): string => {
       <Modal opened={uncancelModalOpen} onClose={() => setUncancelModalOpen(false)} title="Uncancel Booking">
         <Stack>
           <Text size="sm">Please provide a reason for uncancelling this booking:</Text>
-<Text size="xs" c="dimmed">
+          <Text size="xs" c="dimmed">
             This booking will be restored to:{' '}
             <strong>
               {(() => {
@@ -1459,20 +1407,20 @@ const getRoom = (appt: Appointment): string => {
             <Button variant="light" onClick={() => setUncancelModalOpen(false)}>
               Abort
             </Button>
-          <Button
-            color="blue"
-            onClick={() => {
-              handleUncancel(uncancelReason)
-                .then(() => {
-                  setUncancelModalOpen(false);
-                  setUncancelReason('');
-                })
-                .catch(console.error);
-            }}
-            disabled={!uncancelReason.trim()}
-          >
-            Uncancel Booking
-          </Button>
+            <Button
+              color="blue"
+              onClick={() => {
+                handleUncancel(uncancelReason)
+                  .then(() => {
+                    setUncancelModalOpen(false);
+                    setUncancelReason('');
+                  })
+                  .catch(console.error);
+              }}
+              disabled={!uncancelReason.trim()}
+            >
+              Uncancel Booking
+            </Button>
           </Group>
         </Stack>
       </Modal>
@@ -1481,15 +1429,15 @@ const getRoom = (appt: Appointment): string => {
       <Modal opened={markPaidModalOpen} onClose={() => setMarkPaidModalOpen(false)} title="Mark Deposit as Paid">
         <Stack>
           <Text size="sm">Enter payment details:</Text>
-            <NumberInput
-              label="Amount Received"
-              description={`Requested amount is $${depositAmount}. You can adjust if needed.`}
-              value={manualPaymentAmount || depositAmount}
-              onChange={(val) => setManualPaymentAmount(Number(val) || 0)}
-              min={0}
-              step={25}
-              prefix="$"
-            />
+          <NumberInput
+            label="Amount Received"
+            description={`Requested amount is $${depositAmount}. You can adjust if needed.`}
+            value={manualPaymentAmount || depositAmount}
+            onChange={(val) => setManualPaymentAmount(Number(val) || 0)}
+            min={0}
+            step={25}
+            prefix="$"
+          />
           {/* TODO: When implementing final payment reconciliation,
               compare manualPaymentAmount with depositAmount
               and handle overpayment/underpayment scenarios */}
@@ -1541,6 +1489,21 @@ const getRoom = (appt: Appointment): string => {
           </Group>
         </Stack>
       </Modal>
+
+      {/* Edit Booking Modal */}
+      <CreateAppointmentModalV3
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        onSuccess={() => {
+          setEditModalOpen(false);
+          loadData().catch(() => {
+            // Error already handled inside loadData
+          });
+        }}
+        editMode
+        editAppointment={appointment || undefined}
+        editServiceRequests={serviceRequests}
+      />
     </Stack>
   );
 }

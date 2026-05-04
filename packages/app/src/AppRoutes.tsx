@@ -21,6 +21,7 @@ import { RoomsPage } from './admin/RoomsPage';
 import { SuperAdminAsyncDashboardPage } from './admin/SuperAdminAsyncJobPage';
 import { SuperAdminPage } from './admin/SuperAdminPage';
 import { UsersPage } from './admin/UsersPage';
+import { PractitionerFormPage } from './admin/PractitionerFormPage';
 import { RoleGuard } from './components/RoleGuard';
 import { BatchPage } from './BatchPage';
 import { BulkAppPage } from './BulkAppPage';
@@ -46,6 +47,8 @@ import { RegisterPage } from './RegisterPage';
 import { ResetPasswordPage } from './ResetPasswordPage';
 
 import { NotificationsPage } from './notifications';
+import { PatientIntakePage } from './intake/PatientIntakePage';
+import { PatientEditPage } from './intake/PatientEditPage';
 import { AccountsPage } from './resource/AccountsPage';
 import { ApplyPage } from './resource/ApplyPage';
 import { AppsPage } from './resource/AppsPage';
@@ -137,6 +140,7 @@ export function AppRoutes(): JSX.Element {
         }
       />
         <Route path="/forms/:id" element={<FormPage />} />
+<Route path="/intake" element={<PatientIntakePage />} />
         <Route path="/admin/super" element={<SuperAdminPage />} />
         <Route path="/admin/super/asyncjob/:tab" element={<SuperAdminAsyncDashboardPage />} />
         <Route path="/admin/super/asyncjob" element={<SuperAdminAsyncDashboardPage />} />
@@ -158,10 +162,12 @@ export function AppRoutes(): JSX.Element {
           <Route path="project" element={<ProjectDetailsPage />} />
           <Route path="secrets" element={<SecretsPage />} />
           
-        <Route path="rooms" element={<RoomsPage />} />
-        <Route path="equipment" element={<EquipmentPage />} />
+          <Route path="rooms" element={<RoomsPage />} />
+          <Route path="equipment" element={<EquipmentPage />} />
           <Route path="accesspolicies" element={<AccessPoliciesPage />} />
           <Route path="services" element={<ServiceCatalogPage />} />
+          <Route path="staff/new" element={<PractitionerFormPage />} />
+<Route path="staff/:id/edit" element={<PractitionerFormPage />} />
         </Route>
       {/* Lab routes - Admin only */}
       <Route
@@ -217,6 +223,7 @@ export function AppRoutes(): JSX.Element {
       <Route path="subscriptions" element={<SubscriptionsPage />} />
       <Route path="timeline" element={<TimelinePage />} />
       <Route path="treatments" element={<TreatmentsTabWrapper />} />
+      <Route path="patient-info" element={<PatientEditPage />} />
       <Route path="botox-treatment" element={<BotoxTreatmentPage />} />
       <Route path="tools" element={<ToolsPage />} />
           <Route path="payload" element={<CommunicationPayloadPage />} />

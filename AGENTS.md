@@ -2,9 +2,9 @@
 
 > **Purpose**: Living document providing context for AI agents working on this project. Updated after each session with current status, recent changes, and architectural decisions.
 
-**Last Updated**: April 24, 2026
-**Current Phase**: Phase 2 - Sprint 3.1 Complete
-**Next Phase**: Sprint 3.2 (Staff Approval Workflow)
+**Last Updated**: May 1, 2026
+**Current Phase**: Phase 6 Complete (Calendar Resource Filtering + Per-Service Events)
+**Next Phase**: Phase 7 - Bookings List Page Updates
 
 **Build Plan**: See [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) for architecture  
 **Migration**: See [MIGRATION_PLAN.md](./MIGRATION_PLAN.md) for Phase 1→2 transition  
@@ -79,6 +79,64 @@ cloudflared tunnel --config .cloudflared/medplum-api.yml run
 
 ### Key Directories
 
+```
+packages/app/src/
+├── components/           # Shared components
+│   ├── CreateAppointmentModal.tsx      # Legacy booking modal (edit mode)
+│   ├── CreateAppointmentModalV2.tsx    # NEW: 5-step multi-service booking modal
+│   └── ...
+├── intake/             # Patient intake form module
+│   ├── PatientIntakePage.tsx           # Main entry point
+│   ├── IntakeWizard.tsx                # 8-step wizard container
+│   ├── PatientEditPage.tsx             # Edit existing patients
+│   ├── sections/                       # Form section components
+│   │   ├── WelcomeSection.tsx          # Step 1: HIPAA, Terms, Photo Release
+│   │   ├── DemographicsSection.tsx     # Step 2: Patient demographics
+│   │   ├── EmergencyContactSection.tsx # Step 3: Emergency contact
+│   │   ├── InsuranceSection.tsx        # Step 4: Insurance info
+│   │   ├── MedicalHistorySection.tsx   # Step 5: Medical conditions, meds, allergies
+│   │   ├── TreatmentGoalsSection.tsx   # Step 6: Aesthetic concerns
+│   │   ├── ContraindicationsSection.tsx # Step 7: Pregnancy, sun exposure
+│   │   └── ReviewSection.tsx           # Step 8: Review & signature
+│   ├── components/                   # Shared intake components
+│   │   ├── DOBInput.tsx              # Year/month/day dropdowns
+│   │   ├── SignatureCanvas.tsx         # Digital signature capture
+│   │   ├── MedicationInput.tsx         # Medication entry with flags
+│   │   ├── AllergyInput.tsx            # Allergy entry
+│   │   ├── ProgressBar.tsx             # Step navigation
+│   │   ├── IntakeSuccess.tsx           # Post-submission success screen
+│   │   ├── BlockerAlert.tsx            # Treatment blockers
+│   │   └── DuplicateCheckModal.tsx     # Duplicate detection
+│   ├── utils/                          # Intake utilities
+│   │   ├── intakeToFhir.ts             # Form data → FHIR resources
+│   │   ├── loadPatient.ts              # FHIR → Form data (for editing)
+│   │   ├── validation.ts               # Form validation
+│   │   └── formatters.ts               # Display formatting
+│   ├── hooks/                          # Intake hooks
+│   │   ├── useIntakeSubmission.ts      # Submit/create/update logic
+│   │   └── useIntakeDraft.ts           # Auto-save drafts
+│   └── types/
+│       └── intake.ts                   # TypeScript types
+├── nurse-mel/          # Nurse Mel specific features
+│   ├── BotoxTreatmentPage.tsx          # Botox workflow
+│   ├── PhotoUploadSection.tsx          # Before/after photo handling
+│   ├── TreatmentsTab.tsx               # Patient treatments list (NOW SHOWS APPOINTMENTS)
+│   └── ...
+├── treatments/         # Treatment detail pages
+│   ├── FillerTreatmentPage.tsx
+│   ├── LaserTreatmentPage.tsx
+│   ├── ConsultationTreatmentPage.tsx
+│   └── shared/         # Shared treatment components
+│       ├── useTreatmentData.ts
+│       ├── TreatmentHeader.tsx
+│       ├── TreatmentStatusAlert.tsx
+│       └── getTreatmentType.ts         # Service type routing logic
+├── pages/              # Top-level pages
+│   ├── CalendarPage.tsx                # Scheduling with drag-to-create
+│   ├── BookingsPage.tsx                # Practice-wide bookings list (NOW SHOWS APPOINTMENTS)
+│   └── BookingDetailPage.tsx           # Booking details with deposit management
+└── auth/
+    └── role.ts         # Role utils: getMedSpaRole(), isMainProviderEligible(), isAssistantEligible()
 ```
 packages/app/src/
 ├── components/                 # Shared components
@@ -173,19 +231,56 @@ Booking stays PENDING until deposit is paid or waived.
 - 🔄 Split calendar events (numbing + treatment blocks)
 - 🔄 Uncancel function with reason input
 
-### ⏭️ UPCOMING (Sprint 3.3 - Communications & Deposits)
+### ✅ COMPLETED (Sprint 3.3 Phase 5 - Patient Intake Form)
 
-- ⏭️ Twilio SMS integration (sandbox)
-- ⏭️ Resend email integration
-- ⏭️ Stripe payment links
-- ⏭️ Automated deposit requests (SMS + Email)
-- ⏭️ Payment reminder schedule (24h intervals, max 4)
-- ⏭️ Appointment reminders (24h, 2h before)
-- ⏭️ Post-appointment follow-ups (per-service schedule)
+**Core Intake Features:**
+- ✅ 8-step patient intake wizard (self-service and coordinator-assisted modes)
+- ✅ Success screen with patient confirmation
+- ✅ Patient editing via full form interface
+- ✅ All staff roles can edit patient information
+- ✅ Date handling with ISO strings (no timezone issues)
+- ✅ Digital signature capture
+- ✅ Duplicate patient detection
+
+**FHIR Resources:**
+- ✅ Patient with custom extensions
+- ✅ Consent resources (HIPAA, Terms, Photo Release)
+- ✅ Coverage for insurance
+- ✅ RelatedPerson for emergency contact
+- ✅ Condition for medical conditions and contraindications
+- ✅ MedicationStatement with flags
+- ✅ AllergyIntolerance
+- ✅ Observation for aesthetic history, surgical history, skincare
+- ✅ Flag for treatment goals
+- ✅ QuestionnaireResponse for audit trail
+
+### ⏭️ UPCOMING (Phase 6 - Communications & Analytics)
 
 ---
 
 ## 5. Recent Changes
+
+### May 1, 2026 - Phase 6 Complete (Calendar Resource Filtering + Per-Service Events)
+
+**Files Modified:**
+1. **`/packages/app/src/pages/CalendarPage.tsx`**
+   - Changed from one event per Appointment to one event per ServiceRequest
+   - Added resource filter UI (collapsible panel with MultiSelect for rooms, providers, equipment)
+   - Custom event component (`ServiceCalendarEvent`) with:
+     - Room abbreviation badge (R1, R2, R3)
+     - Equipment icon when required
+     - Status-based left border color (pending/booked/arrived/fulfilled/cancelled)
+     - Hover tooltip showing patient, service, room, equipment, status
+   - Parallel loading of Appointments + ServiceRequests + Devices + Practitioners
+   - Active filter chips with "Clear all" button
+   - Time-splitting for sequential services based on service-position order
+
+**Architecture Decisions Made:**
+- ServiceRequest start/end times calculated from Appointment's overall times divided evenly by service count
+- Room labels stored as strings (room-1, room-2) in ServiceRequest extensions, mapped to abbreviations (R1, R2)
+- Equipment filter matches by Device ID, event display shows device name
+- Provider filter checks ServiceRequest.performer references
+- All filters are OR-based within each category (selecting Room 1 + Room 2 shows both)
 
 ### April 24, 2026 - Sprint 3.1 Complete (Multi-Service Booking)
 
@@ -272,6 +367,130 @@ Booking stays PENDING until deposit is paid or waived.
 
 ---
 
+## 5b. Feature Roadmap (Phases 1-10)
+
+**Current Status**: Phase 5 Deposit System ✅ Complete | **Next Phase**: Phase 6 - Calendar Resource Filtering
+
+### Phase 1: Data Model & FHIR Extensions ✅ COMPLETE
+| Extension | File | Status |
+|-----------|------|--------|
+| `assignedRoom` (ServiceRequest → Location) | `fhir-extensions.ts` | ✅ |
+| `assignedEquipment` (ServiceRequest → Device[]) | `fhir-extensions.ts` | ✅ |
+| `serviceSequence` (ServiceRequest integer) | `fhir-extensions.ts` | ✅ |
+| `linkedServices` (ServiceRequest → ServiceRequest[]) | `fhir-extensions.ts` | ✅ |
+| `serviceStatus` (pending/in-progress/completed) | `fhir-extensions.ts` | ✅ |
+| `actualDuration` (ServiceRequest minutes) | `fhir-extensions.ts` | ✅ |
+| `recommendedAccompanyingServices` (ActivityDefinition) | `fhir-extensions.ts`, `ServiceCatalogPage.tsx` | ✅ |
+| `equipmentRequirements` (ActivityDefinition) | `fhir-extensions.ts`, `ServiceCatalogPage.tsx` | ✅ |
+
+### Phase 2: Backend Logic & Validation ✅ MOSTLY COMPLETE
+| Feature | File | Status |
+|---------|------|--------|
+| `createMultiServiceBooking()` | `multi-service-booking.ts` | ✅ |
+| `calculateSequentialTimings()` | `multi-service-booking.ts` | ✅ |
+| `checkRoomConflicts()` | `multi-service-booking.ts` | ✅ |
+| `checkProviderConflicts()` | `multi-service-booking.ts` | ✅ |
+| `checkEquipmentConflicts()` | `multi-service-booking.ts` | ✅ |
+| `checkConflicts()` (orchestrator) | `multi-service-booking.ts` | ✅ |
+| Room/equipment validation functions | - | ⬜ Deferred (shown in booking modal instead) |
+
+### Phase 3: Service Catalog ✅ COMPLETE
+- ✅ Equipment requirements UI (add/edit/remove)
+- ✅ Recommended accompanying services UI (with timing: before/after/concurrent)
+- ✅ Numbing recommendation field
+- ⬜ Room type requirements (dropped - not needed)
+
+### Phase 4: Booking Form ✅ COMPLETE
+- ✅ CreateAppointmentModalV3 (5-step wizard)
+- ✅ Multi-service selection with search
+- ✅ Auto-suggest accompanying services
+- ✅ Per-service configuration (provider, assistant, duration, room, equipment)
+- ✅ Visual timeline preview (sequential times, total duration)
+- ✅ Service sequencing
+- ✅ Conflict checking (room, provider, equipment)
+
+### Phase 5: Booking Detail & Deposit System ✅ COMPLETE
+| Feature | Status |
+|---------|--------|
+| Deposit system migrated to FHIR AuditEvents | ✅ |
+| Deposit actions (mark paid, send link, waive, undo, refund) | ✅ |
+| Activity history from AuditEvents | ✅ |
+| Basic service display (service names in list) | ✅ |
+| **Edit booking button** | ⬜ **TODO** (missing on BookingDetailPage) |
+| Per-service cards with actions (Start/Complete/Edit) | ⬜ Deferred (service exists in ServiceCard.tsx but not integrated) |
+
+**Key Decision**: Conflict detection shows on booking modal/detail page, not on calendar. No time override on calendar needed - providers set times during booking creation.
+
+---
+
+### Phase 6: Calendar Resource Filtering ✅ COMPLETE
+
+**Implementation**: Calendar now shows one event per ServiceRequest (not per Appointment) with resource filtering.
+
+**6.1 Multi-Event Display ✅**
+- [x] One calendar event per ServiceRequest (not per Appointment)
+- [x] Events from same booking share visual grouping (same patient name, hover tooltip)
+- [x] Click event → opens booking detail page (`/bookings/:id`)
+- [x] Hover shows all services in that booking (Tooltip with patient name, service name, room, equipment, status)
+
+**6.2 Resource Filtering ✅**
+- [x] Filter by room (show only services assigned to selected room(s))
+- [x] Filter by provider (show only services assigned to selected provider(s))
+- [x] Filter by equipment (show only services requiring selected equipment)
+- [x] Multi-select filters (MultiSelect components for rooms, providers, equipment)
+- [x] Filter UI: collapsible filter panel with chip-based active filter display + "Clear all" button
+
+**6.3 Event Styling ✅**
+- [x] Show room abbreviation on event badge (e.g., "R1", "R2")
+- [x] Show equipment icon if required (IconTool)
+- [x] Sequential services: time-split based on service-position order
+- [x] Color by status (pending/booked/arrived/fulfilled/cancelled/noshow) via left border color
+
+**6.4 Drag-Drop Behavior (Deferred)**
+- [ ] Drag service → moves just that service (with conflict check on booking modal)
+- [ ] Resize → adjusts duration for that service
+- [ ] No time override on calendar (providers set times during booking)
+
+---
+
+### Phase 7: Bookings List Page ⬜ NEXT PHASE
+- [ ] Show first service time (not booking time)
+- [ ] Show service count badge ("3 services")
+- [ ] Show room summary ("Room A → Room C")
+- [ ] Show equipment requirements
+
+---
+
+### Phase 8: Treatments Tab Updates ⬜
+- [ ] Each service = one row
+- [ ] Show room, equipment, provider per row
+- [ ] Show sequence number
+
+---
+
+### Phase 9: Validation & Warnings ⬜
+- [ ] Room lacks required equipment → warning on booking modal
+- [ ] Equipment already booked → conflict message on booking modal
+- [ ] Provider double-booked → warning on booking modal
+- [ ] Final conflict check on booking submission
+
+---
+
+### Phase 10: Equipment Management ⬜
+- [ ] Equipment availability calendar view
+- [ ] Show upcoming bookings per equipment
+- [ ] Maintenance scheduling integration
+
+---
+
+### Phase N: Deferred / Backlog ⬜
+- [ ] Room type requirements extension & UI
+- [ ] `validateServiceRoom()` / `validateServiceEquipment()` functions
+- [ ] Per-service action cards in BookingDetailPage (ServiceCard.tsx integration)
+- [ ] `suggestRoomsForService()` function
+
+---
+
 ## 6. Code Patterns & Standards
 
 ### Loading Linked Resources
@@ -345,6 +564,83 @@ extension: [
 ],
 ```
 
+### FHIR-First: Deposit & Payment Tracking (Phase 5 - April 2026)
+
+**CRITICAL**: Do NOT use `buildDepositInfoExtensions()` or `getDepositStatus()` from `utils/payments.ts`. These are **deprecated**. All deposit/payment data is now stored via **FHIR AuditEvents**, NOT Appointment extensions.
+
+**Why**: Extensions on the Appointment resource became stale after updates. AuditEvents provide a complete, auditable history that can be replayed to reconstruct state at any point in time.
+
+**Correct Pattern**:
+
+```typescript
+// READING deposit status
+import { getDepositStatusFromAuditEvents } from '../utils/audit-events';
+
+const depositInfo = await getDepositStatusFromAuditEvents(medplum, patientId);
+// Returns: { status: 'paid' | 'waived' | 'requested' | 'pending', amount, paidAt, ... }
+
+// WRITING deposit actions
+import {
+  recordDepositPaid,
+  recordDepositRequested,
+  recordDepositWaived,
+  recordPaymentUndone,
+  recordRefundIssued,
+  recordDepositAmountChanged,
+} from '../utils/audit-events';
+
+// Example: Mark deposit as paid
+const currentUserPractitioner = {
+  resourceType: 'Practitioner',
+  id: currentUser?.id || '',
+  name: currentUser?.name,
+};
+
+await recordDepositPaid(
+  medplum,
+  patient,
+  serviceRequest,
+  depositAmount,
+  currentUserPractitioner,
+  'manual',           // paymentType: 'manual' | 'online'
+  actualPaidAmount,   // optional
+  paymentNotes        // optional
+);
+
+// Example: Send payment link
+await recordDepositRequested(
+  medplum,
+  patient,
+  serviceRequest,
+  depositAmount,
+  'sms+email',        // method: 'sms' | 'email' | 'sms+email'
+  currentUserPractitioner
+);
+```
+
+**How State Reconstruction Works**:
+1. `getDepositStatusFromAuditEvents()` queries all AuditEvents for the patient
+2. Filters to deposit/payment-related events (description contains 'deposit', 'payment', 'refund')
+3. Sorts chronologically
+4. Replays events in order, last event wins for status
+5. Handles undo/refund by reverting status appropriately
+
+**AuditEvent Description Patterns**:
+- `Deposit paid via manual by ...` → status: 'paid'
+- `Deposit requested via sms+email by ...` → status: 'requested'
+- `Deposit waived: ...` → status: 'waived'
+- `Payment undone by ...: ...` → status: 'requested' (revert)
+- `Refund of $... issued by ...: ...` → status: 'requested'
+
+**Files**:
+- `/packages/app/src/utils/audit-events.ts` - All audit functions
+- `/packages/app/src/pages/BookingDetailPage.tsx` - Usage examples
+
+**Legacy Code**:
+- `utils/payments.ts` → `getDepositStatus()` marked as @deprecated (kept for BookingsPage display only)
+- `utils/payments.ts` → `buildDepositInfoExtensions()` marked as @deprecated (DO NOT USE)
+- `utils/reminders.ts` → Still uses `getDepositStatus()` (NOT CURRENTLY USED by any component, migration needed when activated)
+
 ### Role-Based Access
 
 ```typescript
@@ -374,6 +670,48 @@ min={moment().hour(8).minute(0).toDate()}
 max={moment().hour(20).minute(0).toDate()}
 ```
 
+### Intake Form: Date Handling (No Timezone Issues)
+
+```typescript
+// DOB stored as ISO string (YYYY-MM-DD), NOT Date objects
+const dateOfBirth = '1990-05-15'; // ✅ Safe
+const dateOfBirth = new Date('1990-05-15'); // ❌ Avoid (timezone issues)
+
+// DOBInput uses 3 dropdowns
+dateOfBirth = `${year}-${month}-${day}`; // Builds string directly
+```
+
+### Intake Form: Edit Mode - Loading FHIR to Form Data
+
+```typescript
+// useIntakeSubmission hook now supports update mode
+const result = await submitIntake(data, 'coordinator-assisted', patientId);
+
+// loadPatient.ts converts FHIR → Form data
+import { loadPatientIntoForm } from './utils/loadPatient';
+const formData = await loadPatientIntoForm(medplum, patientId);
+
+// Edit mode uses full replace strategy:
+// 1. Update Patient resource (preserve ID)
+// 2. Delete all related resources (conditions, medications, etc.)
+// 3. Create new related resources with updated data
+```
+
+### Intake Form: FHIR Resource Creation Pattern
+
+```typescript
+// Extensions only added when values exist
+extension: [
+  ...(data.pronouns
+    ? [{ url: '...pronouns', valueString: data.pronouns }]
+    : []),
+  ...(data.preferredName?.trim()
+    ? [{ url: '...preferred-name', valueString: data.preferredName.trim() }]
+    : []),
+  // Empty extensions are NEVER added
+],
+```
+
 ---
 
 ## 7. FHIR Compliance & HIPAA Considerations
@@ -397,6 +735,15 @@ All custom extensions use the base URL: `http://melissaknudson.com/fhir/Structur
 | `status-change-audit` | Who changed status when | ✅ Yes |
 | `last-edited` | Edit timestamp | ✅ Yes |
 | `edited-by` | Editor reference | ✅ Yes |
+| `pronouns` | Patient pronouns | ✅ Yes |
+| `preferred-name` | Nickname/preferred name | ✅ Yes |
+| `referral-source` | How patient found practice | ✅ Yes |
+| `photo-release-accepted` | Photo consent status | ✅ Yes |
+| `medical-condition` | Medical condition type | ✅ Yes |
+| `aesthetic-treatment-history` | Previous aesthetic treatments | ✅ Yes |
+| `surgical-history` | Previous surgeries | ✅ Yes |
+| `skincare-routine` | Skincare details | ✅ Yes |
+| `contraindications` | Treatment contraindications | ✅ Yes |
 
 ### Access Control
 - **Providers**: Full clinical access (RN qualification required)
@@ -506,6 +853,11 @@ Before marking a feature complete, verify:
 - [ ] **Status Transitions**: preparation → in-progress → completed (with audit trail)
 - [ ] **ESLint Clean**: `npx eslint packages/app/src/nurse-mel/BotoxTreatmentPage.tsx` passes
 - [ ] **Type Check**: `npx tsc --noEmit -p packages/app/tsconfig.json` passes
+- [ ] **Intake Form Submit**: Complete all 8 steps → Submit → Patient created successfully
+- [ ] **Intake Success Screen**: Shows patient ID and "Done" button after submission
+- [ ] **Intake Edit Mode**: Open Patient → Edit Patient → Modify data → Save → Verify updates
+- [ ] **Intake Date Handling**: DOB saves correctly (e.g., Jan 15, 1990) without timezone drift
+- [ ] **Intake Signature**: Canvas signature captures correctly with mouse offset fix
 
 ---
 
@@ -522,9 +874,19 @@ Before marking a feature complete, verify:
 - `PhotoUploadSection.tsx` - Photo upload UI
 - `CalendarPage.tsx` - Scheduling calendar
 
+### Intake Components
+- `PatientIntakePage.tsx` - New patient intake (self-service or coordinator)
+- `PatientEditPage.tsx` - Edit existing patient via full form
+- `IntakeWizard.tsx` - 8-step wizard container
+- `IntakeSuccess.tsx` - Post-submission success screen
+- `DOBInput.tsx` - Year/month/day dropdowns (no timezone issues)
+- `SignatureCanvas.tsx` - Digital signature capture
+
 ### Utility Functions
 - `getMedSpaRole()` - `/packages/app/src/auth/role.ts` - Role detection
 - `getTreatmentPageRoute()` - `/packages/app/src/treatments/shared/getTreatmentType.ts` - Service type routing
+- `loadPatientIntoForm()` - `/packages/app/src/intake/utils/loadPatient.ts` - FHIR to form data
+- `intakeToFhir.ts` - `/packages/app/src/intake/utils/intakeToFhir.ts` - Form to FHIR resources
 
 ---
 
@@ -716,4 +1078,155 @@ PAYMENT_LINK_BASE_URL=https://api-dev.studioassistant.io/pay
 
 ---
 
-**Current Status:** Sprint 3.3 Phase 1-3 Complete, ready for Phase 4 (Calendar Split Events)
+**Current Status:** Sprint 3.3 Phase 5 Complete - Patient Intake Form with Edit Support
+
+---
+
+### April 28-29, 2026 - Patient Intake Form Complete (Major Feature)
+
+**New Feature: Full Patient Intake System with Success Screen and Edit Support**
+
+**Overview:**
+A comprehensive 8-step patient intake form that supports both self-service (patient-facing) and coordinator-assisted modes. Creates complete FHIR resources for patient management.
+
+**Files Created (New Intake Module):**
+
+**Core Components:**
+1. **`/packages/app/src/intake/PatientIntakePage.tsx`** - Main entry point with mode detection
+2. **`/packages/app/src/intake/IntakeWizard.tsx`** - 8-step wizard container with navigation
+3. **`/packages/app/src/intake/PatientEditPage.tsx`** - Edit existing patients via full form
+
+**Form Sections:**
+4. **`/packages/app/src/intake/sections/WelcomeSection.tsx`** - HIPAA, Terms, Photo Release consent
+5. **`/packages/app/src/intake/sections/DemographicsSection.tsx`** - Name, DOB, pronouns, contact info
+6. **`/packages/app/src/intake/sections/EmergencyContactSection.tsx`** - Emergency contact details
+7. **`/packages/app/src/intake/sections/InsuranceSection.tsx`** - Insurance information
+8. **`/packages/app/src/intake/sections/MedicalHistorySection.tsx`** - Conditions, medications, allergies
+9. **`/packages/app/src/intake/sections/TreatmentGoalsSection.tsx`** - Aesthetic concerns, areas
+10. **`/packages/app/src/intake/sections/ContraindicationsSection.tsx`** - Pregnancy, sun exposure, infections
+11. **`/packages/app/src/intake/sections/ReviewSection.tsx`** - Summary and signature
+
+**Components:**
+12. **`/packages/app/src/intake/components/DOBInput.tsx`** - Year/month/day dropdowns (no timezone issues)
+13. **`/packages/app/src/intake/components/SignatureCanvas.tsx`** - Digital signature capture with mouse offset fix
+14. **`/packages/app/src/intake/components/MedicationInput.tsx`** - Medication entry with special flags
+15. **`/packages/app/src/intake/components/AllergyInput.tsx`** - Allergy entry
+16. **`/packages/app/src/intake/components/ProgressBar.tsx`** - Step navigation indicator
+17. **`/packages/app/src/intake/components/IntakeSuccess.tsx`** - Post-submission success screen
+18. **`/packages/app/src/intake/components/BlockerAlert.tsx`** - Treatment blocker warnings
+19. **`/packages/app/src/intake/components/DuplicateCheckModal.tsx`** - Duplicate patient detection
+
+**Utils & Hooks:**
+20. **`/packages/app/src/intake/utils/intakeToFhir.ts`** - Transforms form data to FHIR resources
+21. **`/packages/app/src/intake/utils/loadPatient.ts`** - Loads FHIR resources back into form (for editing)
+22. **`/packages/app/src/intake/utils/validation.ts`** - Form validation logic
+23. **`/packages/app/src/intake/utils/formatters.ts`** - Display formatting utilities
+24. **`/packages/app/src/intake/hooks/useIntakeSubmission.ts`** - Form submission (create/update)
+25. **`/packages/app/src/intake/hooks/useIntakeDraft.ts`** - Draft auto-save functionality
+
+**Files Modified:**
+
+26. **`/packages/app/src/resource/ResourcePage.tsx`**
+    - Added "Edit Patient" button for all staff roles
+    - Added "Patient Info" tab to Patient resource tabs
+
+27. **`/packages/app/src/AppRoutes.tsx`**
+    - Route `/intake` → PatientIntakePage
+    - Route `/Patient/:id/patient-info` → PatientEditPage
+
+28. **`/packages/app/src/App.tsx`**
+    - "New Patient Intake" menu item in sidebar
+
+**8-Step Intake Flow:**
+| Step | Section | Required Fields |
+|------|---------|-----------------|
+| 1 | Welcome & Legal | HIPAA, Terms, Photo Release |
+| 2 | Demographics | First/Last Name, DOB, Phone, Email, Address |
+| 3 | Emergency Contact | Name, Relationship, Phone |
+| 4 | Insurance | Has insurance (Yes/No/Optional), details if yes |
+| 5 | Medical History | Conditions, Medications, Allergies (optional) |
+| 6 | Treatment Goals | Aesthetic concerns, areas (optional) |
+| 7 | Contraindications | Pregnancy status, sun exposure (optional) |
+| 8 | Review & Submit | Information confirmed, signature, consent |
+
+**FHIR Resources Created:**
+| Resource | Purpose | Extension URL |
+|----------|---------|---------------|
+| Patient | Core patient record | Multiple custom extensions |
+| Consent | HIPAA, Terms, Photo Release | `patient-consent` |
+| Coverage | Insurance info | - |
+| RelatedPerson | Emergency contact | - |
+| Condition | Medical conditions | `medical-condition` |
+| Condition | Contraindications | `contraindications` |
+| MedicationStatement | Current medications | Flags for accutane, blood thinners, photosensitizing |
+| AllergyIntolerance | Allergies | - |
+| Observation | Aesthetic treatment history | `aesthetic-treatment-history` |
+| Observation | Surgical history | `surgical-history` |
+| Observation | Skincare routine | `skincare-routine` |
+| Flag | Treatment goals | `treatment-goals` |
+| QuestionnaireResponse | Raw form data | - |
+
+**Custom FHIR Extensions (New):**
+| Extension | Purpose | Compliant |
+|-----------|---------|-----------|
+| `pronouns` | Patient pronouns | ✅ Yes |
+| `preferred-name` | Nickname/preferred name | ✅ Yes |
+| `referral-source` | How patient found us | ✅ Yes |
+| `photo-release-accepted` | Photo consent status | ✅ Yes |
+| `medical-condition` | Medical condition type | ✅ Yes |
+| `aesthetic-treatment-history` | Previous aesthetic treatments | ✅ Yes |
+| `surgical-history` | Previous surgeries | ✅ Yes |
+| `skincare-routine` | Skincare details | ✅ Yes |
+| `contraindications` | Treatment contraindications | ✅ Yes |
+
+**Key Implementation Decisions:**
+
+**Date Handling:**
+- DOB stored as ISO string (YYYY-MM-DD) - no Date objects
+- No timezone issues by using string format throughout
+- DOBInput uses 3 dropdowns: Year, Month, Day
+
+**Form Data Flow:**
+- `IntakeFormData` interface - single source of truth
+- Each section receives `data` and `onChange` callback
+- State managed in `IntakeWizard` top-level
+- No form libraries (controlled components only)
+
+**FHIR Integration:**
+- Extensions only added when values exist (avoid empty extensions)
+- All resources linked to Patient via references
+- QuestionnaireResponse stores raw data for audit
+- RelatedPerson for emergency contact (separate resource)
+
+**Edit Mode:**
+- `loadPatient.ts` converts FHIR resources back to form data
+- Full replace strategy: delete old related resources, create new ones
+- Patient record updated (not recreated) to preserve ID
+- All staff roles can edit (assistants, providers, coordinators, admins)
+
+**Validation Rules:**
+- Required fields per step (see table above)
+- Email format validation
+- Phone format validation
+- ZIP code validation
+- Age check (18+ required for aesthetic treatments)
+
+**Routes:**
+| Route | Purpose | Mode |
+|-------|---------|------|
+| `/intake` | New patient intake | Self-service or Coordinator |
+| `/intake?mode=coordinator` | New patient (staff view) | Coordinator-assisted |
+| `/Patient/:id/patient-info` | Edit existing patient | Edit mode |
+
+**Menu Items:**
+- Sidebar: "New Patient Intake" (links to `/intake`)
+- Patient page: "Edit Patient" button (all staff)
+- Patient tabs: "Patient Info" tab
+
+**Success Screen:**
+- Shows after successful intake submission
+- Green checkmark, patient name, patient ID
+- "What's Next" information
+- "Done - Return to Start" button
+
+**Next Phase:** Phase 6 - Communications & Analytics

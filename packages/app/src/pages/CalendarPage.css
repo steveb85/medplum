@@ -1,0 +1,44 @@
+/* Hide default RBC event label to avoid double-rendering with custom event component */
+.rbc-event .rbc-event-label {
+  display: none;
+}
+
+/* Clean up event content wrapper */
+.rbc-event .rbc-event-content {
+  padding: 0;
+  width: 100%;
+  overflow: visible;
+}
+
+/* Remove default RBC event styling */
+.rbc-event {
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  overflow: visible;
+}
+
+.rbc-event:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.rbc-event:focus {
+  outline: none;
+}
+
+/* Remove RBC event label entirely */
+.rbc-event-label {
+  display: none;
+}
+
+/* Ensure event column doesn't clip borders */
+.rbc-events-container {
+  overflow: visible;
+}
+
+/* Add right margin so adjacent events don't overlap our border */
+.rbc-event {
+  margin-right: 2px;
+}

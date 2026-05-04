@@ -513,22 +513,8 @@ export function validateRoomEquipmentCompatibility(service: ServiceConfiguration
   const warnings: string[] = [];
   const config = parseServiceConfig(service.activityDefinition);
 
-  // Check if non-movable equipment is in a different room
-  for (const equipmentReq of config.equipmentRequirements) {
-    if (!equipmentReq.movable) {
-      // In real implementation, check if equipment is actually in the assigned room
-      // For now, just warn based on the requirement
-      const assignedEquipment = service.assignedEquipment?.find((e) =>
-        e.reference?.includes(equipmentReq.equipmentType)
-      );
-
-      if (assignedEquipment && service.assignedRoom) {
-        // This would check the equipment's actual location
-        // For now, just add an informational warning
-        warnings.push(`${equipmentReq.equipmentType} is typically fixed to a specific room`);
-      }
-    }
-  }
+  // Note: Equipment movability should be checked against Device resource properties
+  // when equipment management is implemented. For now, this validation is skipped.
 
   return { valid: warnings.length === 0, warnings };
 }

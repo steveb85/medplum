@@ -46,10 +46,10 @@ export const EXTENSION_URLS = {
 // ============================================================================
 
 export interface EquipmentRequirement {
-  equipmentReference?: Reference<Device>; // Specific device instance (e.g., Device/cynosure-001)
-  equipmentName?: string; // Display name (e.g., "Cynosure Elite+ Laser")
-  equipmentType: string; // Type code (e.g., 'laser-hair-removal') for filtering/fallback
-  required: boolean;
+  equipmentType: string; // e.g., 'laser', 'cooling-system'
+  equipmentReference?: Reference; // Optional: specific device
+  equipmentName?: string; // Display name
+  required: boolean; // Is this equipment required for the service
   movable: boolean; // Can equipment be moved to different room
 }
 
@@ -67,7 +67,7 @@ export interface InternalCost {
 }
 
 export interface ServiceConfig {
-  numbingTime: number;
+  // numbingTime removed - now handled via recommended accompanying services
   defaultRoom: string;
   roomMovable: boolean;
   minPrice: number;
@@ -89,6 +89,14 @@ export interface ServiceConfig {
   equipmentRequirements: EquipmentRequirement[];
   recommendedAccompanyingServices: RecommendedAccompanyingService[];
   internalCost: InternalCost;
+  // Provider requirements - NEW
+  mainProviderRequired: boolean; // Default: true (required), toggle to false (optional)
+  assistantRequired: boolean; // Default: false (optional), toggle to true (required)
+  // Consent - NEW
+  consentRequired: boolean; // Default: true - patient must sign consent
+  consentCategory?: string; // e.g., 'botox-treatment' for grouping
+  consentText?: string; // HTML consent text template
+  consentVersion?: string; // Version tracking
 }
 
 export interface ServiceRequestDetails {
@@ -214,28 +222,36 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
     try {
       const parsed = JSON.parse(ext.valueString);
       return {
-        numbingTime: parsed.numbingTime ?? 0,
+        // numbingTime removed - handled via recommended accompanying services
         defaultRoom: parsed.defaultRoom ?? 'room-1',
-        roomMovable: parsed.roomMovable ?? true,
-        minPrice: parsed.minPrice ?? 0,
-        maxPrice: parsed.maxPrice ?? 0,
-        pricePerUnit: parsed.pricePerUnit ?? false,
-        unitType: parsed.unitType ?? 'unit',
-        gfeCategory: parsed.gfeCategory ?? '',
-        requiresConsult: parsed.requiresConsult ?? false,
-        icon: parsed.icon ?? '',
-        color: parsed.color ?? 'blue',
-        category: parsed.category ?? 'other',
-        // Deposit configuration removed - now handled at booking level
-        // depositAmount: parsed.depositAmount ?? 250,
-        // depositReminders: parsed.depositReminders ?? 4,
-        // depositReminderInterval: parsed.depositReminderInterval ?? 24,
-        followUpSchedule: parsed.followUpSchedule || [],
-        providerRates: parsed.providerRates || [],
-        equipmentRequirements: parsed.equipmentRequirements || [],
-        recommendedAccompanyingServices: parsed.recommendedAccompanyingServices || [],
-        internalCost: parsed.internalCost || { productCost: 0, costPerUnit: false, unitType: 'unit' },
-      };
+      roomMovable: parsed.roomMovable ?? true,
+      minPrice: parsed.minPrice ?? 0,
+      maxPrice: parsed.maxPrice ?? 0,
+      pricePerUnit: parsed.pricePerUnit ?? false,
+      unitType: parsed.unitType ?? 'unit',
+      gfeCategory: parsed.gfeCategory ?? '',
+      requiresConsult: parsed.requiresConsult ?? false,
+      icon: parsed.icon ?? '',
+      color: parsed.color ?? 'blue',
+      category: parsed.category ?? 'other',
+      // Deposit configuration removed - now handled at booking level
+      // depositAmount: parsed.depositAmount ?? 250,
+      // depositReminders: parsed.depositReminders ?? 4,
+      // depositReminderInterval: parsed.depositReminderInterval ?? 24,
+      followUpSchedule: parsed.followUpSchedule || [],
+      providerRates: parsed.providerRates || [],
+      equipmentRequirements: parsed.equipmentRequirements || [],
+      recommendedAccompanyingServices: parsed.recommendedAccompanyingServices || [],
+      internalCost: parsed.internalCost || { productCost: 0, costPerUnit: false, unitType: 'unit' },
+      // Provider requirements - NEW
+      mainProviderRequired: parsed.mainProviderRequired ?? true, // Default: required
+      assistantRequired: parsed.assistantRequired ?? false, // Default: optional
+      // Consent - NEW
+      consentRequired: parsed.consentRequired ?? true, // Default: required
+      consentCategory: parsed.consentCategory,
+      consentText: parsed.consentText,
+      consentVersion: parsed.consentVersion,
+    };
     } catch (err) {
       console.error('Failed to parse service config JSON:', err);
     }
@@ -303,8 +319,28 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
     }
   }
 
+  // Parse consent configuration from JSON config if available
+  const jsonConfig = ext?.valueString;
+  let consentRequired = true; // Default for safety
+  let consentCategory: string | undefined;
+  let consentText: string | undefined;
+  let consentVersion: string | undefined;
+  
+  if (jsonConfig) {
+    try {
+      const parsed = JSON.parse(jsonConfig);
+      // Use explicit value from config, default to true only if undefined
+      consentRequired = parsed.consentRequired !== undefined ? parsed.consentRequired : true;
+      consentCategory = parsed.consentCategory;
+      consentText = parsed.consentText;
+      consentVersion = parsed.consentVersion;
+    } catch {
+      // Keep defaults
+    }
+  }
+
   return {
-    numbingTime: ext?.extension?.find((e) => e.url === 'numbingTime')?.valueInteger ?? 0,
+    // numbingTime removed - handled via recommended accompanying services
     defaultRoom: ext?.extension?.find((e) => e.url === 'defaultRoom')?.valueString ?? 'room-1',
     roomMovable: ext?.extension?.find((e) => e.url === 'roomMovable')?.valueBoolean ?? true,
     minPrice: ext?.extension?.find((e) => e.url === 'minPrice')?.valueInteger ?? 0,
@@ -327,6 +363,14 @@ export function parseServiceConfig(activity: ActivityDefinition): ServiceConfig 
     equipmentRequirements,
     recommendedAccompanyingServices,
     internalCost,
+    // Provider requirements - NEW (defaults for backward compatibility)
+    mainProviderRequired: true,
+    assistantRequired: false,
+    // Consent - NEW (read from JSON config, default to true for safety)
+    consentRequired,
+    consentCategory,
+    consentText,
+    consentVersion,
   };
 }
 
@@ -334,7 +378,7 @@ export function buildServiceConfigExtensions(config: ServiceConfig): Extension[]
   // Store entire config as a single JSON string to avoid nested extension validation issues
   // This is simpler and avoids FHIR constraint ext-1 violations
   const configForSerialization = {
-    numbingTime: config.numbingTime,
+    // numbingTime removed - handled via recommended accompanying services
     defaultRoom: config.defaultRoom,
     roomMovable: config.roomMovable,
     minPrice: config.minPrice,
@@ -354,6 +398,14 @@ export function buildServiceConfigExtensions(config: ServiceConfig): Extension[]
     equipmentRequirements: config.equipmentRequirements || [],
     recommendedAccompanyingServices: config.recommendedAccompanyingServices || [],
     internalCost: config.internalCost || { productCost: 0, costPerUnit: false },
+    // Provider requirements - NEW
+    mainProviderRequired: config.mainProviderRequired ?? true,
+    assistantRequired: config.assistantRequired ?? false,
+    // Consent - NEW
+    consentRequired: config.consentRequired ?? true,
+    consentCategory: config.consentCategory,
+    consentText: config.consentText,
+    consentVersion: config.consentVersion,
   };
 
   return [
@@ -370,18 +422,13 @@ export function buildServiceConfigExtensions(config: ServiceConfig): Extension[]
 
 export function validateRoomEquipmentCompatibility(
   roomId: string,
-  equipment: { equipmentType: string; movable: boolean }[]
+  equipment: { equipmentType: string }[]
 ): { compatible: boolean; warnings: string[] } {
   const warnings: string[] = [];
   const compatible = true;
 
-  for (const eq of equipment) {
-    if (!eq.movable) {
-      // This would check if the room actually has this equipment
-      // For now, we'll return a warning that needs to be implemented with actual room data
-      warnings.push(`${eq.equipmentType} is not movable and must be in its assigned room`);
-    }
-  }
+  // Note: Equipment movability should be checked against Device resource properties
+  // when equipment management is implemented. For now, this validation is skipped.
 
   return { compatible, warnings };
 }

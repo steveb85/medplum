@@ -11,6 +11,7 @@ import {
   IconBuilding,
   IconCalendar,
   IconClipboardList,
+  IconClipboardPlus,
   IconDatabase,
   IconDoor,
   IconFolder,
@@ -23,6 +24,7 @@ import {
   IconReceipt,
   IconReportMedical,
   IconStar,
+  IconUserPlus,
   IconWebhook,
 } from '@tabler/icons-react';
 import type { FunctionComponent, JSX } from 'react';
@@ -196,6 +198,11 @@ function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRol
         label: 'Calendar',
         href: '/calendar',
         icon: <IconCalendar />,
+      },
+      {
+        label: 'New Patient Intake',
+        href: '/intake',
+        icon: <IconClipboardPlus />,
       }
     );
   }
@@ -220,7 +227,7 @@ function userConfigToMenu(config: UserConfiguration | undefined, role: MedSpaRol
           href: '/admin/services',
           icon: <IconBuilding />,
         },
-
+        { label: 'New Staff Member', href: '/admin/staff/new', icon: <IconUserPlus /> },
         { label: 'Rooms', href: '/admin/rooms', icon: <IconDoor /> },
         { label: 'Equipment', href: '/admin/equipment', icon: <IconDoor /> },
         { label: 'Access Policies', href: '/admin/accesspolicies', icon: <IconLock /> },
