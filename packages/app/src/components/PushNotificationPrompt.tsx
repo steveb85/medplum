@@ -32,6 +32,7 @@ export function PushNotificationPrompt({ onDismiss, onSuccess }: PushNotificatio
     try {
       // Get VAPID public key from server config
       const vapidKey = await getVapidPublicKey(medplum);
+      
       if (!vapidKey) {
         setError('Push notifications are not configured. Please contact support.');
         setLoading(false);
@@ -42,6 +43,7 @@ export function PushNotificationPrompt({ onDismiss, onSuccess }: PushNotificatio
       const profile = medplum.getProfile() as Practitioner | undefined;
 
       const success = await subscribeToPush(medplum, vapidKey, profile);
+      
       if (success) {
         if (onSuccess) {
           onSuccess();
@@ -51,6 +53,7 @@ export function PushNotificationPrompt({ onDismiss, onSuccess }: PushNotificatio
         setError('Permission denied or subscription failed');
       }
     } catch (err) {
+      console.error('[PushPrompt] Error in handleEnable:', err);
       setError('An error occurred while enabling notifications');
     } finally {
       setLoading(false);

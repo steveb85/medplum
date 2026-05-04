@@ -148,6 +148,8 @@ export async function subscribeToPush(
   vapidPublicKey: string,
   profile: Practitioner | undefined
 ): Promise<boolean> {
+  console.log('[Push] subscribeToPush called');
+
   if (!isPushSupported()) {
     console.log('[Push] Push notifications not supported');
     return false;
@@ -156,13 +158,34 @@ export async function subscribeToPush(
   try {
     // Request permission first
     const permission = await requestNotificationPermission();
+
     if (permission !== 'granted') {
-      console.log('[Push] Notification permission denied');
       return false;
     }
 
-    // Get service worker registration
-    const registration = await navigator.serviceWorker.ready;
+    // Get service worker registration - register if needed
+    // First check if any service worker is registered
+    let registration = await navigator.serviceWorker.getRegistration();
+
+    if (!registration) {
+      try {
+        registration = await navigator.serviceWorker.register('/service-worker.js');
+      } catch (err) {
+        console.error('[Push] Failed to register service worker:', err);
+        return false;
+      }
+    }
+
+    // Wait for service worker to be ready (with timeout)
+    try {
+      registration = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Service worker ready timeout after 5s')), 5000)),
+      ]) as ServiceWorkerRegistration;
+    } catch (err) {
+      console.error('[Push] Service worker ready failed:', err);
+      // Continue anyway - some browsers might still work
+    }
 
     // Subscribe to push
     const subscription = await registration.pushManager.subscribe({
@@ -170,13 +193,12 @@ export async function subscribeToPush(
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
 
-    console.log('[Push] Subscription created:', subscription);
-
     // Send subscription to server with practitioner profile
     await sendSubscriptionToServer(medplum, subscription, profile);
 
     // Mark as subscribed
     markPushSubscribed();
+    console.log('[Push] Marked as subscribed');
 
     showNotification({
       title: 'Push Notifications Enabled',
@@ -324,10 +346,19 @@ export async function unsubscribeFromPush(medplum: MedplumClient): Promise<boole
  */
 export async function getVapidPublicKey(medplum: MedplumClient): Promise<string | null> {
   try {
-    // Get from /api/config endpoint
-    const response = await medplum.get('/api/config');
-    if (response && (response as any).vapidPublicKey) {
-      return (response as any).vapidPublicKey;
+    // Use native fetch for non-FHIR endpoints
+    const baseUrl = medplum.getBaseUrl();
+    const response = await fetch(baseUrl + 'api/config');
+    
+    if (!response.ok) {
+      console.error('[Push] Failed to get VAPID public key:', response.status);
+      return null;
+    }
+    
+    const data = await response.json();
+    
+    if (data && data.vapidPublicKey) {
+      return data.vapidPublicKey;
     }
     return null;
   } catch (err) {

@@ -25,11 +25,11 @@ export default defineConfig({
   envPrefix: ['MEDPLUM_', 'GOOGLE_', 'RECAPTCHA_', 'VITE_'],
   plugins: [react()],
   server: {
-    port: 3000,
+    port: 3002,
     allowedHosts: true,
   },
   preview: {
-    port: 3000,
+    port: 3002,
   },
   publicDir: 'static',
   build: {

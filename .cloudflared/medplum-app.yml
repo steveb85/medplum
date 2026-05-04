@@ -3,5 +3,5 @@ credentials-file: /Users/stephenbartlett/.cloudflared/c0f02d28-9817-4909-a156-97
 
 ingress:
   - hostname: app-dev.studioassistant.io
-    service: http://localhost:3001
+    service: http://localhost:3002
   - service: http_status:404

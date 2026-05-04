@@ -1,44 +1,43 @@
-/* Hide default RBC event label to avoid double-rendering with custom event component */
+/* Show event time label with smaller text */
 .rbc-event .rbc-event-label {
-  display: none;
+  display: none !important;
+  font-size: 10px;
+  color: #666;
+  margin-right: 4px;
 }
 
-/* Clean up event content wrapper */
-.rbc-event .rbc-event-content {
-  padding: 0;
-  width: 100%;
-  overflow: visible;
-}
-
-/* Remove default RBC event styling */
+/* Let RBC control event height via inline styles */
 .rbc-event {
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  margin: 0;
-  overflow: visible;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  margin: 0 2px 0 0 !important;
+  overflow: visible !important;
 }
 
 .rbc-event:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.04) !important;
 }
 
 .rbc-event:focus {
-  outline: none;
-}
-
-/* Remove RBC event label entirely */
-.rbc-event-label {
-  display: none;
+  outline: none !important;
 }
 
 /* Ensure event column doesn't clip borders */
 .rbc-events-container {
-  overflow: visible;
+  overflow: visible !important;
 }
 
-/* Add right margin so adjacent events don't overlap our border */
-.rbc-event {
-  margin-right: 2px;
+/* Event content fills the event container */
+.rbc-event-content {
+  overflow: visible !important;
+}
+
+/* Double the height of time slots for better visibility */
+.rbc-timeslot-group {
+  min-height: 80px !important;
+}
+.rbc-event-content > :first-child {
+  height: 100% !important;
 }

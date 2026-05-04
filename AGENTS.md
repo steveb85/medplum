@@ -15,9 +15,11 @@
 ## 1. Quick Context
 
 ### What Is This
+
 Medplum-based EMR (Electronic Medical Record) for **Nurse Melissa Knudson's** independent aesthetic nursing practice in NYC (Tribeca). Custom-built on top of the Medplum open-source FHIR platform.
 
 ### Architecture
+
 - **Backend**: Medplum Server (Node.js + TypeScript + FHIR R4)
 - **Database**: PostgreSQL + Redis
 - **Frontend**: Medplum Provider App (React + TypeScript + Medplum React SDK)
@@ -25,10 +27,11 @@ Medplum-based EMR (Electronic Medical Record) for **Nurse Melissa Knudson's** in
 - **Auth**: Medplum OAuth2 with custom role-based access (Provider vs Coordinator)
 
 ### Current URLs
-| Environment | App URL | API URL |
-|-------------|---------|---------|
+
+| Environment     | App URL                            | API URL                            |
+| --------------- | ---------------------------------- | ---------------------------------- |
 | **Development** | https://app-dev.studioassistant.io | https://api-dev.studioassistant.io |
-| **Production** | TBD | TBD |
+| **Production**  | TBD                                | TBD                                |
 
 > **Note**: Dev URLs are served via Cloudflare tunnels (see Section 8)
 
@@ -41,11 +44,13 @@ Medplum-based EMR (Electronic Medical Record) for **Nurse Melissa Knudson's** in
 **Why**: Required for external webhook integrations (Twilio SMS, Stripe payments) to reach your local dev server.
 
 **How it works**:
+
 - Creates secure tunnels from public URLs to your local machine
 - Allows testing webhooks without deploying to production
-- Two tunnels: one for the React app (port 3000), one for the API server (port 8103)
+- Two tunnels: one for the React app (port 3002), one for the API server (port 8103)
 
 **To start tunnels** (run in 2 separate terminals from repo root):
+
 ```bash
 cloudflared tunnel --config .cloudflared/medplum-app.yml run
 cloudflared tunnel --config .cloudflared/medplum-api.yml run
@@ -54,16 +59,20 @@ cloudflared tunnel --config .cloudflared/medplum-api.yml run
 ### Standard Dev Setup
 
 1. **Infrastructure** (Terminal 1):
+
    ```bash
    docker-compose up
    ```
+
    - PostgreSQL on 5432
    - Redis on 6379
 
 2. **Server** (Terminal 2):
+
    ```bash
    cd packages/server && npm run dev
    ```
+
    - API at http://localhost:8103
    - Auto-seeds test data
 
@@ -71,7 +80,8 @@ cloudflared tunnel --config .cloudflared/medplum-api.yml run
    ```bash
    cd packages/app && npm run dev
    ```
-   - App at http://localhost:3000
+
+   - App at http://localhost:3002
 
 ---
 
@@ -138,30 +148,32 @@ packages/app/src/
 └── auth/
     └── role.ts         # Role utils: getMedSpaRole(), isMainProviderEligible(), isAssistantEligible()
 ```
+
 packages/app/src/
-├── components/                 # Shared components
-│   ├── CreateAppointmentModal.tsx    # Legacy booking modal (edit mode)
-│   ├── CreateAppointmentModalV2.tsx  # NEW: 5-step multi-service booking modal
-│   └── ...
-├── nurse-mel/                  # Nurse Mel specific features
-│   ├── BotoxTreatmentPage.tsx  # Botox workflow
-│   ├── PhotoUploadSection.tsx  # Before/after photo handling
-│   ├── TreatmentsTab.tsx       # Patient treatments list (NOW SHOWS APPOINTMENTS)
-│   └── ...
-├── treatments/                 # Treatment detail pages
-│   ├── FillerTreatmentPage.tsx
-│   ├── LaserTreatmentPage.tsx
-│   ├── ConsultationTreatmentPage.tsx
-│   └── shared/                 # Shared treatment components
-│       ├── useTreatmentData.ts
-│       ├── TreatmentHeader.tsx
-│       ├── TreatmentStatusAlert.tsx
-│       └── getTreatmentType.ts   # Service type routing logic
-├── pages/                      # Top-level pages
-│   ├── CalendarPage.tsx        # Scheduling with drag-to-create
-│   └── BookingsPage.tsx        # Practice-wide bookings list (NOW SHOWS APPOINTMENTS)
+├── components/ # Shared components
+│ ├── CreateAppointmentModal.tsx # Legacy booking modal (edit mode)
+│ ├── CreateAppointmentModalV2.tsx # NEW: 5-step multi-service booking modal
+│ └── ...
+├── nurse-mel/ # Nurse Mel specific features
+│ ├── BotoxTreatmentPage.tsx # Botox workflow
+│ ├── PhotoUploadSection.tsx # Before/after photo handling
+│ ├── TreatmentsTab.tsx # Patient treatments list (NOW SHOWS APPOINTMENTS)
+│ └── ...
+├── treatments/ # Treatment detail pages
+│ ├── FillerTreatmentPage.tsx
+│ ├── LaserTreatmentPage.tsx
+│ ├── ConsultationTreatmentPage.tsx
+│ └── shared/ # Shared treatment components
+│ ├── useTreatmentData.ts
+│ ├── TreatmentHeader.tsx
+│ ├── TreatmentStatusAlert.tsx
+│ └── getTreatmentType.ts # Service type routing logic
+├── pages/ # Top-level pages
+│ ├── CalendarPage.tsx # Scheduling with drag-to-create
+│ └── BookingsPage.tsx # Practice-wide bookings list (NOW SHOWS APPOINTMENTS)
 └── auth/
-    └── role.ts                 # Role utils: getMedSpaRole(), isMainProviderEligible(), isAssistantEligible()
+└── role.ts # Role utils: getMedSpaRole(), isMainProviderEligible(), isAssistantEligible()
+
 ```
 
 ---
@@ -217,13 +229,15 @@ packages/app/src/
 
 **WORKFLOW CORRECTION (April 27, 2026):**
 ```
+
 OLD (WRONG): coordinator → pending, provider → booked (skipped deposit!)
 NEW (CORRECT): ALL bookings → PENDING → Send Payment Link → PAID/WAIVED → BOOKED
 
 All bookings start as PENDING regardless of who creates them.
 Booking stays PENDING until deposit is paid or waived.
 "Approve" button replaced with "Send Payment Link" button.
-```
+
+````
 
 ### 🔄 IN PROGRESS
 
@@ -507,7 +521,7 @@ if (linkedApptExtension?.valueReference?.reference?.startsWith('Appointment/')) 
   const appt = await medplum.readResource('Appointment', appointmentId);
   setAppointment(appt);
 }
-```
+````
 
 ### Storing Multiple Providers
 
@@ -602,9 +616,9 @@ await recordDepositPaid(
   serviceRequest,
   depositAmount,
   currentUserPractitioner,
-  'manual',           // paymentType: 'manual' | 'online'
-  actualPaidAmount,   // optional
-  paymentNotes        // optional
+  'manual', // paymentType: 'manual' | 'online'
+  actualPaidAmount, // optional
+  paymentNotes // optional
 );
 
 // Example: Send payment link
@@ -613,12 +627,13 @@ await recordDepositRequested(
   patient,
   serviceRequest,
   depositAmount,
-  'sms+email',        // method: 'sms' | 'email' | 'sms+email'
+  'sms+email', // method: 'sms' | 'email' | 'sms+email'
   currentUserPractitioner
 );
 ```
 
 **How State Reconstruction Works**:
+
 1. `getDepositStatusFromAuditEvents()` queries all AuditEvents for the patient
 2. Filters to deposit/payment-related events (description contains 'deposit', 'payment', 'refund')
 3. Sorts chronologically
@@ -626,6 +641,7 @@ await recordDepositRequested(
 5. Handles undo/refund by reverting status appropriately
 
 **AuditEvent Description Patterns**:
+
 - `Deposit paid via manual by ...` → status: 'paid'
 - `Deposit requested via sms+email by ...` → status: 'requested'
 - `Deposit waived: ...` → status: 'waived'
@@ -633,10 +649,12 @@ await recordDepositRequested(
 - `Refund of $... issued by ...: ...` → status: 'requested'
 
 **Files**:
+
 - `/packages/app/src/utils/audit-events.ts` - All audit functions
 - `/packages/app/src/pages/BookingDetailPage.tsx` - Usage examples
 
 **Legacy Code**:
+
 - `utils/payments.ts` → `getDepositStatus()` marked as @deprecated (kept for BookingsPage display only)
 - `utils/payments.ts` → `buildDepositInfoExtensions()` marked as @deprecated (DO NOT USE)
 - `utils/reminders.ts` → Still uses `getDepositStatus()` (NOT CURRENTLY USED by any component, migration needed when activated)
@@ -717,35 +735,38 @@ extension: [
 ## 7. FHIR Compliance & HIPAA Considerations
 
 ### PHI Handling
+
 - All patient data stored as FHIR resources (Patient, Appointment, Procedure, Media)
 - Photos stored as Media resources with S3 Binary storage
 - AuditEvent resources automatically created by Medplum for all data access
 
 ### Extensions (Custom, but Standards-Compliant)
+
 All custom extensions use the base URL: `http://melissaknudson.com/fhir/StructureDefinition/`
 
-| Extension | Purpose | FHIR Compliant |
-|-----------|---------|----------------|
-| `linked-appointment` | Links Procedure to Appointment | ✅ Yes |
-| `treatment-areas` | Text list of treated areas | ✅ Yes |
-| `units-used` | Total units injected | ✅ Yes |
-| `product-brand` | Botox/Dysport/etc brand | ✅ Yes |
-| `injection-map` | Complex marker data | ✅ Yes |
-| `related-procedure` | Links Media to Procedure | ✅ Yes |
-| `status-change-audit` | Who changed status when | ✅ Yes |
-| `last-edited` | Edit timestamp | ✅ Yes |
-| `edited-by` | Editor reference | ✅ Yes |
-| `pronouns` | Patient pronouns | ✅ Yes |
-| `preferred-name` | Nickname/preferred name | ✅ Yes |
-| `referral-source` | How patient found practice | ✅ Yes |
-| `photo-release-accepted` | Photo consent status | ✅ Yes |
-| `medical-condition` | Medical condition type | ✅ Yes |
-| `aesthetic-treatment-history` | Previous aesthetic treatments | ✅ Yes |
-| `surgical-history` | Previous surgeries | ✅ Yes |
-| `skincare-routine` | Skincare details | ✅ Yes |
-| `contraindications` | Treatment contraindications | ✅ Yes |
+| Extension                     | Purpose                        | FHIR Compliant |
+| ----------------------------- | ------------------------------ | -------------- |
+| `linked-appointment`          | Links Procedure to Appointment | ✅ Yes         |
+| `treatment-areas`             | Text list of treated areas     | ✅ Yes         |
+| `units-used`                  | Total units injected           | ✅ Yes         |
+| `product-brand`               | Botox/Dysport/etc brand        | ✅ Yes         |
+| `injection-map`               | Complex marker data            | ✅ Yes         |
+| `related-procedure`           | Links Media to Procedure       | ✅ Yes         |
+| `status-change-audit`         | Who changed status when        | ✅ Yes         |
+| `last-edited`                 | Edit timestamp                 | ✅ Yes         |
+| `edited-by`                   | Editor reference               | ✅ Yes         |
+| `pronouns`                    | Patient pronouns               | ✅ Yes         |
+| `preferred-name`              | Nickname/preferred name        | ✅ Yes         |
+| `referral-source`             | How patient found practice     | ✅ Yes         |
+| `photo-release-accepted`      | Photo consent status           | ✅ Yes         |
+| `medical-condition`           | Medical condition type         | ✅ Yes         |
+| `aesthetic-treatment-history` | Previous aesthetic treatments  | ✅ Yes         |
+| `surgical-history`            | Previous surgeries             | ✅ Yes         |
+| `skincare-routine`            | Skincare details               | ✅ Yes         |
+| `contraindications`           | Treatment contraindications    | ✅ Yes         |
 
 ### Access Control
+
 - **Providers**: Full clinical access (RN qualification required)
 - **Coordinators**: Read-only patient view, can schedule/manage appointments
 - **Super Admin**: System administration
@@ -755,15 +776,18 @@ All custom extensions use the base URL: `http://melissaknudson.com/fhir/Structur
 ## 8. Integration Points
 
 ### Cloudflare Tunnels
+
 **Purpose**: Allow external services to reach local dev server for webhook testing.
 
 **Typical Flow**:
+
 ```
 Twilio Webhook → https://api-dev.studioassistant.io/webhook/sms → localhost:8103
 Stripe Webhook → https://api-dev.studioassistant.io/webhook/stripe → localhost:8103
 ```
 
 **Why This Matters**:
+
 - Twilio needs a public URL to send SMS status callbacks
 - Stripe needs a public URL for payment confirmation webhooks
 - Without tunnels, you'd have to deploy to test webhooks
@@ -776,20 +800,22 @@ Stripe Webhook → https://api-dev.studioassistant.io/webhook/stripe → localho
 
 **Key Concepts:**
 
-| Notification Type | Recipients | Use Case | Example |
-|-------------------|------------|----------|---------|
-| **Broadcast** | ALL practitioners | Patient messages, announcements | "Patient asking about pricing" |
-| **Targeted** | Specific providers | Provider-specific tasks | "New Botox appointment assigned to you" |
+| Notification Type | Recipients         | Use Case                        | Example                                 |
+| ----------------- | ------------------ | ------------------------------- | --------------------------------------- |
+| **Broadcast**     | ALL practitioners  | Patient messages, announcements | "Patient asking about pricing"          |
+| **Targeted**      | Specific providers | Provider-specific tasks         | "New Botox appointment assigned to you" |
 
 **When to Use Each:**
 
 **Broadcast to ALL staff:**
+
 - 🗣️ **Patient communications** - Incoming messages from patients (anyone can reply)
 - 📢 **Company announcements** - System maintenance, new features
 - 🚨 **Urgent alerts** - Building closure, emergency updates
 - 📋 **Shared inbox items** - Messages the entire practice needs to see
 
 **Targeted to SPECIFIC provider:**
+
 - 📅 **New bookings** - Only the assigned provider
 - 🔄 **Booking changes** - Reschedules, cancellations for that provider
 - 💉 **Treatment updates** - Patient ready for Botox, photos uploaded
@@ -797,26 +823,29 @@ Stripe Webhook → https://api-dev.studioassistant.io/webhook/stripe → localho
 - 📝 **Notes added** - Consultation notes on provider's patient
 
 **Why this matters:**
+
 - Broadcasts keep everyone informed (shared inbox concept - any staff can reply)
 - Targeted notifications reduce noise (only relevant people get interrupted)
 - Providers can focus on their patients without being interrupted by others' tasks
 
 ### Future Integrations
 
-| Service | Purpose | HIPAA Consideration |
-|---------|---------|---------------------|
-| **Twilio** | SMS reminders | Requires HIPAA plan |
-| **Stripe** | Payment deposits | Included in service |
-| **Resend** | Transactional email | Requires BAA |
-| **S3** | Photo storage | Encrypted + BAA |
+| Service    | Purpose             | HIPAA Consideration |
+| ---------- | ------------------- | ------------------- |
+| **Twilio** | SMS reminders       | Requires HIPAA plan |
+| **Stripe** | Payment deposits    | Included in service |
+| **Resend** | Transactional email | Requires BAA        |
+| **S3**     | Photo storage       | Encrypted + BAA     |
 
 ---
 
 ## 9. Common Issues & Solutions
 
 ### ESLint: React Hooks Rules
+
 **Error**: "React Hook is called conditionally"
 **Fix**: Declare ALL hooks before ANY conditional returns:
+
 ```typescript
 // BAD - hooks after return
 if (!procedureId) return <Loading />;
@@ -828,14 +857,17 @@ if (!procedureId) return <Loading />; // ✅ OK
 ```
 
 ### ESLint: Exhaustive Dependencies
+
 **Error**: "React Hook useCallback has a missing dependency"
 **Fix**: Add all referenced values to dependency array, or use `useRef` if you don't want to trigger updates.
 
 ### AsyncAutocomplete Not Showing Selected Value
+
 **Cause**: `defaultValue` only works on initial mount, but data loads async.
 **Fix**: Use `key` prop to force remount when data is ready (see Section 6).
 
 ### Photos Not Loading
+
 **Check**: Media resources need proper `related-procedure` extension with full `Procedure/${id}` reference.
 
 ---
@@ -864,17 +896,20 @@ Before marking a feature complete, verify:
 ## 11. Key Files Reference
 
 ### Configuration
+
 - `/packages/app/medplum.config.ts` - App configuration
 - `/packages/server/.env` - Server environment variables
 - `/.cloudflared/*.yml` - Tunnel configurations (not committed)
 
 ### Core Components (Modified)
+
 - `CreateAppointmentModal.tsx` - Booking creation & editing
 - `BotoxTreatmentPage.tsx` - Main Botox treatment workflow
 - `PhotoUploadSection.tsx` - Photo upload UI
 - `CalendarPage.tsx` - Scheduling calendar
 
 ### Intake Components
+
 - `PatientIntakePage.tsx` - New patient intake (self-service or coordinator)
 - `PatientEditPage.tsx` - Edit existing patient via full form
 - `IntakeWizard.tsx` - 8-step wizard container
@@ -883,6 +918,7 @@ Before marking a feature complete, verify:
 - `SignatureCanvas.tsx` - Digital signature capture
 
 ### Utility Functions
+
 - `getMedSpaRole()` - `/packages/app/src/auth/role.ts` - Role detection
 - `getTreatmentPageRoute()` - `/packages/app/src/treatments/shared/getTreatmentType.ts` - Service type routing
 - `loadPatientIntoForm()` - `/packages/app/src/intake/utils/loadPatient.ts` - FHIR to form data
@@ -893,6 +929,7 @@ Before marking a feature complete, verify:
 ## 12. Session History
 
 ### April 23, 2026
+
 - Fixed ESLint hooks errors in BotoxTreatmentPage.tsx
 - Implemented Edit Booking functionality with audit trail
 - Fixed provider prefilling in CreateAppointmentModal
@@ -901,16 +938,19 @@ Before marking a feature complete, verify:
 - Added getTreatmentPageRoute() utility for navigation on service type change
 
 ### April 22, 2026
+
 - Started implementation of edit booking feature
 - Created shared treatment components (TreatmentHeader, TreatmentStatusAlert)
 - Identified issue with assistant provider not being stored in procedure
 
 ### Earlier Sessions
+
 - See INSTRUCTIONS.md and project-context.md for full history
 
 ---
 
 **Document Maintenance**: Update this file after each development session with:
+
 1. New/modified files
 2. Architecture decisions
 3. New patterns discovered
@@ -926,6 +966,7 @@ Before marking a feature complete, verify:
 **New Feature: Booking Approval & Status Management**
 
 **Files Modified:**
+
 1. **`/packages/app/src/pages/BookingsPage.tsx`**
    - Added "Pending Approval" tab showing pending bookings
    - Added "Approve" button for pending bookings (green checkmark)
@@ -943,6 +984,7 @@ Before marking a feature complete, verify:
    - Sends to assigned providers on status changes
 
 **Status Transition Rules:**
+
 ```
 pending → booked (Approve)
 booked → arrived (Mark Arrived)
@@ -952,9 +994,9 @@ arrived → fulfilled (Complete treatment)
 ```
 
 **Audit Trail Extensions:**
+
 - `status-change-audit`: tracks from → to, timestamp, changedBy
 - `cancellation-reason`: stores cancellation reason
-
 
 ---
 
@@ -965,17 +1007,18 @@ arrived → fulfilled (Complete treatment)
 **Phase 1: Configuration & Setup**
 
 **Files Modified:**
+
 1. **`/packages/app/src/pages/admin/ServiceCatalogPage.tsx`**
    - Added deposit configuration: `depositAmount`, `depositReminders`, `depositReminderInterval`
    - Added follow-up schedule: `followUpSchedule` JSON array
    - Added per-provider rates: `providerRates` JSON array (advanced feature for multi-provider pricing)
 
-**Files Created:**
-2. **`/packages/app/src/utils/payments.ts`** (NEW)
-   - Deposit status management (`pending`, `requested`, `paid`, `waived`)
-   - Payment link expiry calculation (96h default, dynamic based on appointment proximity)
-   - Auto-cancel logic (96h or 48h before appointment)
-   - Deposit amount formatting and validation
+**Files Created:** 2. **`/packages/app/src/utils/payments.ts`** (NEW)
+
+- Deposit status management (`pending`, `requested`, `paid`, `waived`)
+- Payment link expiry calculation (96h default, dynamic based on appointment proximity)
+- Auto-cancel logic (96h or 48h before appointment)
+- Deposit amount formatting and validation
 
 3. **`/packages/app/src/utils/sms.ts`** (NEW)
    - Twilio SMS integration
@@ -989,32 +1032,32 @@ arrived → fulfilled (Complete treatment)
 
 **Phase 2: Booking Detail Page**
 
-**Files Created:**
-5. **`/packages/app/src/pages/BookingDetailPage.tsx`** (NEW)
-   - Full booking details display (patient, services, providers, room)
-   - Deposit management section with status badge
-   - Custom deposit amount override
-   - "Send Payment Link" button (triggers SMS + Email)
-   - "Mark as Paid" button for manual payment entry
-   - "Waive Deposit" with reason input
-   - Status actions: Approve, Mark Arrived, Mark No-Show, Cancel, Uncancel
-   - Activity history timeline (audit trail)
+**Files Created:** 5. **`/packages/app/src/pages/BookingDetailPage.tsx`** (NEW)
 
-**Files Modified:**
-6. **`/packages/app/src/AppRoutes.tsx`**
-   - Added route `/bookings/:id` → BookingDetailPage
+- Full booking details display (patient, services, providers, room)
+- Deposit management section with status badge
+- Custom deposit amount override
+- "Send Payment Link" button (triggers SMS + Email)
+- "Mark as Paid" button for manual payment entry
+- "Waive Deposit" with reason input
+- Status actions: Approve, Mark Arrived, Mark No-Show, Cancel, Uncancel
+- Activity history timeline (audit trail)
+
+**Files Modified:** 6. **`/packages/app/src/AppRoutes.tsx`**
+
+- Added route `/bookings/:id` → BookingDetailPage
 
 7. **`/packages/app/src/pages/BookingsPage.tsx`**
    - Updated eye icon to link to `/bookings/:id` (detail page)
 
 **Phase 3: Server-Side Webhooks**
 
-**Files Created:**
-8. **`/packages/server/src/webhooks/stripe.ts`** (NEW)
-   - Stripe webhook handler for payment events
-   - Updates appointment deposit status on payment success
-   - Creates `deposit-info` extension with payment details
-   - `createStripePaymentLink()` function for generating checkout URLs
+**Files Created:** 8. **`/packages/server/src/webhooks/stripe.ts`** (NEW)
+
+- Stripe webhook handler for payment events
+- Updates appointment deposit status on payment success
+- Creates `deposit-info` extension with payment details
+- `createStripePaymentLink()` function for generating checkout URLs
 
 9. **`/packages/server/src/webhooks/twilio.ts`** (NEW)
    - Incoming SMS webhook handler
@@ -1024,15 +1067,10 @@ arrived → fulfilled (Complete treatment)
 
 **Phase 4: Automated Reminders**
 
-**Files Created:**
-10. **`/packages/app/src/utils/reminders.ts`** (NEW)
-    - Deposit reminder scheduler (every 24h, max 4)
-    - Auto-cancel warning (24h before auto-cancel)
-    - Appointment reminders (24h and 2h before)
-    - Post-treatment follow-ups (per-service schedule)
-    - Upcoming reminders display for booking detail page
+**Files Created:** 10. **`/packages/app/src/utils/reminders.ts`** (NEW) - Deposit reminder scheduler (every 24h, max 4) - Auto-cancel warning (24h before auto-cancel) - Appointment reminders (24h and 2h before) - Post-treatment follow-ups (per-service schedule) - Upcoming reminders display for booking detail page
 
 **Environment Variables Added:**
+
 ```bash
 # Twilio
 TWILIO_ACCOUNT_SID=xxx
@@ -1065,6 +1103,7 @@ PAYMENT_LINK_BASE_URL=https://api-dev.studioassistant.io/pay
 | `sms-metadata` | Stores Twilio message metadata | Yes |
 
 **Architecture Decisions Made:**
+
 - **Deposit Status Flow**: `pending` → `requested` → `paid` | `waived`
 - **Dynamic Payment Link Expiry**: 96h default, adjusted based on appointment proximity
 - **Auto-Cancel Logic**: 96h since request OR 48h before appointment (whichever first)
@@ -1073,6 +1112,7 @@ PAYMENT_LINK_BASE_URL=https://api-dev.studioassistant.io/pay
 - **Sandbox Mode**: SMS/Email log to console in development, don't actually send
 
 **Next Phase:**
+
 - Phase 4: Split Calendar Events (numbing blocks separate from treatment blocks)
 - Phase 5: Booking creation with automatic deposit request (when approved)
 
@@ -1092,37 +1132,16 @@ A comprehensive 8-step patient intake form that supports both self-service (pati
 **Files Created (New Intake Module):**
 
 **Core Components:**
+
 1. **`/packages/app/src/intake/PatientIntakePage.tsx`** - Main entry point with mode detection
 2. **`/packages/app/src/intake/IntakeWizard.tsx`** - 8-step wizard container with navigation
 3. **`/packages/app/src/intake/PatientEditPage.tsx`** - Edit existing patients via full form
 
-**Form Sections:**
-4. **`/packages/app/src/intake/sections/WelcomeSection.tsx`** - HIPAA, Terms, Photo Release consent
-5. **`/packages/app/src/intake/sections/DemographicsSection.tsx`** - Name, DOB, pronouns, contact info
-6. **`/packages/app/src/intake/sections/EmergencyContactSection.tsx`** - Emergency contact details
-7. **`/packages/app/src/intake/sections/InsuranceSection.tsx`** - Insurance information
-8. **`/packages/app/src/intake/sections/MedicalHistorySection.tsx`** - Conditions, medications, allergies
-9. **`/packages/app/src/intake/sections/TreatmentGoalsSection.tsx`** - Aesthetic concerns, areas
-10. **`/packages/app/src/intake/sections/ContraindicationsSection.tsx`** - Pregnancy, sun exposure, infections
-11. **`/packages/app/src/intake/sections/ReviewSection.tsx`** - Summary and signature
+**Form Sections:** 4. **`/packages/app/src/intake/sections/WelcomeSection.tsx`** - HIPAA, Terms, Photo Release consent 5. **`/packages/app/src/intake/sections/DemographicsSection.tsx`** - Name, DOB, pronouns, contact info 6. **`/packages/app/src/intake/sections/EmergencyContactSection.tsx`** - Emergency contact details 7. **`/packages/app/src/intake/sections/InsuranceSection.tsx`** - Insurance information 8. **`/packages/app/src/intake/sections/MedicalHistorySection.tsx`** - Conditions, medications, allergies 9. **`/packages/app/src/intake/sections/TreatmentGoalsSection.tsx`** - Aesthetic concerns, areas 10. **`/packages/app/src/intake/sections/ContraindicationsSection.tsx`** - Pregnancy, sun exposure, infections 11. **`/packages/app/src/intake/sections/ReviewSection.tsx`** - Summary and signature
 
-**Components:**
-12. **`/packages/app/src/intake/components/DOBInput.tsx`** - Year/month/day dropdowns (no timezone issues)
-13. **`/packages/app/src/intake/components/SignatureCanvas.tsx`** - Digital signature capture with mouse offset fix
-14. **`/packages/app/src/intake/components/MedicationInput.tsx`** - Medication entry with special flags
-15. **`/packages/app/src/intake/components/AllergyInput.tsx`** - Allergy entry
-16. **`/packages/app/src/intake/components/ProgressBar.tsx`** - Step navigation indicator
-17. **`/packages/app/src/intake/components/IntakeSuccess.tsx`** - Post-submission success screen
-18. **`/packages/app/src/intake/components/BlockerAlert.tsx`** - Treatment blocker warnings
-19. **`/packages/app/src/intake/components/DuplicateCheckModal.tsx`** - Duplicate patient detection
+**Components:** 12. **`/packages/app/src/intake/components/DOBInput.tsx`** - Year/month/day dropdowns (no timezone issues) 13. **`/packages/app/src/intake/components/SignatureCanvas.tsx`** - Digital signature capture with mouse offset fix 14. **`/packages/app/src/intake/components/MedicationInput.tsx`** - Medication entry with special flags 15. **`/packages/app/src/intake/components/AllergyInput.tsx`** - Allergy entry 16. **`/packages/app/src/intake/components/ProgressBar.tsx`** - Step navigation indicator 17. **`/packages/app/src/intake/components/IntakeSuccess.tsx`** - Post-submission success screen 18. **`/packages/app/src/intake/components/BlockerAlert.tsx`** - Treatment blocker warnings 19. **`/packages/app/src/intake/components/DuplicateCheckModal.tsx`** - Duplicate patient detection
 
-**Utils & Hooks:**
-20. **`/packages/app/src/intake/utils/intakeToFhir.ts`** - Transforms form data to FHIR resources
-21. **`/packages/app/src/intake/utils/loadPatient.ts`** - Loads FHIR resources back into form (for editing)
-22. **`/packages/app/src/intake/utils/validation.ts`** - Form validation logic
-23. **`/packages/app/src/intake/utils/formatters.ts`** - Display formatting utilities
-24. **`/packages/app/src/intake/hooks/useIntakeSubmission.ts`** - Form submission (create/update)
-25. **`/packages/app/src/intake/hooks/useIntakeDraft.ts`** - Draft auto-save functionality
+**Utils & Hooks:** 20. **`/packages/app/src/intake/utils/intakeToFhir.ts`** - Transforms form data to FHIR resources 21. **`/packages/app/src/intake/utils/loadPatient.ts`** - Loads FHIR resources back into form (for editing) 22. **`/packages/app/src/intake/utils/validation.ts`** - Form validation logic 23. **`/packages/app/src/intake/utils/formatters.ts`** - Display formatting utilities 24. **`/packages/app/src/intake/hooks/useIntakeSubmission.ts`** - Form submission (create/update) 25. **`/packages/app/src/intake/hooks/useIntakeDraft.ts`** - Draft auto-save functionality
 
 **Files Modified:**
 
@@ -1182,29 +1201,34 @@ A comprehensive 8-step patient intake form that supports both self-service (pati
 **Key Implementation Decisions:**
 
 **Date Handling:**
+
 - DOB stored as ISO string (YYYY-MM-DD) - no Date objects
 - No timezone issues by using string format throughout
 - DOBInput uses 3 dropdowns: Year, Month, Day
 
 **Form Data Flow:**
+
 - `IntakeFormData` interface - single source of truth
 - Each section receives `data` and `onChange` callback
 - State managed in `IntakeWizard` top-level
 - No form libraries (controlled components only)
 
 **FHIR Integration:**
+
 - Extensions only added when values exist (avoid empty extensions)
 - All resources linked to Patient via references
 - QuestionnaireResponse stores raw data for audit
 - RelatedPerson for emergency contact (separate resource)
 
 **Edit Mode:**
+
 - `loadPatient.ts` converts FHIR resources back to form data
 - Full replace strategy: delete old related resources, create new ones
 - Patient record updated (not recreated) to preserve ID
 - All staff roles can edit (assistants, providers, coordinators, admins)
 
 **Validation Rules:**
+
 - Required fields per step (see table above)
 - Email format validation
 - Phone format validation
@@ -1219,11 +1243,13 @@ A comprehensive 8-step patient intake form that supports both self-service (pati
 | `/Patient/:id/patient-info` | Edit existing patient | Edit mode |
 
 **Menu Items:**
+
 - Sidebar: "New Patient Intake" (links to `/intake`)
 - Patient page: "Edit Patient" button (all staff)
 - Patient tabs: "Patient Info" tab
 
 **Success Screen:**
+
 - Shows after successful intake submission
 - Green checkmark, patient name, patient ID
 - "What's Next" information

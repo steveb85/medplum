@@ -1,25 +1,45 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { Title, Paper, Stack, Group, Button, Select, MultiSelect, Chip, Badge, Tooltip, Text as MantineText } from '@mantine/core';
-import { getReferenceString } from '@medplum/core';
-import { useMedplum } from '@medplum/react';
+import {
+  Badge,
+  Button,
+  Chip,
+  Group,
+  Text as MantineText,
+  MultiSelect,
+  Paper,
+  Select,
+  Stack,
+  Title,
+  Tooltip,
+} from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import type { Appointment, ServiceRequest, Device, Practitioner } from '@medplum/fhirtypes';
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar as ReactBigCalendar, momentLocalizer } from 'react-big-calendar';
-import type { View, EventProps } from 'react-big-calendar';
-import 'react-big-calendar/lib/css/react-big-calendar.css';
-import './CalendarPage.css';
+import { getReferenceString } from '@medplum/core';
+import type { Appointment, Device, Practitioner, ServiceRequest } from '@medplum/fhirtypes';
+import { useMedplum } from '@medplum/react';
+import { IconFilter, IconPlus, IconTool } from '@tabler/icons-react';
+import dayjs from 'dayjs';
 import moment from 'moment';
 import 'moment-timezone';
-import dayjs from 'dayjs';
-import { IconPlus, IconFilter, IconTool } from '@tabler/icons-react';
 import type { JSX } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { EventProps, View } from 'react-big-calendar';
+import { Calendar as ReactBigCalendar, momentLocalizer } from 'react-big-calendar';
+import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { CreateAppointmentModalV3 } from '../components/CreateAppointmentModalV3';
 import { EXTENSION_URLS } from '../utils/fhir-extensions';
+import './CalendarPage.css';
 
 const EXTENSION_URL_SERVICE_POSITION = 'http://melissaknudson.com/fhir/StructureDefinition/service-position';
+
+function hexToRgba(hex: string, alpha: number): string {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) {
+    return `rgba(0,0,0,${alpha})`;
+  }
+  return `rgba(${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}, ${alpha})`;
+}
 
 function getDeviceName(device: Device): string {
   return device.deviceName?.[0]?.name || device.id || 'Unknown';
@@ -28,13 +48,19 @@ function getDeviceName(device: Device): string {
 moment.tz.setDefault(Intl.DateTimeFormat().resolvedOptions().timeZone);
 const localizer = momentLocalizer(moment);
 
-const CALENDAR_MIN_TIME = new Date(1970, 0, 1, 8, 0, 0);
-const CALENDAR_MAX_TIME = new Date(1970, 0, 1, 20, 0, 0);
+const CALENDAR_MIN_TIME = new Date(2024, 0, 1, 8, 0, 0);
+const CALENDAR_MAX_TIME = new Date(2024, 0, 1, 20, 0, 0);
 
 const ROOM_LABELS: Record<string, string> = {
   'room-1': 'R1',
   'room-2': 'R2',
   'room-3': 'R3',
+};
+
+const ROOM_COLORS: Record<string, string> = {
+  'room-1': '#e3f2fd', // Light blue
+  'room-2': '#e8f5e9', // Light green
+  'room-3': '#fff3e0', // Light orange
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -70,44 +96,42 @@ function parseServiceEvent(
   allServiceRequests: ServiceRequest[],
   allEquipment: Device[]
 ): CalendarServiceEvent {
-  const patientParticipant = appointment.participant?.find(
-    p => p.actor?.reference?.startsWith('Patient/')
-  );
+  const patientParticipant = appointment.participant?.find((p) => p.actor?.reference?.startsWith('Patient/'));
   const patientName = patientParticipant?.actor?.display || 'Unknown Patient';
 
   const serviceName = sr.code?.text || sr.code?.coding?.[0]?.display || 'Service';
 
-  const roomExt = sr.extension?.find(e => e.url === EXTENSION_URLS.serviceRequest.assignedRoom);
+  const roomExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.assignedRoom);
   const room = (roomExt?.valueString as string) || 'room-1';
 
-  const equipmentExts = sr.extension?.filter(e => e.url === EXTENSION_URLS.serviceRequest.assignedEquipment) || [];
+  const equipmentExts = sr.extension?.filter((e) => e.url === EXTENSION_URLS.serviceRequest.assignedEquipment) || [];
   const equipment = equipmentExts
-    .map(e => e.valueReference?.reference)
+    .map((e) => e.valueReference?.reference)
     .filter(Boolean)
-    .map(ref => {
+    .map((ref) => {
       const deviceId = ref?.split('/')[1];
-      const device = allEquipment.find(d => d.id === deviceId);
-      return device ? getDeviceName(device) : (deviceId || '');
+      const device = allEquipment.find((d) => d.id === deviceId);
+      return device ? getDeviceName(device) : deviceId || '';
     });
 
-  const statusExt = sr.extension?.find(e => e.url === EXTENSION_URLS.serviceRequest.serviceStatus);
+  const statusExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.serviceStatus);
   const status = (statusExt?.valueString as string) || appointment.status || 'pending';
 
-  const sequenceExt = sr.extension?.find(e => e.url === EXTENSION_URL_SERVICE_POSITION);
+  const sequenceExt = sr.extension?.find((e) => e.url === EXTENSION_URL_SERVICE_POSITION);
   const sequence = (sequenceExt?.valueInteger as number) || 1;
 
   const sortedServices = allServiceRequests
-    .filter(s => {
-      const srApptExt = s.extension?.find(e => e.url === EXTENSION_URLS.common.linkedAppointment);
+    .filter((s) => {
+      const srApptExt = s.extension?.find((e) => e.url === EXTENSION_URLS.common.linkedAppointment);
       return srApptExt?.valueReference?.reference === getReferenceString(appointment);
     })
     .sort((a, b) => {
-      const seqA = (a.extension?.find(e => e.url === EXTENSION_URL_SERVICE_POSITION)?.valueInteger as number) || 1;
-      const seqB = (b.extension?.find(e => e.url === EXTENSION_URL_SERVICE_POSITION)?.valueInteger as number) || 1;
+      const seqA = (a.extension?.find((e) => e.url === EXTENSION_URL_SERVICE_POSITION)?.valueInteger as number) || 1;
+      const seqB = (b.extension?.find((e) => e.url === EXTENSION_URL_SERVICE_POSITION)?.valueInteger as number) || 1;
       return seqA - seqB;
     });
 
-  const serviceIndex = sortedServices.findIndex(s => s.id === sr.id);
+  const serviceIndex = sortedServices.findIndex((s) => s.id === sr.id);
   const apptStart = moment(appointment.start || new Date());
 
   // Calculate sequential start/end times using each service's actual duration
@@ -116,7 +140,7 @@ function parseServiceEvent(
   let currentTime = apptStart.clone();
   for (let i = 0; i < sortedServices.length; i++) {
     const svc = sortedServices[i];
-    const durationExt = svc.extension?.find(e => e.url === EXTENSION_URLS.serviceRequest.actualDuration);
+    const durationExt = svc.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.actualDuration);
     const duration = (durationExt?.valueInteger as number) || 60;
     if (i === serviceIndex) {
       serviceStart = currentTime.clone();
@@ -154,14 +178,33 @@ function ServiceCalendarEvent({ event }: EventProps<CalendarServiceEvent>): JSX.
   const { resource } = event;
   const roomLabel = ROOM_LABELS[resource.room] || resource.room.replace('room-', 'R');
   const statusColor = STATUS_COLORS[resource.status] || '#868e96';
-
+  const roomColor = ROOM_COLORS[resource.room] || '#f8f9fa';
+  const getProviderInitials = (): string => {
+    const performers = resource.serviceRequest.performer || [];
+    // Try to get main provider first, then assistant
+    const mainProvider = performers[0]?.display;
+    const assistant = performers[1]?.display;
+    const nameToUse = mainProvider || assistant || '';
+    if (!nameToUse) {
+      return '';
+    }
+    const nameParts = nameToUse.split(' ');
+    const initials = nameParts.map((p: string) => p[0]).join('');
+    return initials.toUpperCase();
+  };
+  const providerInitials = getProviderInitials();
+  console.log('Rendering event:', providerInitials, resource.serviceRequest.performer);
   return (
     <Tooltip
       label={
         <div>
-          <div><strong>{resource.patientName}</strong></div>
+          <div>
+            <strong>{resource.patientName}</strong>
+          </div>
           <div>{resource.serviceName}</div>
-          <div>Room: {roomLabel} | Seq: #{resource.sequence}</div>
+          <div>
+            Room: {roomLabel} | Seq: #{resource.sequence}
+          </div>
           {resource.equipment.length > 0 && <div>Equipment: {resource.equipment.join(', ')}</div>}
           <div>Status: {resource.status}</div>
         </div>
@@ -176,15 +219,24 @@ function ServiceCalendarEvent({ event }: EventProps<CalendarServiceEvent>): JSX.
           padding: '2px 4px',
           borderRadius: 4,
           borderLeft: `3px solid ${statusColor}`,
+          backgroundColor: roomColor,
+          color: '#000',
           fontSize: 12,
           overflow: 'hidden',
           whiteSpace: 'nowrap',
           textOverflow: 'ellipsis',
         }}
       >
-        <Badge size="xs" variant="filled" color={statusColor} style={{ fontSize: 9, padding: '0 3px', minWidth: 24, textAlign: 'center' }}>
-          {roomLabel}
-        </Badge>
+        {providerInitials && (
+          <Badge
+            size="xs"
+            variant="filled"
+            color={statusColor}
+            style={{ fontSize: 9, padding: '0 3px', minWidth: 24, textAlign: 'center' }}
+          >
+            {providerInitials}
+          </Badge>
+        )}
         {resource.equipment.length > 0 && <IconTool size={12} />}
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{resource.patientName}</span>
       </div>
@@ -214,8 +266,11 @@ export function CalendarPage(): JSX.Element {
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null);
 
   useEffect(() => {
-    if (isMobile && view !== 'day') {
+    const set = async (): Promise<void> => {
       setView('day');
+    };
+    if (isMobile && view !== 'day') {
+      set().catch(console.error);
     }
   }, [isMobile, view]);
 
@@ -223,8 +278,12 @@ export function CalendarPage(): JSX.Element {
     try {
       setLoading(true);
 
-      const startDate = dayjs(date).startOf(view === 'month' ? 'month' : view).format('YYYY-MM-DDTHH:mm:ss');
-      const endDate = dayjs(date).endOf(view === 'month' ? 'month' : view).format('YYYY-MM-DDTHH:mm:ss');
+      const startDate = dayjs(date)
+        .startOf(view === 'month' ? 'month' : view)
+        .format('YYYY-MM-DDTHH:mm:ss');
+      const endDate = dayjs(date)
+        .endOf(view === 'month' ? 'month' : view)
+        .format('YYYY-MM-DDTHH:mm:ss');
 
       const [apptsBundle, srsBundle, equipBundle, pracBundle] = await Promise.all([
         medplum.search('Appointment', {
@@ -240,10 +299,10 @@ export function CalendarPage(): JSX.Element {
         medplum.search('Practitioner', { _count: '50' }),
       ]);
 
-      setAppointments((apptsBundle.entry || []).map(e => e.resource as Appointment));
-      setServiceRequests((srsBundle.entry || []).map(e => e.resource as ServiceRequest));
-      setEquipment((equipBundle.entry || []).map(e => e.resource as Device));
-      setPractitioners((pracBundle.entry || []).map(e => e.resource as Practitioner));
+      setAppointments((apptsBundle.entry || []).map((e) => e.resource as Appointment));
+      setServiceRequests((srsBundle.entry || []).map((e) => e.resource as ServiceRequest));
+      setEquipment((equipBundle.entry || []).map((e) => e.resource as Device));
+      setPractitioners((pracBundle.entry || []).map((e) => e.resource as Practitioner));
     } catch (err) {
       console.error('Error loading calendar data:', err);
     } finally {
@@ -258,8 +317,8 @@ export function CalendarPage(): JSX.Element {
 
   const allRooms = useMemo(() => {
     const rooms = new Set<string>();
-    serviceRequests.forEach(sr => {
-      const roomExt = sr.extension?.find(e => e.url === EXTENSION_URLS.serviceRequest.assignedRoom);
+    serviceRequests.forEach((sr) => {
+      const roomExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.assignedRoom);
       if (roomExt?.valueString) {
         rooms.add(roomExt.valueString);
       }
@@ -268,7 +327,7 @@ export function CalendarPage(): JSX.Element {
   }, [serviceRequests]);
 
   const allEquipmentOptions = useMemo(() => {
-    return equipment.map(e => ({
+    return equipment.map((e) => ({
       value: e.id || '',
       label: getDeviceName(e),
     }));
@@ -276,8 +335,8 @@ export function CalendarPage(): JSX.Element {
 
   const allProviders = useMemo(() => {
     return practitioners
-      .filter(p => p.id && p.name)
-      .map(p => ({
+      .filter((p) => p.id && p.name)
+      .map((p) => ({
         value: p.id || '',
         label: `${p.name?.[0]?.given?.[0] || ''} ${p.name?.[0]?.family || ''}`.trim() || p.id || '',
       }));
@@ -286,8 +345,8 @@ export function CalendarPage(): JSX.Element {
   const events = useMemo(() => {
     const result: CalendarServiceEvent[] = [];
     for (const appt of appointments) {
-      const linkedSRs = serviceRequests.filter(sr => {
-        const srApptExt = sr.extension?.find(e => e.url === EXTENSION_URLS.common.linkedAppointment);
+      const linkedSRs = serviceRequests.filter((sr) => {
+        const srApptExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.common.linkedAppointment);
         return srApptExt?.valueReference?.reference === getReferenceString(appt);
       });
       for (const sr of linkedSRs) {
@@ -295,14 +354,14 @@ export function CalendarPage(): JSX.Element {
       }
     }
 
-    return result.filter(e => {
+    return result.filter((e) => {
       if (roomFilter.length > 0 && !roomFilter.includes(e.resource.room)) {
         return false;
       }
       if (providerFilter.length > 0) {
         const sr = e.resource.serviceRequest;
         const performers = sr.performer || [];
-        const hasMatchingProvider = performers.some(p => {
+        const hasMatchingProvider = performers.some((p) => {
           const performerId = p.reference?.split('/')[1];
           return performerId && providerFilter.includes(performerId);
         });
@@ -311,8 +370,8 @@ export function CalendarPage(): JSX.Element {
         }
       }
       if (equipmentFilter.length > 0) {
-        const hasMatchingEquipment = e.resource.equipment.some(eqName => {
-          return equipment.some(eq => {
+        const hasMatchingEquipment = e.resource.equipment.some((eqName) => {
+          return equipment.some((eq) => {
             const eqLabel = getDeviceName(eq);
             return eqLabel === eqName && equipmentFilter.includes(eq.id || '');
           });
@@ -351,7 +410,7 @@ export function CalendarPage(): JSX.Element {
   }, [loadCalendarData]);
 
   const handlePrev = useCallback(() => {
-    setDate(prevDate => dayjs(prevDate).subtract(1, view).toDate());
+    setDate((prevDate) => dayjs(prevDate).subtract(1, view).toDate());
   }, [view]);
 
   const handleToday = useCallback(() => {
@@ -359,11 +418,11 @@ export function CalendarPage(): JSX.Element {
   }, []);
 
   const handleNext = useCallback(() => {
-    setDate(prevDate => dayjs(prevDate).add(1, view).toDate());
+    setDate((prevDate) => dayjs(prevDate).add(1, view).toDate());
   }, [view]);
 
   const handleNavigate = useCallback((newDate: Date) => {
-    setDate(prevDate => {
+    setDate((prevDate) => {
       if (newDate.getTime() === prevDate.getTime()) {
         return prevDate;
       }
@@ -372,7 +431,7 @@ export function CalendarPage(): JSX.Element {
   }, []);
 
   const handleViewChange = useCallback((newView: View) => {
-    setView(prevView => {
+    setView((prevView) => {
       const validView = newView === 'month' || newView === 'week' || newView === 'day' ? newView : 'week';
       if (validView === prevView) {
         return prevView;
@@ -382,7 +441,7 @@ export function CalendarPage(): JSX.Element {
   }, []);
 
   const roomLabels = useMemo(() => {
-    return allRooms.map(room => ({
+    return allRooms.map((room) => ({
       value: room,
       label: ROOM_LABELS[room] || room,
     }));
@@ -394,13 +453,19 @@ export function CalendarPage(): JSX.Element {
         <Title order={3}>Calendar</Title>
         <Group>
           <Button.Group>
-            <Button variant="default" onClick={handlePrev}>←</Button>
-            <Button variant="default" onClick={handleToday}>Today</Button>
-            <Button variant="default" onClick={handleNext}>→</Button>
+            <Button variant="default" onClick={handlePrev}>
+              ←
+            </Button>
+            <Button variant="default" onClick={handleToday}>
+              Today
+            </Button>
+            <Button variant="default" onClick={handleNext}>
+              →
+            </Button>
           </Button.Group>
           <Select
             value={view}
-            onChange={value => value && handleViewChange(value as typeof view)}
+            onChange={(value) => value && handleViewChange(value as typeof view)}
             data={[
               { value: 'month', label: 'Month' },
               { value: 'week', label: 'Week' },
@@ -426,7 +491,9 @@ export function CalendarPage(): JSX.Element {
           <Stack gap="md">
             <Group grow>
               <div>
-                <MantineText size="sm" fw={500} mb="xs">Rooms</MantineText>
+                <MantineText size="sm" fw={500} mb="xs">
+                  Rooms
+                </MantineText>
                 <MultiSelect
                   data={roomLabels}
                   value={roomFilter}
@@ -437,7 +504,9 @@ export function CalendarPage(): JSX.Element {
                 />
               </div>
               <div>
-                <MantineText size="sm" fw={500} mb="xs">Providers</MantineText>
+                <MantineText size="sm" fw={500} mb="xs">
+                  Providers
+                </MantineText>
                 <MultiSelect
                   data={allProviders}
                   value={providerFilter}
@@ -449,7 +518,9 @@ export function CalendarPage(): JSX.Element {
                 />
               </div>
               <div>
-                <MantineText size="sm" fw={500} mb="xs">Equipment</MantineText>
+                <MantineText size="sm" fw={500} mb="xs">
+                  Equipment
+                </MantineText>
                 <MultiSelect
                   data={allEquipmentOptions}
                   value={equipmentFilter}
@@ -463,24 +534,41 @@ export function CalendarPage(): JSX.Element {
             </Group>
             {(roomFilter.length > 0 || providerFilter.length > 0 || equipmentFilter.length > 0) && (
               <Group>
-                <MantineText size="xs" c="dimmed">Active filters:</MantineText>
-                {roomFilter.map(room => (
-                  <Chip key={room} size="xs" checked={true} onChange={() => setRoomFilter(roomFilter.filter(r => r !== room))}>
+                <MantineText size="xs" c="dimmed">
+                  Active filters:
+                </MantineText>
+                {roomFilter.map((room) => (
+                  <Chip
+                    key={room}
+                    size="xs"
+                    checked={true}
+                    onChange={() => setRoomFilter(roomFilter.filter((r) => r !== room))}
+                  >
                     Room: {ROOM_LABELS[room] || room}
                   </Chip>
                 ))}
-                {providerFilter.map(pid => {
-                  const provider = practitioners.find(p => p.id === pid);
+                {providerFilter.map((pid) => {
+                  const provider = practitioners.find((p) => p.id === pid);
                   return (
-                    <Chip key={pid} size="xs" checked={true} onChange={() => setProviderFilter(providerFilter.filter(p => p !== pid))}>
+                    <Chip
+                      key={pid}
+                      size="xs"
+                      checked={true}
+                      onChange={() => setProviderFilter(providerFilter.filter((p) => p !== pid))}
+                    >
                       Provider: {provider?.name?.[0]?.given?.[0]} {provider?.name?.[0]?.family}
                     </Chip>
                   );
                 })}
-                {equipmentFilter.map(eid => {
-                  const eq = equipment.find(e => e.id === eid);
+                {equipmentFilter.map((eid) => {
+                  const eq = equipment.find((e) => e.id === eid);
                   return (
-                    <Chip key={eid} size="xs" checked={true} onChange={() => setEquipmentFilter(equipmentFilter.filter(e => e !== eid))}>
+                    <Chip
+                      key={eid}
+                      size="xs"
+                      checked={true}
+                      onChange={() => setEquipmentFilter(equipmentFilter.filter((e) => e !== eid))}
+                    >
                       Equipment: {eq ? getDeviceName(eq) : eid}
                     </Chip>
                   );
@@ -488,7 +576,11 @@ export function CalendarPage(): JSX.Element {
                 <Button
                   variant="subtle"
                   size="xs"
-                  onClick={() => { setRoomFilter([]); setProviderFilter([]); setEquipmentFilter([]); }}
+                  onClick={() => {
+                    setRoomFilter([]);
+                    setProviderFilter([]);
+                    setEquipmentFilter([]);
+                  }}
                 >
                   Clear all
                 </Button>
@@ -498,11 +590,12 @@ export function CalendarPage(): JSX.Element {
         </Paper>
       )}
 
-      <Paper withBorder p="md" style={{ height: 'calc(100vh - 200px)' }}>
+      <Paper withBorder p="md" style={{ height: 'calc(100vh - 100px)' }}>
         <ReactBigCalendar
           localizer={localizer}
           events={events}
           startAccessor="start"
+          dayLayoutAlgorithm="no-overlap"
           endAccessor="end"
           view={view}
           onView={handleViewChange}

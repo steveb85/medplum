@@ -3,14 +3,14 @@
 
 /**
  * Push Notification Sender Bot
- * 
+ *
  * This bot is triggered when a new Communication resource is created
  * (notification for practice staff). It sends push notifications
  * to subscribed users' devices via the web-push library.
  */
 
-import { BotEvent, MedplumClient } from '@medplum/core';
-import { Communication } from '@medplum/fhirtypes';
+import type { MedplumClient } from '@medplum/core';
+import type { Communication } from '@medplum/fhirtypes';
 
 // web-push will be available in the Medplum Bot runtime
 declare const webpush: any;
@@ -35,21 +35,22 @@ interface PushPayload {
 /**
  * Bot handler function
  * Called whenever a Communication resource is created
+ * @param medplum - The Medplum client for API access
+ * @param event - The bot event containing the Communication resource
+ * @returns void
  */
-export async function handler(medplum: MedplumClient, event: BotEvent): Promise<void> {
+export async function handler(medplum: MedplumClient, event: any): Promise<void> {
   // Only process Communications that are notifications
   const communication = event.communication as Communication;
-  
-  if (!communication || communication.resourceType !== 'Communication') {
+
+  if (communication?.resourceType !== 'Communication') {
     console.log('[Push Bot] Not a Communication resource, skipping');
     return;
   }
 
   // Check if this is a notification-type Communication
-  const isNotification = communication.category?.some(
-    (cat) => cat.coding?.some(
-      (coding) => coding.system === 'http://melissaknudson.com/notification-type'
-    )
+  const isNotification = communication.category?.some((cat) =>
+    cat.coding?.some((coding) => coding.system === 'http://melissaknudson.com/notification-type')
   );
 
   if (!isNotification) {
@@ -62,14 +63,14 @@ export async function handler(medplum: MedplumClient, event: BotEvent): Promise<
   // Get notification details
   const title = communication.category?.[0]?.coding?.[0]?.display || 'Nurse Mel';
   const body = communication.payload?.[0]?.contentString || 'You have a new notification';
-  
+
   // Get related resource URL
   const url = getNotificationUrl(communication);
   const notificationId = communication.id || '';
 
   // Send to each recipient
   const recipients = communication.recipient || [];
-  
+
   for (const recipient of recipients) {
     if (!recipient.reference?.startsWith('Practitioner/')) {
       continue; // Only send to practitioners (staff)
@@ -81,7 +82,7 @@ export async function handler(medplum: MedplumClient, event: BotEvent): Promise<
     try {
       // Get push subscriptions for this practitioner
       const subscriptions = await getPushSubscriptions(medplum, practitionerId);
-      
+
       if (subscriptions.length === 0) {
         console.log('[Push Bot] No push subscriptions for', practitionerId);
         continue;
@@ -107,11 +108,11 @@ export async function handler(medplum: MedplumClient, event: BotEvent): Promise<
 /**
  * Get push subscriptions for a practitioner
  * Looks for Subscription resources with push notification criteria
+ * @param medplum - The Medplum client for API access
+ * @param practitionerId - The ID of the practitioner to get subscriptions for
+ * @returns An array of push subscriptions for the practitioner
  */
-async function getPushSubscriptions(
-  medplum: MedplumClient,
-  practitionerId: string
-): Promise<PushSubscription[]> {
+async function getPushSubscriptions(medplum: MedplumClient, practitionerId: string): Promise<PushSubscription[]> {
   try {
     // Search for Subscription resources linked to this practitioner
     // These are created when users enable push notifications
@@ -124,7 +125,7 @@ async function getPushSubscriptions(
 
     for (const entry of bundle.entry || []) {
       const subscription = entry.resource as any;
-      
+
       // Check if this subscription belongs to the practitioner
       // The subscription channel payload contains the push subscription data
       if (subscription.channel?.payload) {
@@ -148,11 +149,10 @@ async function getPushSubscriptions(
 
 /**
  * Send push notification to a subscription
+ * @param subscription - The push subscription details
+ * @param payload - The notification payload to send
  */
-async function sendPushNotification(
-  subscription: PushSubscription,
-  payload: PushPayload
-): Promise<void> {
+async function sendPushNotification(subscription: PushSubscription, payload: PushPayload): Promise<void> {
   try {
     // Set VAPID details from environment
     const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
@@ -162,18 +162,14 @@ async function sendPushNotification(
       throw new Error('VAPID keys not configured');
     }
 
-    await webpush.sendNotification(
-      subscription,
-      JSON.stringify(payload),
-      {
-        vapidDetails: {
-          subject: 'mailto:support@melissaknudson.com',
-          publicKey: vapidPublicKey,
-          privateKey: vapidPrivateKey,
-        },
-        TTL: 60, // Time to live in seconds
-      }
-    );
+    await webpush.sendNotification(subscription, JSON.stringify(payload), {
+      vapidDetails: {
+        subject: 'mailto:support@melissaknudson.com',
+        publicKey: vapidPublicKey,
+        privateKey: vapidPrivateKey,
+      },
+      TTL: 60, // Time to live in seconds
+    });
 
     console.log('[Push Bot] Push sent successfully to', subscription.endpoint);
   } catch (err: any) {
@@ -190,6 +186,8 @@ async function sendPushNotification(
 /**
  * Get the URL for the notification
  * Based on related resource extensions
+ * @param communication - The Communication resource to extract related info from
+ * @returns The URL to link to in the notification
  */
 function getNotificationUrl(communication: Communication): string {
   // Check for related appointment
