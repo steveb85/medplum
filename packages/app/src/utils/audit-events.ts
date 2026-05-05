@@ -261,11 +261,11 @@ export async function recordDepositRequested(
   });
 }
 
-export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, patientId: string): Promise<DepositInfo> {
+export async function getDepositStatusFromAuditEvents(medplum: MedPlumClient, patientId: string): Promise<DepositInfo> {
   try {
-    // Search AuditEvent by patient - use just the ID (Medplum handles reference search)
+    // Search AuditEvent by patient - use full reference format for FHIR compliance
     const bundle = await medplum.search('AuditEvent', {
-      patient: patientId,
+      patient: `Patient/${patientId}`,
       _sort: '-recorded',
       _count: '100',
     });
