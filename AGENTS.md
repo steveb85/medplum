@@ -1345,7 +1345,9 @@ Commit `ddbc3a776` ("update may", May 4, 2026) introduced ALL regressions:
 - ✅ Deposit actions work (AuditEvents created correctly)
 - ✅ Activity history shows correctly (from AuditEvents)
 - ✅ Edit booking works (patient disabled, skips to services)
-- ✅ Admin sees all practitioners in dropdowns
-- ✅ Modals close after submission
+- ✅ Provider filtering FIXED (providers vs assistants separated correctly, even for admins)
+- ✅ Modals close after submission (cancel, uncancel, waive, etc.)
 - ✅ BookingDetailPage status changes create proper AuditEvents
+- ✅ Booking creation/edits now recorded via AuditEvents
+- ✅ ALL actions show WHO, WHAT, WHEN, WHY in activity timeline
 - ✅ Build passes (TypeScript + ESLint)

@@ -1273,13 +1273,10 @@ export function CreateAppointmentModalV3({
       }
 
       case 'configure': {
-        const isAdmin = role === 'super-admin' || role === 'project-admin';
-        const eligibleMainProviders = isAdmin
-          ? allPractitioners
-          : allPractitioners.filter((p) => isMainProviderEligible(p));
-        const eligibleAssistants = isAdmin
-          ? allPractitioners
-          : allPractitioners.filter((p) => isAssistantEligible(p));
+        // For ALL users (including admins), separate providers vs assistants
+        // Admins see all practitioners, but still separated by role
+        const eligibleMainProviders = allPractitioners.filter((p) => isMainProviderEligible(p));
+        const eligibleAssistants = allPractitioners.filter((p) => isAssistantEligible(p));
 
         return (
           <Stack gap="md">
