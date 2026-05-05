@@ -482,9 +482,19 @@ async function createNurseMelPractitioner(
     NURSE_MEL_DATA.email
   );
 
-  // Add qualification code for Provider
+  // Add qualification code for Provider and medspa-role extension
   const practitioner = await systemRepo.updateResource<Practitioner>({
     ...(profile as Practitioner),
+    extension: [
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
+        valueString: 'provider',
+      },
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+        valueString: '#1a73e8', // Blue for Melissa
+      },
+    ],
     qualification: [
       {
         code: {
@@ -559,6 +569,16 @@ async function createCoordinator(
     meta: { project: project.id },
     name: [{ use: 'official', family: COORDINATOR_DATA.lastName, given: [COORDINATOR_DATA.firstName] }],
     telecom: [{ system: 'email', value: COORDINATOR_DATA.email, use: 'work' }],
+    extension: [
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
+        valueString: 'coordinator',
+      },
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+        valueString: '#d9325', // Red for Coordinator
+      },
+    ],
     qualification: [
       {
         code: {
@@ -636,6 +656,16 @@ async function createProjectAdmin(
     meta: { project: project.id },
     name: [{ use: 'official', family: PROJECT_ADMIN_DATA.lastName, given: [PROJECT_ADMIN_DATA.firstName] }],
     telecom: [{ system: 'email', value: PROJECT_ADMIN_DATA.email, use: 'work' }],
+    extension: [
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
+        valueString: 'project-admin',
+      },
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+        valueString: '#188038', // Green for Admin
+      },
+    ],
     qualification: [
       {
         code: {
@@ -715,6 +745,16 @@ async function createAssistant(
     meta: { project: project.id },
     name: [{ use: 'official', family: ASSISTANT_DATA.lastName, given: [ASSISTANT_DATA.firstName] }],
     telecom: [{ system: 'email', value: ASSISTANT_DATA.email, use: 'work' }],
+    extension: [
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
+        valueString: 'assistant',
+      },
+      {
+        url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+        valueString: '#a142f4', // Purple for Assistant
+      },
+    ],
     qualification: [
       {
         code: {

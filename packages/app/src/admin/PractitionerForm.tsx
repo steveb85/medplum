@@ -16,11 +16,27 @@ import { IconCalendar } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+const PRACTITIONER_COLORS = [
+  { value: '#1a73e8', label: 'Blue' },
+  { value: '#d93025', label: 'Red' },
+  { value: '#188038', label: 'Green' },
+  { value: '#f9ab00', label: 'Amber' },
+  { value: '#e8710a', label: 'Orange' },
+  { value: '#a142f4', label: 'Purple' },
+  { value: '#0891b2', label: 'Cyan' },
+  { value: '#c5221f', label: 'Dark Red' },
+  { value: '#076448', label: 'Teal' },
+  { value: '#8430ce', label: 'Violet' },
+  { value: '#d81b60', label: 'Pink' },
+  { value: '#4a90d9', label: 'Sky Blue' },
+];
+
 type Role = 'provider' | 'assistant' | 'coordinator' | 'admin';
 
 interface License {
   id: string;
   type: string;
+  display?: string;
   number: string;
   state: string;
   expiry: string | null;
@@ -32,6 +48,7 @@ interface FormValues {
   email: string;
   phone: string;
   role: Role | null;
+  color: string;
   licenses: License[];
   tempPassword: string;
 }
@@ -146,6 +163,7 @@ function parseQualifications(qualifications?: Practitioner['qualification']): Li
       {
         id: crypto.randomUUID(),
         type: '',
+        display: undefined,
         number: '',
         state: '',
         expiry: null,
@@ -160,6 +178,7 @@ function parseQualifications(qualifications?: Practitioner['qualification']): Li
     return {
       id: crypto.randomUUID(),
       type: q.code?.coding?.[0]?.code ?? '',
+      display: q.code?.coding?.[0]?.display ?? undefined,
       number: licenseNumber ?? '',
       state: state ?? '',
       expiry: q.period?.end ?? null,
@@ -169,25 +188,43 @@ function parseQualifications(qualifications?: Practitioner['qualification']): Li
 
 // Get role from practitioner extension
 function getRoleFromPractitioner(practitioner?: Practitioner): Role | null {
-  if (!practitioner?.extension) {
+  if (!practitioner) {
     return null;
   }
 
-  const medspaRole = practitioner.extension.find(
-    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role'
-  )?.valueString;
+  // First, try to get role from medspa-role extension
+  if (practitioner.extension) {
+    const medspaRole = practitioner.extension.find(
+      (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role'
+    )?.valueString;
 
-  if (medspaRole === 'project-admin' || medspaRole === 'super-admin') {
-    return 'admin';
+    if (medspaRole === 'project-admin' || medspaRole === 'super-admin') {
+      return 'admin';
+    }
+    if (medspaRole === 'provider') {
+      return 'provider';
+    }
+    if (medspaRole === 'assistant') {
+      return 'assistant';
+    }
+    if (medspaRole === 'coordinator') {
+      return 'coordinator';
+    }
   }
-  if (medspaRole === 'provider') {
+
+  // Fallback: Check qualification code for role hints
+  const qualificationCode = practitioner.qualification?.[0]?.code?.coding?.[0]?.code;
+  if (qualificationCode === 'RN' || qualificationCode === 'NP' || qualificationCode === 'MD' || qualificationCode === 'DO') {
     return 'provider';
   }
-  if (medspaRole === 'assistant') {
+  if (qualificationCode === 'coordinator') {
+    return 'coordinator';
+  }
+  if (qualificationCode === 'assistant') {
     return 'assistant';
   }
-  if (medspaRole === 'coordinator') {
-    return 'coordinator';
+  if (qualificationCode === 'admin') {
+    return 'admin';
   }
 
   return null;
@@ -214,10 +251,12 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
     email: '',
     phone: '',
     role: null,
+    color: PRACTITIONER_COLORS[0].value,
     licenses: [
       {
         id: crypto.randomUUID(),
         type: '',
+        display: undefined,
         number: '',
         state: '',
         expiry: null,
@@ -246,6 +285,10 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
         const phone = practitioner.telecom?.find((t) => t.system === 'phone')?.value ?? '';
         const role = getRoleFromPractitioner(practitioner);
         const licenses = parseQualifications(practitioner.qualification);
+        const color =
+          practitioner.extension?.find(
+            (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color'
+          )?.valueString || PRACTITIONER_COLORS[0].value;
 
         setValues({
           firstName,
@@ -253,6 +296,7 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
           email,
           phone,
           role,
+          color,
           licenses,
           tempPassword: '', // Don't show existing password
         });
@@ -302,22 +346,9 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
     if (!values.role) {
       newErrors.role = 'Please select a role';
     }
-    if (isProvider) {
-      // Validate at least one license and all licenses have required fields
-      if (values.licenses.length === 0) {
-        newErrors.licenses = 'At least one license is required for providers';
-      } else {
-        const hasInvalidLicense = values.licenses.some(
-          (license) => !license.type || !license.number || !license.state || !license.expiry
-        );
-        if (hasInvalidLicense) {
-          newErrors.licenses = 'All licenses must have type, number, state, and expiry date';
-        }
-      }
-    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [values, isProvider]);
+  }, [values]);
 
   const updateValue = useCallback(<K extends keyof FormValues>(field: K, value: FormValues[K]): void => {
     setValues((prev) => ({ ...prev, [field]: value }));
@@ -325,19 +356,23 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
     setErrors((prev) => ({ ...prev, [field]: undefined }));
   }, []);
 
-  const fetchAccessPolicies = useCallback(async (): Promise<void> => {
+  const fetchAccessPolicies = useCallback(async (): Promise<Record<Role, AccessPolicy | null>> => {
     try {
       const result = await medplum.search('AccessPolicy', { _count: '100' });
       const allPolicies = (result.entry || []).map((e) => e.resource as AccessPolicy);
 
-      setAccessPolicies({
+      const policies = {
         provider: allPolicies.find((p) => p.name?.toLowerCase().includes('provider')) || null,
         assistant: allPolicies.find((p) => p.name?.toLowerCase().includes('assistant')) || null,
         coordinator: allPolicies.find((p) => p.name?.toLowerCase().includes('coordinator')) || null,
         admin: allPolicies.find((p) => p.name?.toLowerCase().includes('admin')) || null,
-      });
+      };
+
+      setAccessPolicies(policies);
+      return policies;
     } catch (err) {
       console.error('Error fetching access policies:', err);
+      return { provider: null, assistant: null, coordinator: null, admin: null };
     }
   }, [medplum]);
 
@@ -352,8 +387,7 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
       // Fetch access policies if not already loaded
       let policies = { ...accessPolicies };
       if (!policies.provider || !policies.coordinator || !policies.admin || !policies.assistant) {
-        await fetchAccessPolicies();
-        policies = accessPolicies;
+        policies = await fetchAccessPolicies();
       }
 
       const accessPolicy = values.role ? policies[values.role] : null;
@@ -386,15 +420,16 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
         ],
       };
 
-      // Add qualifications for providers
-      if (isProvider && values.licenses.length > 0) {
-        practitionerData.qualification = values.licenses.map((license) => ({
+      // Add qualifications for providers (only if licenses have data)
+      const validLicenses = values.licenses.filter((l) => l.type || l.number || l.state || l.expiry);
+      if (isProvider && validLicenses.length > 0) {
+        practitionerData.qualification = validLicenses.map((license) => ({
           code: {
             coding: [
               {
                 system: 'http://hl7.org/fhir/v2/0360',
                 code: license.type,
-                display: LICENSE_TYPES.find((l) => l.value === license.type)?.label,
+                display: license.display || LICENSE_TYPES.find((l) => l.value === license.type)?.label,
               },
             ],
           },
@@ -415,11 +450,15 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
             : undefined,
         }));
 
-        // Add custom extension for medspa role
+        // Add custom extension for medspa role and color
         practitionerData.extension = [
           {
             url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
             valueString: 'provider',
+          },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+            valueString: values.color,
           },
         ];
       } else if (values.role === 'assistant') {
@@ -428,6 +467,10 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
             url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
             valueString: 'assistant',
           },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+            valueString: values.color,
+          },
         ];
       } else if (values.role === 'coordinator') {
         practitionerData.extension = [
@@ -435,12 +478,20 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
             url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
             valueString: 'coordinator',
           },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+            valueString: values.color,
+          },
         ];
       } else if (values.role === 'admin') {
         practitionerData.extension = [
           {
             url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
             valueString: 'project-admin',
+          },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+            valueString: values.color,
           },
         ];
       }
@@ -525,15 +576,16 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
         ],
       };
 
-      // Update qualifications for providers
-      if (isProvider && values.licenses.length > 0) {
-        updatedPractitioner.qualification = values.licenses.map((license) => ({
+      // Update qualifications for providers (only if licenses have data)
+      const validLicenses = values.licenses.filter((l) => l.type || l.number || l.state || l.expiry);
+      if (isProvider && validLicenses.length > 0) {
+        updatedPractitioner.qualification = validLicenses.map((license) => ({
           code: {
             coding: [
               {
                 system: 'http://hl7.org/fhir/v2/0360',
                 code: license.type,
-                display: LICENSE_TYPES.find((l) => l.value === license.type)?.label,
+                display: license.display || LICENSE_TYPES.find((l) => l.value === license.type)?.label,
               },
             ],
           },
@@ -554,11 +606,15 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
             : undefined,
         }));
 
-        // Update extension for medspa role
+        // Update extension for medspa role and color
         updatedPractitioner.extension = [
           {
             url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
             valueString: 'provider',
+          },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+            valueString: values.color,
           },
         ];
       } else if (values.role === 'assistant') {
@@ -567,6 +623,10 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
             url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
             valueString: 'assistant',
           },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+            valueString: values.color,
+          },
         ];
       } else if (values.role === 'coordinator') {
         updatedPractitioner.extension = [
@@ -574,12 +634,20 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
             url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
             valueString: 'coordinator',
           },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+            valueString: values.color,
+          },
         ];
       } else if (values.role === 'admin') {
         updatedPractitioner.extension = [
           {
             url: 'http://melissaknudson.com/fhir/StructureDefinition/medspa-role',
             valueString: 'project-admin',
+          },
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+            valueString: values.color,
           },
         ];
       }
@@ -595,8 +663,8 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
       if (memberships.entry?.[0]?.resource) {
         const membership = memberships.entry[0].resource;
         // Update access policy if role changed
-        await fetchAccessPolicies();
-        const accessPolicy = values.role ? accessPolicies[values.role] : null;
+        const fetchedPolicies = await fetchAccessPolicies();
+        const accessPolicy = values.role ? fetchedPolicies[values.role] : null;
         if (accessPolicy && membership.access) {
           membership.access[0] = {
             policy: { reference: `AccessPolicy/${accessPolicy.id}` },
@@ -627,7 +695,6 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
     values,
     isProvider,
     medplum,
-    accessPolicies,
     validateStep1,
     onSuccess,
     fetchAccessPolicies,
@@ -732,11 +799,37 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
               </Stack>
             </Radio.Group>
 
+            {selectedRole && (
+              <Stack gap="md" mt="md">
+                <Text fw={500} size="sm">
+                  Practitioner Color (for calendar display)
+                </Text>
+                <Group>
+                  {PRACTITIONER_COLORS.map((colorOption) => (
+                    <Button
+                      key={colorOption.value}
+                      size="md"
+                      style={{ backgroundColor: colorOption.value, width: 36, height: 36 }}
+                      onClick={() => updateValue('color', colorOption.value)}
+                      variant={values.color === colorOption.value ? 'filled' : 'outline'}
+                      aria-label={colorOption.label}
+                    >
+                      {values.color === colorOption.value && (
+                        <Text c="white" fw={700} size="xs">
+                          ✓
+                        </Text>
+                      )}
+                    </Button>
+                  ))}
+                </Group>
+              </Stack>
+            )}
+
             {isProvider && (
               <Stack gap="md">
                 <Group justify="space-between">
                   <Text fw={500} size="sm">
-                    Provider License Information
+                    Provider License Information (Optional)
                   </Text>
                   <Button
                     variant="light"
@@ -784,7 +877,6 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
                       <Select
                         label="License Type"
                         placeholder="Select license type"
-                        required
                         data={LICENSE_TYPES}
                         value={license.type}
                         onChange={(val) => {
@@ -793,52 +885,43 @@ export function PractitionerForm({ practitionerId, onSuccess, onCancel }: Practi
                           updateValue('licenses', newLicenses);
                         }}
                       />
-                      <Group grow>
-                        <TextInput
-                          label="License Number"
-                          placeholder="Enter license number"
-                          required
-                          value={license.number}
-                          onChange={(e) => {
-                            const newLicenses = [...values.licenses];
-                            newLicenses[index] = { ...license, number: e.currentTarget.value };
-                            updateValue('licenses', newLicenses);
-                          }}
-                        />
-                        <Select
-                          label="State"
-                          placeholder="Select state"
-                          required
-                          data={US_STATES}
-                          value={license.state}
-                          onChange={(val) => {
-                            const newLicenses = [...values.licenses];
-                            newLicenses[index] = { ...license, state: val || '' };
-                            updateValue('licenses', newLicenses);
-                          }}
-                        />
-                      </Group>
-                      <DatePickerInput
-                        label="License Expiry Date"
-                        placeholder="Select expiry date"
-                        required
-                        rightSection={<IconCalendar size={16} />}
-                        value={license.expiry}
-                        onChange={(value) => {
-                          const newLicenses = [...values.licenses];
-                          newLicenses[index] = { ...license, expiry: value };
-                          updateValue('licenses', newLicenses);
-                        }}
-                      />
+                       <Group grow>
+                         <TextInput
+                           label="License Number"
+                           placeholder="Enter license number"
+                           value={license.number}
+                           onChange={(e) => {
+                             const newLicenses = [...values.licenses];
+                             newLicenses[index] = { ...license, number: e.currentTarget.value };
+                             updateValue('licenses', newLicenses);
+                           }}
+                         />
+                         <Select
+                           label="State"
+                           placeholder="Select state"
+                           data={US_STATES}
+                           value={license.state}
+                           onChange={(val) => {
+                             const newLicenses = [...values.licenses];
+                             newLicenses[index] = { ...license, state: val || '' };
+                             updateValue('licenses', newLicenses);
+                           }}
+                         />
+                       </Group>
+                       <DatePickerInput
+                         label="License Expiry Date"
+                         placeholder="Select expiry date"
+                         rightSection={<IconCalendar size={16} />}
+                         value={license.expiry}
+                         onChange={(value) => {
+                           const newLicenses = [...values.licenses];
+                           newLicenses[index] = { ...license, expiry: value };
+                           updateValue('licenses', newLicenses);
+                         }}
+                       />
                     </Stack>
                   </Card>
                 ))}
-
-                {errors.licenses && (
-                  <Text size="sm" c="red">
-                    {errors.licenses}
-                  </Text>
-                )}
               </Stack>
             )}
 

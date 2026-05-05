@@ -6,7 +6,53 @@ import type { DepositInfo, DepositStatus } from './payments';
 
 type EntityDetails = Record<string, any>;
 
-declare function createAuditEvent(
+/**
+ * Maps action codes to FHIR RESTful interaction codes
+ * @param action - The action code (C, R, U, D, E)
+ * @returns The corresponding FHIR RESTful interaction code
+ */
+function mapActionToCode(action: string): string {
+  const mapping: Record<string, string> = {
+    'C': 'create',
+    'R': 'read',
+    'U': 'update',
+    'D': 'delete',
+    'E': 'execute',
+  };
+  return mapping[action] || 'execute';
+}
+
+/**
+ * Maps action codes to display names
+ * @param action - The action code (C, R, U, D, E)
+ * @returns The corresponding display name
+ */
+function mapActionToDisplay(action: string): string {
+  const mapping: Record<string, string> = {
+    'C': 'Create',
+    'R': 'Read',
+    'U': 'Update',
+    'D': 'Delete',
+    'E': 'Execute',
+  };
+  return mapping[action] || 'Execute';
+}
+
+/**
+ * Creates a FHIR AuditEvent resource using Medplum client
+ * Properly structures the AuditEvent according to FHIR R4 specification
+ * @param medplum - Medplum client instance
+ * @param params - Parameters for creating the AuditEvent
+ * @param params.action - Action code (C, R, U, D, E)
+ * @param params.patient - Patient resource
+ * @param params.agent - Optional practitioner agent
+ * @param params.resource - Optional service request resource
+ * @param params.description - Description of the event
+ * @param params.outcome - Outcome code ('0' = success)
+ * @param params.entityDetails - Additional details to store
+ * @returns The created AuditEvent resource
+ */
+async function createAuditEvent(
   medplum: MedplumClient,
   params: {
     action: string;
@@ -17,17 +63,144 @@ declare function createAuditEvent(
     outcome: string;
     entityDetails: EntityDetails;
   }
-): Promise<AuditEvent>;
+): Promise<AuditEvent> {
+  const { action, patient, agent, resource, description, outcome, entityDetails } = params;
+
+  // Build entity array with proper FHIR R4 structure
+  const entity: any[] = [
+    // Add patient as an entity (role is a Coding object, not wrapped in coding[])
+    {
+      what: { reference: `Patient/${patient.id}` },
+      role: {
+        system: 'http://terminology.hl7.org/CodeSystem/object-role',
+        code: '1', // Patient
+        display: 'Patient',
+      },
+    },
+  ];
+
+  // Add details - type is a string in FHIR R4, not a Coding object
+  Object.entries(entityDetails).forEach(([type, value]) => {
+    entity.push({
+      detail: [
+        {
+          type: type, // FHIR R4: type is a string
+          valueString: String(value),
+        },
+      ],
+    });
+  });
+
+  // If we have a resource, add it as a "what" reference
+  if (resource?.id) {
+    entity.push({
+      what: { reference: `ServiceRequest/${resource.id}` },
+      role: {
+        system: 'http://terminology.hl7.org/CodeSystem/object-role',
+        code: '4', // Domain Resource
+        display: 'Domain Resource',
+      },
+    });
+  }
+
+  // Build agent array
+  const agents: any[] = [
+    {
+      who: {
+        reference: `Patient/${patient.id}`,
+        display: patient.name?.[0]
+          ? `${patient.name[0].given?.join(' ') || ''} ${patient.name[0].family || ''}`.trim()
+          : 'Unknown Patient',
+      },
+      requestor: false,
+    },
+  ];
+
+  // Add the staff agent if provided
+  if (agent) {
+    agents.push({
+      who: {
+        reference: `Practitioner/${agent.id}`,
+        display: agent.name?.[0]
+          ? `${agent.name[0].given?.join(' ') || ''} ${agent.name[0].family || ''}`.trim()
+          : 'Unknown Staff',
+      },
+      requestor: true,
+    });
+  }
+
+  const auditEvent: AuditEvent = {
+    resourceType: 'AuditEvent',
+    type: {
+      system: 'http://terminology.hl7.org/CodeSystem/audit-event-type',
+      code: 'rest',
+      display: 'Restful Operation',
+    },
+    subtype: [
+      {
+        system: 'http://hl7.org/fhir/restful-interaction',
+        code: mapActionToCode(action),
+        display: mapActionToDisplay(action),
+      },
+    ],
+    action: action as any,
+    recorded: new Date().toISOString(),
+    outcome: outcome as any,
+    agent: agents,
+    source: {
+      observer: { display: 'Medplum App' },
+      type: [
+        {
+          system: 'http://dicom.nema.org/resources/ontology/DCM',
+          code: '110100',
+          display: 'Application Activity',
+        },
+      ],
+    },
+    entity: entity.length > 0 ? entity : undefined,
+  };
+
+  return medplum.createResource(auditEvent);
+}
 
 function parseEntityDetails(event: AuditEvent): EntityDetails {
   const details: EntityDetails = {};
+  
+  // Handle entity.detail structure - support BOTH formats for backward compatibility
+  // New format (correct FHIR R4): detail.type is a string
+  // Old format (incorrect): detail.type = { coding: [{ code: '...' }] }
   event.entity?.forEach((entity) => {
-    entity.detail?.forEach((detail) => {
-      if (detail.valueString) {
-        details[detail.type || ''] = detail.valueString;
-      }
-    });
+    if (entity.detail && Array.isArray(entity.detail)) {
+      entity.detail.forEach((detail: any) => {
+        if (detail.valueString) {
+          // Extract type from multiple possible formats
+          let typeCode = '';
+          
+          // New format: type is a string
+          if (typeof detail.type === 'string') {
+            typeCode = detail.type;
+          }
+          // Old format: type is an object with coding array
+          else if (detail.type?.coding?.[0]?.code) {
+            typeCode = detail.type.coding[0].code;
+          }
+          // Legacy text format
+          else if (detail.type?.text) {
+            typeCode = detail.type.text;
+          }
+          
+          if (typeCode) {
+            details[typeCode] = detail.valueString;
+          }
+        }
+      });
+    }
+    // Also check for direct properties on entity (legacy format)
+    if (entity.what?.reference) {
+      details['resourceReference'] = entity.what.reference;
+    }
   });
+  
   return details;
 }
 
@@ -92,8 +265,9 @@ export async function recordDepositRequested(
 
 export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, patientId: string): Promise<DepositInfo> {
   try {
+    // Search AuditEvent by patient - use just the ID (Medplum handles reference search)
     const bundle = await medplum.search('AuditEvent', {
-      patient: 'Patient/' + patientId,
+      patient: patientId,
       _sort: '-recorded',
       _count: '100',
     });

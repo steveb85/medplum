@@ -45,6 +45,17 @@ function getDeviceName(device: Device): string {
   return device.deviceName?.[0]?.name || device.id || 'Unknown';
 }
 
+function getPractitionerColor(practitionerId: string, practitioners: Practitioner[]): string {
+  const practitioner = practitioners.find((p) => p.id === practitionerId);
+  if (!practitioner?.extension) {
+    return '#1a73e8'; // Default blue
+  }
+  const colorExt = practitioner.extension.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color'
+  );
+  return colorExt?.valueString || '#1a73e8';
+}
+
 moment.tz.setDefault(Intl.DateTimeFormat().resolvedOptions().timeZone);
 const localizer = momentLocalizer(moment);
 
@@ -174,26 +185,33 @@ function parseServiceEvent(
   };
 }
 
-function ServiceCalendarEvent({ event }: EventProps<CalendarServiceEvent>): JSX.Element {
+function ServiceCalendarEvent({
+  event,
+  practitioners,
+}: EventProps<CalendarServiceEvent> & { practitioners: Practitioner[] }): JSX.Element {
   const { resource } = event;
   const roomLabel = ROOM_LABELS[resource.room] || resource.room.replace('room-', 'R');
   const statusColor = STATUS_COLORS[resource.status] || '#868e96';
   const roomColor = ROOM_COLORS[resource.room] || '#f8f9fa';
-  const getProviderInitials = (): string => {
+  const getProviderInfo = (): { initials: string; color: string } => {
     const performers = resource.serviceRequest.performer || [];
     // Try to get main provider first, then assistant
-    const mainProvider = performers[0]?.display;
+    const mainProvider = performers[0];
     const assistant = performers[1]?.display;
-    const nameToUse = mainProvider || assistant || '';
+    const nameToUse = mainProvider?.display || assistant || '';
+    if (!mainProvider?.reference) {
+      return { initials: '', color: '#1a73e8' };
+    }
+    const practitionerId = mainProvider.reference.split('/')[1];
+    const color = getPractitionerColor(practitionerId || '', practitioners);
     if (!nameToUse) {
-      return '';
+      return { initials: '', color };
     }
     const nameParts = nameToUse.split(' ');
     const initials = nameParts.map((p: string) => p[0]).join('');
-    return initials.toUpperCase();
+    return { initials: initials.toUpperCase(), color };
   };
-  const providerInitials = getProviderInitials();
-  console.log('Rendering event:', providerInitials, resource.serviceRequest.performer);
+  const { initials: providerInitials, color: providerColor } = getProviderInfo();
   return (
     <Tooltip
       label={
@@ -231,7 +249,7 @@ function ServiceCalendarEvent({ event }: EventProps<CalendarServiceEvent>): JSX.
           <Badge
             size="xs"
             variant="filled"
-            color={statusColor}
+            color={providerColor}
             style={{ fontSize: 9, padding: '0 3px', minWidth: 24, textAlign: 'center' }}
           >
             {providerInitials}
@@ -611,7 +629,7 @@ export function CalendarPage(): JSX.Element {
           step={15}
           timeslots={4}
           components={{
-            event: ServiceCalendarEvent,
+            event: (props) => ServiceCalendarEvent({ ...props, practitioners }),
           }}
         />
       </Paper>

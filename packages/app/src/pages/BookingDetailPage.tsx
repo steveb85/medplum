@@ -32,7 +32,7 @@ import {
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import type { ReactElement } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getMedSpaRole } from '../auth/role';
 import {
@@ -49,6 +49,8 @@ import type { DepositStatus } from '../utils/payments';
 import { formatDepositAmount, getDepositStatusColor } from '../utils/payments';
 import { sendDepositRequestSMS, sendPaymentConfirmationSMS } from '../utils/sms';
 import { CreateAppointmentModalV3 } from '../components/CreateAppointmentModalV3';
+import { ServiceCard } from '../components/ServiceCard';
+import type { ServiceStatus, ServiceCardData } from '../components/ServiceCard';
 
 // Appointment status configuration
 // STATUS FLOW: pending (deposit required) → booked (deposit paid/waived) → arrived → fulfilled
@@ -138,6 +140,60 @@ export function BookingDetailPage(): ReactElement {
   const [refundModalOpen, setRefundModalOpen] = useState(false);
   const [refundAmount, setRefundAmount] = useState<number>(0);
   const [refundReason, setRefundReason] = useState('');
+
+  // Convert serviceRequests to ServiceCardData format
+  const serviceCardData: ServiceCardData[] = useMemo(() => {
+    return serviceRequests.map((sr) => {
+      const service = services.find(
+        (s) => s.code?.coding?.[0]?.code === sr.code?.coding?.[0]?.code
+      );
+
+      // Determine status from extensions or defaults
+      const statusExt = sr.extension?.find(
+        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/serviceStatus'
+      );
+      // Map status to ServiceStatus type (handles type conversion)
+      const rawStatus = statusExt?.valueString || 'pending';
+      const status: ServiceStatus = (['pending', 'in-progress', 'completed', 'cancelled'] as const).includes(rawStatus as any)
+        ? rawStatus as ServiceStatus
+        : 'pending';
+
+      return {
+        serviceRequest: sr,
+        service: service as ActivityDefinition,
+        photos: [], // TODO: Load photos linked to this ServiceRequest
+        status,
+      };
+    });
+  }, [serviceRequests, services]);
+
+  // Handler functions for ServiceCards (placeholder implementations)
+  const handleStartService = useCallback((serviceRequestId: string) => {
+    console.log('Start service:', serviceRequestId);
+    showNotification({ color: 'blue', title: 'Info', message: 'Start service functionality coming soon' });
+  }, []);
+
+  const handleCompleteService = useCallback((serviceRequestId: string) => {
+    console.log('Complete service:', serviceRequestId);
+    showNotification({ color: 'green', title: 'Info', message: 'Complete service functionality coming soon' });
+  }, []);
+
+  const handleUpdateTreatmentData = useCallback((serviceRequestId: string, data: Record<string, unknown>) => {
+    console.log('Update treatment data:', serviceRequestId, data);
+  }, []);
+
+  const handleUploadPhotos = useCallback((serviceRequestId: string) => {
+    console.log('Upload photos:', serviceRequestId);
+    showNotification({ color: 'blue', title: 'Info', message: 'Photo upload functionality coming soon' });
+  }, []);
+
+  const handleDeletePhoto = useCallback((serviceRequestId: string, photoId: string) => {
+    console.log('Delete photo:', serviceRequestId, photoId);
+  }, []);
+
+  const handleUpdatePhotoMetadata = useCallback((serviceRequestId: string, photoId: string, metadata: unknown) => {
+    console.log('Update photo metadata:', serviceRequestId, photoId, metadata);
+  }, []);
 
   // Load appointment data
   const loadData = useCallback(async () => {
@@ -229,9 +285,9 @@ export function BookingDetailPage(): ReactElement {
       const audits: AuditEntry[] = [];
 
       try {
-        // Query AuditEvents for this patient
+        // Query AuditEvents for this patient (use full reference format)
         const auditBundle = await medplum.search('AuditEvent', {
-          patient: patientRef || '',
+          patient: patientRef || '',  // patientRef is already "Patient/123" format
           _count: '500',
         });
 
@@ -1087,8 +1143,40 @@ export function BookingDetailPage(): ReactElement {
                     {providers.map((p) => `${p.name?.[0]?.given?.[0]} ${p.name?.[0]?.family}`).join(', ') || '-'}
                   </Text>
                 </Grid.Col>
-              </Grid>
-            </Card>
+                </Grid>
+             </Card>
+
+             {/* Services Section */}
+             <Card withBorder>
+               <Title order={5} mb="md">
+                 Services ({serviceCardData.length})
+               </Title>
+               <Stack gap="md">
+                 {serviceCardData.length > 0 ? (
+                    serviceCardData.map((cardData, index) => (
+                      <ServiceCard
+                        key={cardData.serviceRequest?.id || index}
+                        data={cardData}
+                        index={index}
+                        patient={patient as Patient}
+                        mainProvider={providers[0]}
+                        assistantProvider={providers[1]}
+                        readonly={appointment?.status === 'cancelled' || appointment?.status === 'fulfilled'}
+                        onStartService={handleStartService}
+                        onCompleteService={handleCompleteService}
+                        onUpdateTreatmentData={handleUpdateTreatmentData}
+                        onUploadPhotos={handleUploadPhotos}
+                        onDeletePhoto={handleDeletePhoto}
+                        onUpdatePhotoMetadata={handleUpdatePhotoMetadata}
+                      />
+                    ))
+                 ) : (
+                   <Text c="dimmed" ta="center" py="md">
+                     No services found for this booking
+                   </Text>
+                 )}
+               </Stack>
+             </Card>
 
             {/* Unified Actions Card */}
             <Card withBorder>

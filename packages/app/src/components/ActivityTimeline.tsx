@@ -3,23 +3,14 @@
 
 /**
  * ActivityTimeline Component
- * 
+ *
  * Displays a chronological history of booking events using FHIR AuditEvent resources.
  * Shows consent signing, service status changes, deposits, and milestones.
  */
 
-import {
-  Box,
-  Group,
-  Paper,
-  Stack,
-  Text,
-  Timeline,
-  Badge,
-  Collapse,
-  Button,
-} from '@mantine/core';
+import { Badge, Box, Button, Group, Paper, Stack, Text, Timeline } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import type { AuditEvent, Practitioner } from '@medplum/fhirtypes';
 import {
   IconCheck,
   IconClipboardCheck,
@@ -31,15 +22,39 @@ import {
   IconStethoscope,
   IconX,
 } from '@tabler/icons-react';
-import type { AuditEvent, Practitioner } from '@medplum/fhirtypes';
 import type { JSX } from 'react';
 import { useMemo } from 'react';
 
+// Local helper to parse entity details from AuditEvent
+function parseEntityDetails(event: AuditEvent): Record<string, string> {
+  const result: Record<string, string> = {};
+  event.entity?.forEach((entity) => {
+    entity.detail?.forEach((detail) => {
+      if (detail.type && detail.valueString) {
+        result[detail.type] = detail.valueString;
+      }
+    });
+  });
+  return result;
+}
+
 export interface TimelineEvent {
   id: string;
-  type: 'booking-created' | 'booking-approved' | 'consent-signed' | 'service-started' |
-    'service-completed' | 'deposit-requested' | 'deposit-paid' | 'deposit-waived' | 'status-changed' |
-    'photo-uploaded' | 'note-added' | 'cancelled' | 'uncancelled' | 'rescheduled';
+  type:
+    | 'booking-created'
+    | 'booking-approved'
+    | 'consent-signed'
+    | 'service-started'
+    | 'service-completed'
+    | 'deposit-requested'
+    | 'deposit-paid'
+    | 'deposit-waived'
+    | 'status-changed'
+    | 'photo-uploaded'
+    | 'note-added'
+    | 'cancelled'
+    | 'uncancelled'
+    | 'rescheduled';
   timestamp: Date;
   description: string;
   actor?: {
@@ -55,11 +70,14 @@ interface ActivityTimelineProps {
   showAllInitially?: boolean;
 }
 
-const EVENT_CONFIG: Record<TimelineEvent['type'], {
-  icon: typeof IconCheck;
-  color: string;
-  label: string;
-}> = {
+const EVENT_CONFIG: Record<
+  TimelineEvent['type'],
+  {
+    icon: typeof IconCheck;
+    color: string;
+    label: string;
+  }
+> = {
   'booking-created': { icon: IconClipboardCheck, color: 'blue', label: 'Booking Created' },
   'booking-approved': { icon: IconCheck, color: 'green', label: 'Booking Approved' },
   'consent-signed': { icon: IconSignature, color: 'violet', label: 'Consent Signed' },
@@ -71,9 +89,9 @@ const EVENT_CONFIG: Record<TimelineEvent['type'], {
   'status-changed': { icon: IconFlag, color: 'blue', label: 'Status Changed' },
   'photo-uploaded': { icon: IconPhoto, color: 'cyan', label: 'Photo Uploaded' },
   'note-added': { icon: IconMessage, color: 'gray', label: 'Note Added' },
-  'cancelled': { icon: IconX, color: 'red', label: 'Booking Cancelled' },
-  'uncancelled': { icon: IconCheck, color: 'green', label: 'Booking Restored' },
-  'rescheduled': { icon: IconFlag, color: 'orange', label: 'Rescheduled' },
+  cancelled: { icon: IconX, color: 'red', label: 'Booking Cancelled' },
+  uncancelled: { icon: IconCheck, color: 'green', label: 'Booking Restored' },
+  rescheduled: { icon: IconFlag, color: 'orange', label: 'Rescheduled' },
 };
 
 function formatEventTime(date: Date): string {
@@ -83,11 +101,19 @@ function formatEventTime(date: Date): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  
+  if (diffMins < 1) {
+    return 'just now';
+  }
+  if (diffMins < 60) {
+    return `${diffMins}m ago`;
+  }
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
+
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -113,7 +139,9 @@ export function ActivityTimeline({
   if (events.length === 0) {
     return (
       <Paper withBorder p="lg" style={{ textAlign: 'center', color: '#868e96' }}>
-        <Text size="sm" c="dimmed">No activity recorded yet</Text>
+        <Text size="sm" c="dimmed">
+          No activity recorded yet
+        </Text>
       </Paper>
     );
   }
@@ -145,7 +173,7 @@ export function ActivityTimeline({
                 <Text size="sm" c="dimmed">
                   {event.description}
                 </Text>
-                
+
                 {event.actor && (
                   <Text size="xs" c="dimmed" mt={4}>
                     by {event.actor.name}
@@ -154,18 +182,14 @@ export function ActivityTimeline({
 
                 {event.details && Object.keys(event.details).length > 0 && (
                   <Group gap="xs" mt={8}>
-                    {Object.entries(event.details).map(([key, value]) => (
-                      value !== undefined && (
-                        <Badge
-                          key={key}
-                          size="xs"
-                          variant="light"
-                          color="gray"
-                        >
-                          {key}: {String(value)}
-                        </Badge>
-                      )
-                    ))}
+                    {Object.entries(event.details).map(
+                      ([key, value]) =>
+                        value !== undefined && (
+                          <Badge key={key} size="xs" variant="light" color="gray">
+                            {key}: {String(value)}
+                          </Badge>
+                        )
+                    )}
                   </Group>
                 )}
               </Box>
@@ -175,12 +199,7 @@ export function ActivityTimeline({
       </Timeline>
 
       {hasMore && (
-        <Button
-          variant="subtle"
-          size="xs"
-          onClick={toggleShowAll}
-          fullWidth
-        >
+        <Button variant="subtle" size="xs" onClick={toggleShowAll} fullWidth>
           {showAll ? 'Show Less' : `Show All ${sortedEvents.length} Events`}
         </Button>
       )}
@@ -190,11 +209,12 @@ export function ActivityTimeline({
 
 /**
  * Convert FHIR AuditEvent to TimelineEvent
+ * @param auditEvent - The FHIR AuditEvent resource
+ * @param practitioners - Array of Practitioner resources for name resolution
+ * @returns TimelineEvent with extracted information
  */
-export function auditEventToTimelineEvent(
-  auditEvent: AuditEvent,
-  practitioners: Practitioner[]
-): TimelineEvent {
+// eslint-disable-next-line react-refresh/only-export-components
+export function auditEventToTimelineEvent(auditEvent: AuditEvent, practitioners: Practitioner[]): TimelineEvent {
   // Map AuditEvent action to timeline event type
   // Also check description for more specific event types
   const description = (auditEvent.outcomeDesc || '').toLowerCase();
@@ -229,38 +249,66 @@ export function auditEventToTimelineEvent(
       type = 'status-changed';
     }
   }
-  
+
   // Get actor name from practitioner reference
   const actorRef = auditEvent.agent?.[0]?.who;
-  const actorName = actorRef?.display || 'Unknown User';
+  let actorName = actorRef?.display || '';
+
+  // If display is not set, try to resolve from practitioners array
+  if (!actorName && actorRef?.reference && practitioners.length > 0) {
+    const practitionerId = actorRef.reference.split('/')[1];
+    const practitioner = practitioners.find((p) => p.id === practitionerId);
+    if (practitioner) {
+      const given = practitioner.name?.[0]?.given?.join(' ') || '';
+      const family = practitioner.name?.[0]?.family || '';
+      actorName = `${given} ${family}`.trim() || 'Unknown User';
+    }
+  }
+
+  // Fallback: check entityDetails for names stored by audit-events.ts
+  if (!actorName || actorName === 'Unknown User') {
+    const details = parseEntityDetails(auditEvent);
+    actorName =
+      details.paidByName ||
+      details.requestedByName ||
+      details.undoneByName ||
+      details.refundedByName ||
+      details.waivedBy ||
+      details.changedByName ||
+      'Unknown User';
+  }
 
   // Extract details from entity
-  const details: Record<string, string> = auditEvent.entity?.reduce((acc, entity) => {
-    if (entity.detail) {
-      entity.detail.forEach(d => {
-        if (d.type && d.valueString) {
-          acc[d.type] = d.valueString;
+  const entityDetails: Record<string, string> =
+    auditEvent.entity?.reduce(
+      (acc, entity) => {
+        if (entity.detail) {
+          entity.detail.forEach((d) => {
+            if (d.type && d.valueString) {
+              acc[d.type] = d.valueString;
+            }
+          });
         }
-      });
-    }
-    return acc;
-  }, {} as Record<string, string>) || {};
+        return acc;
+      },
+      {} as Record<string, string>
+    ) || {};
 
   // Build rich description with details
   let richDescription = auditEvent.outcomeDesc || 'Activity recorded';
   const detailParts: string[] = [];
 
-  if (details.amount) {
-    detailParts.push(`Amount: $${details.amount}`);
+  if (entityDetails.amount) {
+    detailParts.push(`Amount: $${entityDetails.amount}`);
   }
-  if (details.reason) {
-    detailParts.push(`Reason: ${details.reason}`);
+  if (entityDetails.reason) {
+    detailParts.push(`Reason: ${entityDetails.reason}`);
   }
-  if (details.method) {
-    detailParts.push(`Via: ${details.method}`);
+  if (entityDetails.method) {
+    detailParts.push(`Via: ${entityDetails.method}`);
   }
-  if (details.fromStatus && details.toStatus) {
-    detailParts.push(`${details.fromStatus} → ${details.toStatus}`);
+  if (entityDetails.fromStatus && entityDetails.toStatus) {
+    detailParts.push(`${entityDetails.fromStatus} → ${entityDetails.toStatus}`);
   }
 
   if (detailParts.length > 0) {
@@ -276,7 +324,7 @@ export function auditEventToTimelineEvent(
       name: actorName,
       reference: actorRef?.reference || '',
     },
-    details, // Keep for badge display if needed
+    details: entityDetails, // Keep for badge display if needed
   };
 }
 

@@ -12,12 +12,12 @@ export function PractitionerFormPage(): JSX.Element {
   const { id } = useParams<{ id?: string }>();
   const isEditMode = !!id;
 
-  const handleSuccess = (): void => {
-    navigate('/admin/staff');
+  const handleSuccess = async (): Promise<void> => {
+    await navigate('/Practitioner');
   };
 
-  const handleCancel = (): void => {
-    navigate(-1);
+  const handleCancel = async (): Promise<void> => {
+    await navigate(-1);
   };
 
   return (
@@ -30,11 +30,7 @@ export function PractitionerFormPage(): JSX.Element {
           <Title order={2}>{isEditMode ? 'Edit Staff Member' : 'Add New Staff Member'}</Title>
         </Group>
       </Group>
-      <PractitionerForm
-        practitionerId={id}
-        onSuccess={handleSuccess}
-        onCancel={handleCancel}
-      />
+      <PractitionerForm practitionerId={id} onSuccess={handleSuccess} onCancel={handleCancel} />
     </>
   );
 }

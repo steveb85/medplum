@@ -38,6 +38,7 @@ export const EXTENSION_URLS = {
     linkedAppointment: 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment',
     room: 'http://melissaknudson.com/fhir/StructureDefinition/room',
     depositInfo: 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info',
+    practitionerColor: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
   },
 } as const;
 
