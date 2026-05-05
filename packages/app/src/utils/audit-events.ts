@@ -79,30 +79,6 @@ async function createAuditEvent(
     },
   ];
 
-  // Add details - type is a string in FHIR R4, not a Coding object
-  Object.entries(entityDetails).forEach(([type, value]) => {
-    entity.push({
-      detail: [
-        {
-          type: type, // FHIR R4: type is a string
-          valueString: String(value),
-        },
-      ],
-    });
-  });
-
-  // If we have a resource, add it as a "what" reference
-  if (resource?.id) {
-    entity.push({
-      what: { reference: `ServiceRequest/${resource.id}` },
-      role: {
-        system: 'http://terminology.hl7.org/CodeSystem/object-role',
-        code: '4', // Domain Resource
-        display: 'Domain Resource',
-      },
-    });
-  }
-
   // Build agent array
   const agents: any[] = [
     {
@@ -128,6 +104,15 @@ async function createAuditEvent(
       requestor: true,
     });
   }
+
+  // Build audit-details extension from entityDetails
+  const auditDetailsExtension = {
+    url: 'http://melissaknudson.com/fhir/StructureDefinition/audit-details',
+    extension: Object.entries(entityDetails).map(([key, value]) => ({
+      url: key,
+      valueString: String(value),
+    })),
+  };
 
   const auditEvent: AuditEvent = {
     resourceType: 'AuditEvent',
@@ -157,6 +142,7 @@ async function createAuditEvent(
         },
       ],
     },
+    extension: [auditDetailsExtension],
     entity: entity.length > 0 ? entity : undefined,
   };
 
@@ -166,9 +152,21 @@ async function createAuditEvent(
 function parseEntityDetails(event: AuditEvent): EntityDetails {
   const details: EntityDetails = {};
   
-  // Handle entity.detail structure - support BOTH formats for backward compatibility
-  // New format (correct FHIR R4): detail.type is a string
-  // Old format (incorrect): detail.type = { coding: [{ code: '...' }] }
+  // Read from extension (new format) - entityDetails stored in AuditEvent.extension
+  const auditDetailsExt = event.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/audit-details'
+  );
+  
+  if (auditDetailsExt?.extension) {
+    auditDetailsExt.extension.forEach((ext) => {
+      if (ext.valueString && ext.url) {
+        details[ext.url] = ext.valueString;
+      }
+    });
+    return details;
+  }
+  
+  // Fallback to old format (entity.detail) for backward compatibility
   event.entity?.forEach((entity) => {
     if (entity.detail && Array.isArray(entity.detail)) {
       entity.detail.forEach((detail: any) => {
@@ -613,6 +611,62 @@ export async function recordRefundIssued(
       amount: String(amount),
       refundedByName,
       reason: reason || '',
+    },
+  });
+}
+
+export async function recordBookingCreated(
+  medplum: MedplumClient,
+  patient: Patient,
+  serviceRequest: ServiceRequest,
+  createdBy: Practitioner,
+  services: string[],
+  reason?: string
+): Promise<AuditEvent> {
+  const createdByName = createdBy.name?.[0]
+    ? String(createdBy.name[0].given?.[0] || '').trim() + ' ' + String(createdBy.name[0].family || '').trim()
+    : 'Unknown Staff';
+
+  return createAuditEvent(medplum, {
+    action: 'C',
+    patient,
+    resource: serviceRequest,
+    agent: createdBy,
+    description: 'Booking created by ' + createdByName + ': ' + services.join(', ') + (reason ? ' (' + reason + ')' : ''),
+    outcome: '0',
+    entityDetails: {
+      serviceRequestId: serviceRequest.id || '',
+      services: services.join(', '),
+      reason: reason || '',
+      createdByName,
+    },
+  });
+}
+
+export async function recordBookingEdited(
+  medplum: MedplumClient,
+  patient: Patient,
+  serviceRequest: ServiceRequest,
+  editedBy: Practitioner,
+  changes: string,
+  reason?: string
+): Promise<AuditEvent> {
+  const editedByName = editedBy.name?.[0]
+    ? String(editedBy.name[0].given?.[0] || '').trim() + ' ' + String(editedBy.name[0].family || '').trim()
+    : 'Unknown Staff';
+
+  return createAuditEvent(medplum, {
+    action: 'U',
+    patient,
+    resource: serviceRequest,
+    agent: editedBy,
+    description: 'Booking edited by ' + editedByName + ': ' + changes + (reason ? ' (' + reason + ')' : ''),
+    outcome: '0',
+    entityDetails: {
+      serviceRequestId: serviceRequest.id || '',
+      changes,
+      reason: reason || '',
+      editedByName,
     },
   });
 }

@@ -65,6 +65,7 @@ import { getMedSpaRole, isAssistantEligible, isMainProviderEligible } from '../a
 import { createNotification } from '../notifications/utils';
 import type { EquipmentRequirement, ServiceConfig } from '../utils/fhir-extensions';
 import { parseServiceConfig } from '../utils/fhir-extensions';
+import { recordBookingCreated, recordBookingEdited } from '../utils/audit-events';
 
 type Step = 'patient' | 'services' | 'configure' | 'schedule' | 'review';
 
@@ -928,6 +929,25 @@ export function CreateAppointmentModalV3({
           message: `Booking for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} created and pending deposit payment`,
           color: 'green',
         });
+
+        // Record booking created via AuditEvent
+        const currentUser = medplum.getProfile();
+        const currentUserPractitioner = {
+          resourceType: 'Practitioner' as const,
+          id: currentUser?.id || '',
+          name: currentUser?.name,
+        };
+        const serviceNames = selectedServices.map((s) => s.activityDefinition.title || '').filter((name): name is string => name !== '');
+        if (serviceRequests.length > 0) {
+          await recordBookingCreated(
+            medplum,
+            patient,
+            serviceRequests[0],
+            currentUserPractitioner,
+            serviceNames,
+            notes || undefined
+          );
+        }
       }
 
       onSuccess();
@@ -1059,10 +1079,15 @@ export function CreateAppointmentModalV3({
       if (services.length > 0) {
         setSelectedServices(services);
       }
+
+      // In edit mode, skip to services step (patient is already set)
+      if (editMode && patient && services.length > 0) {
+        setActiveStep(1); // Skip to 'services' step
+      }
     };
 
     prefill().catch(console.error);
-  }, [editMode, editAppointment, editServiceRequests, availableServices, allPractitioners, medplum]);
+  }, [editMode, editAppointment, editServiceRequests, availableServices, allPractitioners, medplum, patient]);
 
   // Render step content
   const renderStepContent = (): JSX.Element => {
@@ -1071,7 +1096,7 @@ export function CreateAppointmentModalV3({
         return (
           <Stack gap="md">
             <Text size="sm" c="dimmed">
-              Select a patient for this appointment.
+              {editMode ? 'Patient for this booking (read-only in edit mode):' : 'Select a patient for this appointment.'}
             </Text>
 
             <div>
@@ -1082,7 +1107,9 @@ export function CreateAppointmentModalV3({
                 resourceType="Patient"
                 name="patient"
                 placeholder="Search for patient..."
-                onChange={(value) => setPatient(value as Patient | null)}
+                defaultValue={patient as any}
+                onChange={(value) => !editMode && setPatient(value as Patient | null)}
+                disabled={editMode}
               />
             </div>
 

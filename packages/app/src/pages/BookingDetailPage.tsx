@@ -43,6 +43,7 @@ import {
   recordDepositWaived,
   recordPaymentUndone,
   recordRefundIssued,
+  recordBookingStatusChange,
 } from '../utils/audit-events';
 import { sendDepositRequestEmail, sendPaymentConfirmationEmail } from '../utils/email';
 import type { DepositStatus } from '../utils/payments';
@@ -295,15 +296,15 @@ export function BookingDetailPage(): ReactElement {
           return new Date(b.recorded || 0).getTime() - new Date(a.recorded || 0).getTime();
         });
 
-        // Filter to only deposit/booking-related events
+        // Filter to ALL booking-related events (broader match)
         const relevantEvents = auditEvents.filter((event: any) => {
           const desc = (event.description || '').toLowerCase();
           return (
             desc.includes('deposit') ||
             desc.includes('payment') ||
             desc.includes('refund') ||
-            desc.includes('booking status') ||
-            desc.includes('treatment service')
+            desc.includes('booking') ||  // Catches "booking status changed", "booking cancelled", etc.
+            desc.includes('treatment')
           );
         });
 
@@ -505,30 +506,26 @@ export function BookingDetailPage(): ReactElement {
           ];
         }
 
-        // Get current user's name for audit trail
+        // Get current user for audit trail
         const currentUser = medplum.getProfile();
-        const userName = currentUser?.name?.[0]
-          ? `${currentUser.name[0].given?.[0] || ''} ${currentUser.name[0].family || ''}`.trim()
-          : 'Unknown';
-
-        // Add status change audit
-        const statusChangeExt = {
-          url: 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit',
-          extension: [
-            { url: 'from', valueString: appointment.status || 'unknown' },
-            { url: 'to', valueString: newStatus },
-            { url: 'changedAt', valueDateTime: new Date().toISOString() },
-            {
-              url: 'changedBy',
-              valueReference: {
-                reference: `Practitioner/${currentUser?.id}`,
-                display: userName,
-              },
-            },
-          ],
+        const currentUserPractitioner = {
+          resourceType: 'Practitioner' as const,
+          id: currentUser?.id || '',
+          name: currentUser?.name,
         };
 
-        updatedAppointment.extension = [...(updatedAppointment.extension || []), statusChangeExt];
+        // Record status change via AuditEvent (FHIR-compliant, auditable)
+        if (patient && serviceRequests.length > 0) {
+          await recordBookingStatusChange(
+            medplum,
+            patient,
+            serviceRequests[0],
+            appointment.status || 'unknown',
+            newStatus,
+            currentUserPractitioner,
+            reason
+          );
+        }
 
         await medplum.updateResource(updatedAppointment);
         setAppointment(updatedAppointment);
@@ -550,7 +547,7 @@ export function BookingDetailPage(): ReactElement {
         });
       }
     },
-    [appointment, medplum, loadData]
+    [appointment, medplum, loadData, patient, serviceRequests]
   );
 
   // Update deposit amount
@@ -1438,7 +1435,10 @@ export function BookingDetailPage(): ReactElement {
             <Button variant="light" onClick={() => setWaiveModalOpen(false)}>
               Cancel
             </Button>
-            <Button color="blue" onClick={waiveDeposit} disabled={!waiveReason.trim()}>
+            <Button color="blue" onClick={async () => {
+              await waiveDeposit();
+              setWaiveModalOpen(false);
+            }} disabled={!waiveReason.trim()}>
               Waive Deposit
             </Button>
           </Group>
@@ -1459,7 +1459,10 @@ export function BookingDetailPage(): ReactElement {
             <Button variant="light" onClick={() => setCancelModalOpen(false)}>
               Abort
             </Button>
-            <Button color="red" onClick={() => updateStatus('cancelled', cancelReason)}>
+            <Button color="red" onClick={async () => {
+              await updateStatus('cancelled', cancelReason);
+              setCancelModalOpen(false);
+            }}>
               Cancel Booking
             </Button>
           </Group>
@@ -1547,7 +1550,10 @@ export function BookingDetailPage(): ReactElement {
             >
               Cancel
             </Button>
-            <Button color="green" onClick={markAsPaid}>
+            <Button color="green" onClick={async () => {
+              await markAsPaid();
+              setMarkPaidModalOpen(false);
+            }}>
               Confirm Payment
             </Button>
           </Group>
@@ -1571,7 +1577,10 @@ export function BookingDetailPage(): ReactElement {
             <Button variant="light" onClick={() => setUndoPaymentModalOpen(false)}>
               Cancel
             </Button>
-            <Button color="orange" onClick={undoPayment} disabled={!undoPaymentReason.trim()}>
+            <Button color="orange" onClick={async () => {
+              await undoPayment();
+              setUndoPaymentModalOpen(false);
+            }} disabled={!undoPaymentReason.trim()}>
               Undo Payment
             </Button>
           </Group>

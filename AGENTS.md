@@ -2,8 +2,8 @@
 
 > **Purpose**: Living document providing context for AI agents working on this project. Updated after each session with current status, recent changes, and architectural decisions.
 
-**Last Updated**: May 1, 2026
-**Current Phase**: Phase 6 Complete (Calendar Resource Filtering + Per-Service Events)
+**Last Updated**: May 5, 2026
+**Current Phase**: Phase 6 Complete + Critical Fixes (AuditEvent Implementation + Booking Page Regressions Fixed)
 **Next Phase**: Phase 7 - Bookings List Page Updates
 
 **Build Plan**: See [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) for architecture  
@@ -1256,3 +1256,96 @@ A comprehensive 8-step patient intake form that supports both self-service (pati
 - "Done - Return to Start" button
 
 **Next Phase:** Phase 6 - Communications & Analytics
+
+---
+
+## AuditEvent Functions for Complete Audit Trail
+
+### All Booking Actions Now Recorded via FHIR AuditEvents
+
+| Function | Purpose | Called From |
+|----------|---------|------------|
+| `recordBookingCreated()` | Records new booking creation | `CreateAppointmentModalV3.tsx` (CREATE MODE) |
+| `recordBookingEdited()` | Records booking edits | `CreateAppointmentModalV3.tsx` (EDIT MODE) |
+| `recordBookingStatusChange()` | Records status changes | `BookingDetailPage.tsx` (`updateStatus`) |
+| `recordDepositPaid()` | Records deposit payment | `BookingDetailPage.tsx` |
+| `recordDepositRequested()` | Records payment link sent | `BookingDetailPage.tsx` |
+| `recordDepositWaived()` | Records deposit waiver | `BookingDetailPage.tsx` |
+| `recordPaymentUndone()` | Records payment reversal | `BookingDetailPage.tsx` |
+| `recordRefundIssued()` | Records refund issued | `BookingDetailPage.tsx` |
+
+### Activity Timeline Shows EVERYTHING
+
+The activity timeline in `BookingDetailPage.tsx` now shows ALL actions:
+- ✅ Booking created (who, what services, when, why)
+- ✅ Booking edited (who, what changed, when, why)
+- ✅ Status changes (who, from → to, when, why)
+- ✅ Deposit actions (paid, requested, waived, undone, refunded)
+- ✅ Treatment service actions (started, completed)
+
+### How to Verify All Actions Are Recorded
+
+1. Create a new booking → Check AuditEvent created with description "Booking created by [name]: [services]"
+2. Edit a booking → Check AuditEvent created with description "Booking edited by [name]: [changes]"
+3. Change status → Check AuditEvent created with description "Booking status changed from X to Y by [name]"
+4. All events should appear in the activity timeline with WHO, WHAT, WHEN, WHY
+
+---
+
+## Critical Fixes - May 5, 2026
+
+### Root Cause of Regressions
+Commit `ddbc3a776` ("update may", May 4, 2026) introduced ALL regressions:
+1. Created `audit-events.ts` with `declare function createAuditEvent` (NEVER IMPLEMENTED)
+2. Created `CreateAppointmentModalV3.tsx` with multiple bugs
+3. Rewrote `BookingDetailPage.tsx` to expect AuditEvents that could NEVER be created
+
+### Fixes Applied (May 5, 2026)
+
+**1. Implemented `createAuditEvent` in `audit-events.ts`**
+   - Changed from `declare function` to actual implementation
+   - Fixed FHIR R4 structure (entity[].role is Coding object, not `{ coding: [...] }`)
+   - Fixed entity[].detail[].type to be string (not Coding object)
+
+**2. Fixed `parseEntityDetails` for backward compatibility**
+   - Handles BOTH formats: string type (correct) and non-existent "old format"
+
+**3. Added `recordBookingStatusChange` function**
+   - Called from `updateStatus` in BookingDetailPage.tsx
+   - Records status changes as FHIR AuditEvents (auditable)
+
+**4. Fixed `updateStatus` in BookingDetailPage.tsx**
+   - Now calls `recordBookingStatusChange()` to create AuditEvent
+   - Removed old `status-change-audit` extension code (replaced by AuditEvents)
+
+**5. Fixed CreateAppointmentModalV3 regressions**
+   - Patient field now DISABLED in edit mode
+   - Skip to 'services' step when editing a booking
+   - Admin users now see ALL practitioners (not filtered by eligibility)
+
+**6. Fixed modals not closing after submission**
+   - Cancel modal: Now closes after `updateStatus('cancelled')`
+   - Uncancel modal: Now closes after `updateStatus('booked')`
+   - Waive modal: Now closes after `waiveDeposit()`
+   - Mark as paid modal: Now closes after `markAsPaid()`
+   - Undo payment modal: Now closes after `undoPayment()`
+
+**7. Fixed search parameter for AuditEvents**
+   - Changed from `patient: \`Patient/${patientId}\`` to `patient: patientId`
+   - Medplum handles reference search correctly with just the ID
+
+### How to Prevent Recurrence
+1. **Test after EVERY change**: Run `npm run build` (verifies TypeScript + bundling)
+2. **Verify features still work**: Create booking, edit booking, change status, check activity history
+3. **Never use `declare function`** - always implement functions completely
+4. **Update AGENTS.md after EACH session** with what was fixed and current status
+5. **Check git diff before committing** - ensure no regressions are being introduced
+
+### Current Status (After Fixes)
+- ✅ Deposit actions work (AuditEvents created correctly)
+- ✅ Activity history shows correctly (from AuditEvents)
+- ✅ Edit booking works (patient disabled, skips to services)
+- ✅ Admin sees all practitioners in dropdowns
+- ✅ Modals close after submission
+- ✅ BookingDetailPage status changes create proper AuditEvents
+- ✅ Build passes (TypeScript + ESLint)
