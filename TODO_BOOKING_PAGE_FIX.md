@@ -56,19 +56,19 @@
 
 ---
 
-### TODO 4: Fix Edit Booking Flow ⬜ PENDING
+### TODO 4: Fix Edit Booking Flow ✅ COMPLETE
 **File**: `packages/app/src/pages/BookingDetailPage.tsx` + `CreateAppointmentModalV3.tsx`  
-**Problem**: Edit button exists but may not pre-populate correctly  
+**Problem**: Edit button existed but needed verification of pre-population  
 **Solution**:
-- Verify `CreateAppointmentModalV3` receives `appointment` prop
-- Verify `mode="edit"` prop is passed
-- Verify patient field is DISABLED in edit mode
-- Verify all services pre-populated in `selectedServices` state
-- Verify providers/rooms/equipment pre-populated
-- Verify `recordBookingEdited()` is called on save
+- ✅ `CreateAppointmentModalV3` receives `editAppointment` and `editServiceRequests` props
+- ✅ `editMode={true}` prop is passed from BookingDetailPage
+- ✅ Patient field is DISABLED in edit mode (`disabled={editMode}`)
+- ✅ All services pre-populated in `selectedServices` state (line 1098-1100)
+- ✅ Providers/rooms/equipment pre-populated from ServiceRequest extensions
+- ✅ `recordBookingEdited()` is called on save (line 763-777)
+- ✅ In edit mode, skips to 'services' step (line 1103-1105)
 
-**Estimated Time**: 1 hour  
-**Status**: ⬜ PENDING
+**Status**: ✅ COMPLETE (commit: pending)
 
 ---
 
@@ -155,9 +155,9 @@ After EACH task:
 ## Summary
 
 - **Total Tasks**: 8
-- **Completed**: 1 ✅
-- **Pending**: 7 ⬜
-- **Estimated Total Time**: ~5-6 hours
+- **Completed**: 3 ✅
+- **Pending**: 5 ⬜
+- **Estimated Total Time**: ~4-5 hours
 
 ---
 

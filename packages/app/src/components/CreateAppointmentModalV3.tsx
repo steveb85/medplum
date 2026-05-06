@@ -760,6 +760,25 @@ export function CreateAppointmentModalV3({
           }
         }
 
+        // Record edit action via AuditEvent
+        const currentUser = medplum.getProfile();
+        const currentUserPractitioner = {
+          resourceType: 'Practitioner' as const,
+          id: currentUser?.id || '',
+          name: currentUser?.name,
+        };
+        // Use first service request for the audit event (booking = appointment + services)
+        const firstServiceRequest = updatedServiceRequests?.[0];
+        if (firstServiceRequest) {
+          await recordBookingEdited(
+            medplum,
+            patient,
+            firstServiceRequest,
+            currentUserPractitioner,
+            'Booking edited from modal'
+          );
+        }
+
         showNotification({
           title: 'Booking Updated',
           message: `Booking for ${patient.name?.[0]?.given?.[0]} ${patient.name?.[0]?.family} updated successfully`,
