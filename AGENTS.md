@@ -16,6 +16,10 @@
 
 ### What Is This
 
+1. **NEVER use `git checkout` to overwrite files** - This destroys work in progress
+2. **NEVER run `git checkout <commit> -- <file>`** - This overwrites current work with old versions
+3. When fixing bugs, EDIT the file directly - don't restore from old commits
+
 Medplum-based EMR (Electronic Medical Record) for **Nurse Melissa Knudson's** independent aesthetic nursing practice in NYC (Tribeca). Custom-built on top of the Medplum open-source FHIR platform.
 
 ### Architecture
@@ -77,6 +81,7 @@ cloudflared tunnel --config .cloudflared/medplum-api.yml run
    - Auto-seeds test data
 
 3. **App** (Terminal 3):
+
    ```bash
    cd packages/app && npm run dev
    ```
@@ -1263,20 +1268,21 @@ A comprehensive 8-step patient intake form that supports both self-service (pati
 
 ### All Booking Actions Now Recorded via FHIR AuditEvents
 
-| Function | Purpose | Called From |
-|----------|---------|------------|
-| `recordBookingCreated()` | Records new booking creation | `CreateAppointmentModalV3.tsx` (CREATE MODE) |
-| `recordBookingEdited()` | Records booking edits | `CreateAppointmentModalV3.tsx` (EDIT MODE) |
-| `recordBookingStatusChange()` | Records status changes | `BookingDetailPage.tsx` (`updateStatus`) |
-| `recordDepositPaid()` | Records deposit payment | `BookingDetailPage.tsx` |
-| `recordDepositRequested()` | Records payment link sent | `BookingDetailPage.tsx` |
-| `recordDepositWaived()` | Records deposit waiver | `BookingDetailPage.tsx` |
-| `recordPaymentUndone()` | Records payment reversal | `BookingDetailPage.tsx` |
-| `recordRefundIssued()` | Records refund issued | `BookingDetailPage.tsx` |
+| Function                      | Purpose                      | Called From                                  |
+| ----------------------------- | ---------------------------- | -------------------------------------------- |
+| `recordBookingCreated()`      | Records new booking creation | `CreateAppointmentModalV3.tsx` (CREATE MODE) |
+| `recordBookingEdited()`       | Records booking edits        | `CreateAppointmentModalV3.tsx` (EDIT MODE)   |
+| `recordBookingStatusChange()` | Records status changes       | `BookingDetailPage.tsx` (`updateStatus`)     |
+| `recordDepositPaid()`         | Records deposit payment      | `BookingDetailPage.tsx`                      |
+| `recordDepositRequested()`    | Records payment link sent    | `BookingDetailPage.tsx`                      |
+| `recordDepositWaived()`       | Records deposit waiver       | `BookingDetailPage.tsx`                      |
+| `recordPaymentUndone()`       | Records payment reversal     | `BookingDetailPage.tsx`                      |
+| `recordRefundIssued()`        | Records refund issued        | `BookingDetailPage.tsx`                      |
 
 ### Activity Timeline Shows EVERYTHING
 
 The activity timeline in `BookingDetailPage.tsx` now shows ALL actions:
+
 - ✅ Booking created (who, what services, when, why)
 - ✅ Booking edited (who, what changed, when, why)
 - ✅ Status changes (who, from → to, when, why)
@@ -1295,7 +1301,9 @@ The activity timeline in `BookingDetailPage.tsx` now shows ALL actions:
 ## Critical Fixes - May 5, 2026
 
 ### Root Cause of Regressions
+
 Commit `ddbc3a776` ("update may", May 4, 2026) introduced ALL regressions:
+
 1. Created `audit-events.ts` with `declare function createAuditEvent` (NEVER IMPLEMENTED)
 2. Created `CreateAppointmentModalV3.tsx` with multiple bugs
 3. Rewrote `BookingDetailPage.tsx` to expect AuditEvents that could NEVER be created
@@ -1303,38 +1311,46 @@ Commit `ddbc3a776` ("update may", May 4, 2026) introduced ALL regressions:
 ### Fixes Applied (May 5, 2026)
 
 **1. Implemented `createAuditEvent` in `audit-events.ts`**
-   - Changed from `declare function` to actual implementation
-   - Fixed FHIR R4 structure (entity[].role is Coding object, not `{ coding: [...] }`)
-   - Fixed entity[].detail[].type to be string (not Coding object)
+
+- Changed from `declare function` to actual implementation
+- Fixed FHIR R4 structure (entity[].role is Coding object, not `{ coding: [...] }`)
+- Fixed entity[].detail[].type to be string (not Coding object)
 
 **2. Fixed `parseEntityDetails` for backward compatibility**
-   - Handles BOTH formats: string type (correct) and non-existent "old format"
+
+- Handles BOTH formats: string type (correct) and non-existent "old format"
 
 **3. Added `recordBookingStatusChange` function**
-   - Called from `updateStatus` in BookingDetailPage.tsx
-   - Records status changes as FHIR AuditEvents (auditable)
+
+- Called from `updateStatus` in BookingDetailPage.tsx
+- Records status changes as FHIR AuditEvents (auditable)
 
 **4. Fixed `updateStatus` in BookingDetailPage.tsx**
-   - Now calls `recordBookingStatusChange()` to create AuditEvent
-   - Removed old `status-change-audit` extension code (replaced by AuditEvents)
+
+- Now calls `recordBookingStatusChange()` to create AuditEvent
+- Removed old `status-change-audit` extension code (replaced by AuditEvents)
 
 **5. Fixed CreateAppointmentModalV3 regressions**
-   - Patient field now DISABLED in edit mode
-   - Skip to 'services' step when editing a booking
-   - Admin users now see ALL practitioners (not filtered by eligibility)
+
+- Patient field now DISABLED in edit mode
+- Skip to 'services' step when editing a booking
+- Admin users now see ALL practitioners (not filtered by eligibility)
 
 **6. Fixed modals not closing after submission**
-   - Cancel modal: Now closes after `updateStatus('cancelled')`
-   - Uncancel modal: Now closes after `updateStatus('booked')`
-   - Waive modal: Now closes after `waiveDeposit()`
-   - Mark as paid modal: Now closes after `markAsPaid()`
-   - Undo payment modal: Now closes after `undoPayment()`
+
+- Cancel modal: Now closes after `updateStatus('cancelled')`
+- Uncancel modal: Now closes after `updateStatus('booked')`
+- Waive modal: Now closes after `waiveDeposit()`
+- Mark as paid modal: Now closes after `markAsPaid()`
+- Undo payment modal: Now closes after `undoPayment()`
 
 **7. Fixed search parameter for AuditEvents**
-   - Changed from `patient: \`Patient/${patientId}\`` to `patient: patientId`
-   - Medplum handles reference search correctly with just the ID
+
+- Changed from `patient: \`Patient/${patientId}\``to`patient: patientId`
+- Medplum handles reference search correctly with just the ID
 
 ### How to Prevent Recurrence
+
 1. **Test after EVERY change**: Run `npm run build` (verifies TypeScript + bundling)
 2. **Verify features still work**: Create booking, edit booking, change status, check activity history
 3. **Never use `declare function`** - always implement functions completely
@@ -1342,6 +1358,7 @@ Commit `ddbc3a776` ("update may", May 4, 2026) introduced ALL regressions:
 5. **Check git diff before committing** - ensure no regressions are being introduced
 
 ### Current Status (After Fixes)
+
 - ✅ Deposit actions work (AuditEvents created correctly)
 - ✅ Activity history shows correctly (from AuditEvents)
 - ✅ Edit booking works (patient disabled, skips to services)
