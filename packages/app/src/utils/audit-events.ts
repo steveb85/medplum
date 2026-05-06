@@ -324,12 +324,14 @@ export async function recordDepositRequested(
 
 export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, patientId: string): Promise<DepositInfo> {
   try {
-    // Search AuditEvent by patient - use just the ID (Medplum handles reference search)
+    // Search AuditEvent by patient - use full reference format
+    // Note: Medplum doesn't support _sort=recorded for AuditEvent
+    console.log('[audit-events] Loading AuditEvents for patient:', `Patient/${patientId}`);
     const bundle = await medplum.search('AuditEvent', {
-      patient: patientId,
-      _sort: '-recorded',
+      patient: `Patient/${patientId}`,
       _count: '100',
     });
+    console.log('[audit-events] AuditEvent search result:', bundle.total, 'events found');
 
     const allEvents = (bundle.entry || []).map((e) => e.resource as AuditEvent);
     const depositEvents = allEvents.filter((event) => {
