@@ -44,6 +44,7 @@ import {
   recordPaymentUndone,
   recordRefundIssued,
   recordBookingStatusChange,
+  parseEntityDetails,
 } from '../utils/audit-events';
 import { sendDepositRequestEmail, sendPaymentConfirmationEmail } from '../utils/email';
 import type { DepositStatus } from '../utils/payments';
@@ -333,15 +334,8 @@ export function BookingDetailPage(): ReactElement {
               ? `${agent.name[0].given?.[0] || ''} ${agent.name[0].family || ''}`.trim()
               : 'System';
 
-          // Parse entity details
-          const details: Record<string, string> = {};
-          event.entity?.forEach((entity: any) => {
-            entity.detail?.forEach((d: any) => {
-              if (d.type && d.valueString) {
-                details[d.type] = d.valueString;
-              }
-            });
-          });
+          // Parse entity details using shared function (handles both old and new formats)
+          const details = parseEntityDetails(event) as Record<string, string>;
 
           // Map to AuditEntry based on description
           if (desc.includes('deposit paid')) {

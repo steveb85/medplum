@@ -210,7 +210,7 @@ async function createAuditEvent(
   return medplum.createResource(auditEvent);
 }
 
-function parseEntityDetails(event: AuditEvent): EntityDetails {
+export function parseEntityDetails(event: AuditEvent): EntityDetails {
   const details: EntityDetails = {};
   
   // Read from extension (new format) - entityDetails stored in AuditEvent.extension
