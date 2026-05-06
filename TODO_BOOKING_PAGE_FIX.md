@@ -21,24 +21,21 @@
 
 ---
 
-### TODO 2: Implement ServiceCard Start/Complete Actions ⬜ PENDING
-**File**: `packages/app/src/pages/BookingDetailPage.tsx` (lines 172-180, 1495-1550)  
-**Problem**: Handlers are placeholders (`console.log` only)  
+### TODO 2: Implement ServiceCard Start/Complete Actions ✅ COMPLETE
+**File**: `packages/app/src/pages/BookingDetailPage.tsx` (lines 174-270)  
+**Problem**: Handlers were placeholders (`console.log` only)  
 **Solution**:
 - `handleStartService(serviceRequestId)`:
-  - Update ServiceRequest extension `serviceStatus` to `in-progress`
-  - Set `startedAt` on ServiceCardData
+  - Update ServiceRequest extension `service-status` to `in-progress`
   - Call `recordTreatmentMilestone()` with "started"
   - Refresh data via `loadData()`
 
 - `handleCompleteService(serviceRequestId)`:
-  - Update ServiceRequest extension `serviceStatus` to `completed`
-  - Set `completedAt` on ServiceCardData
+  - Update ServiceRequest extension `service-status` to `completed`
   - Call `recordTreatmentMilestone()` with "completed"
   - Refresh data via `loadData()`
 
-**Estimated Time**: 1 hour  
-**Status**: ⬜ PENDING
+**Status**: ✅ COMPLETE (commit: pending)
 
 ---
 
