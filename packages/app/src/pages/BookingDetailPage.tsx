@@ -26,6 +26,7 @@ import {
   IconEye,
   IconMessage,
   IconRefresh,
+  IconSignature,
   IconUserCheck,
   IconUserX,
   IconX,
@@ -48,6 +49,7 @@ import {
   parseEntityDetails,
 } from '../utils/audit-events';
 import { sendDepositRequestEmail, sendPaymentConfirmationEmail } from '../utils/email';
+import { ConsentModal } from '../components/ConsentModal';
 import type { DepositStatus } from '../utils/payments';
 import { formatDepositAmount, getDepositStatusColor } from '../utils/payments';
 import { sendDepositRequestSMS, sendPaymentConfirmationSMS } from '../utils/sms';
@@ -133,6 +135,9 @@ export function BookingDetailPage(): ReactElement {
   const [waiveReason, setWaiveReason] = useState('');
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [currentConsentServiceRequest, setCurrentConsentServiceRequest] = useState<ServiceRequest | null>(null);
+  const [currentConsentService, setCurrentConsentService] = useState<ActivityDefinition | null>(null);
   const [uncancelModalOpen, setUncancelModalOpen] = useState(false);
   const [uncancelReason, setUncancelReason] = useState('');
   const [markPaidModalOpen, setMarkPaidModalOpen] = useState(false);
@@ -219,6 +224,29 @@ export function BookingDetailPage(): ReactElement {
       showNotification({ color: 'red', title: 'Error', message: 'Failed to start service' });
     }
   }, [patient, serviceRequests, medplum]);
+
+  // Handle signing consent for a service
+  const handleSignConsent = useCallback((serviceRequestId: string) => {
+    const sr = serviceRequests.find(s => s.id === serviceRequestId);
+    if (!sr) {
+      showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
+      return;
+    }
+    const service = services.find(s => s.id === sr.code?.coding?.[0]?.code);
+    if (!service) {
+      showNotification({ color: 'red', title: 'Error', message: 'Service definition not found' });
+      return;
+    }
+    setCurrentConsentServiceRequest(sr);
+    setCurrentConsentService(service);
+    setConsentModalOpen(true);
+  }, [serviceRequests, services]);
+
+  const handleConsentSuccess = useCallback(async () => {
+    setConsentModalOpen(false);
+    showNotification({ color: 'green', title: 'Success', message: 'Consent signed successfully' });
+    await loadData();
+  }, []);
 
   const handleCompleteService = useCallback(async (serviceRequestId: string) => {
     if (!patient) return;
@@ -1247,23 +1275,24 @@ export function BookingDetailPage(): ReactElement {
                </Title>
                <Stack gap="md">
                  {serviceCardData.length > 0 ? (
-                    serviceCardData.map((cardData, index) => (
-                      <ServiceCard
-                        key={cardData.serviceRequest?.id || index}
-                        data={cardData}
-                        index={index}
-                        patient={patient as Patient}
-                        mainProvider={providers[0]}
-                        assistantProvider={providers[1]}
-                        readonly={appointment?.status === 'cancelled' || appointment?.status === 'fulfilled'}
-                        onStartService={handleStartService}
-                        onCompleteService={handleCompleteService}
-                        onUpdateTreatmentData={handleUpdateTreatmentData}
-                        onUploadPhotos={handleUploadPhotos}
-                        onDeletePhoto={handleDeletePhoto}
-                        onUpdatePhotoMetadata={handleUpdatePhotoMetadata}
-                      />
-                    ))
+                     serviceCardData.map((cardData, index) => (
+                       <ServiceCard
+                         key={cardData.serviceRequest?.id || index}
+                         data={cardData}
+                         index={index}
+                         patient={patient as Patient}
+                         mainProvider={providers[0]}
+                         assistantProvider={providers[1]}
+                         readonly={appointment?.status === 'cancelled' || appointment?.status === 'fulfilled'}
+                         onStartService={handleStartService}
+                         onCompleteService={handleCompleteService}
+                         onSignConsent={handleSignConsent}
+                         onUpdateTreatmentData={handleUpdateTreatmentData}
+                         onUploadPhotos={handleUploadPhotos}
+                         onDeletePhoto={handleDeletePhoto}
+                         onUpdatePhotoMetadata={handleUpdatePhotoMetadata}
+                       />
+                     ))
                  ) : (
                    <Text c="dimmed" ta="center" py="md">
                      No services found for this booking
@@ -1683,6 +1712,17 @@ export function BookingDetailPage(): ReactElement {
           </Group>
         </Stack>
       </Modal>
+
+      {/* Consent Modal */}
+      <ConsentModal
+        isOpen={consentModalOpen}
+        onClose={() => setConsentModalOpen(false)}
+        onSuccess={handleConsentSuccess}
+        patient={patient as Patient}
+        serviceRequest={currentConsentServiceRequest as ServiceRequest}
+        service={currentConsentService as ActivityDefinition}
+        witness={providers[0] || null}
+      />
 
       {/* Edit Booking Modal */}
       <CreateAppointmentModalV3

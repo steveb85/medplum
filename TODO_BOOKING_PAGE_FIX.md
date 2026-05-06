@@ -41,19 +41,18 @@
 
 ## 🟠 P1 - High Priority (Fix This Week)
 
-### TODO 3: Integrate ConsentModal ⬜ PENDING
+### TODO 3: Integrate ConsentModal ✅ COMPLETE
 **File**: `packages/app/src/pages/BookingDetailPage.tsx` + `ServiceCard.tsx`  
-**Problem**: ConsentModal exists (456 lines) but not used in BookingDetailPage  
+**Problem**: ConsentModal existed but not used in BookingDetailPage  
 **Solution**:
 - Import `ConsentModal` in `BookingDetailPage.tsx`
-- Add state: `consentModalOpen`, `currentServiceRequest`, `currentService`
-- In ServiceCard, pass `onSignConsent` callback
-- When clicked, open ConsentModal with service context
-- On success, call `recordConsentSigned()` from `audit-events.ts`
-- Refresh data to show in activity history
+- Added state: `consentModalOpen`, `currentConsentServiceRequest`, `currentConsentService`
+- Added `onSignConsent` prop to ServiceCard
+- Added "Sign Consent" button in ServiceCard when consent required and not signed
+- When clicked, opens ConsentModal with service context
+- On success, calls `loadData()` to refresh and show in activity history
 
-**Estimated Time**: 1 hour  
-**Status**: ⬜ PENDING
+**Status**: ✅ COMPLETE (commit: pending)
 
 ---
 

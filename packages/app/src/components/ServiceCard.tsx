@@ -26,7 +26,7 @@ import {
   Tooltip,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconAlertCircle, IconCheck, IconChevronDown, IconChevronRight, IconPhoto, IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react';
+import { IconAlertCircle, IconCheck, IconChevronDown, IconChevronRight, IconPhoto, IconPlayerPlay, IconPlayerStop, IconSignature } from '@tabler/icons-react';
 import type { ActivityDefinition, Media, Patient, Practitioner, ServiceRequest } from '@medplum/fhirtypes';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -59,6 +59,7 @@ interface ServiceCardProps {
   consentStatus?: ConsentStatus;
   onStartService: (serviceRequestId: string) => void;
   onCompleteService: (serviceRequestId: string) => void;
+  onSignConsent?: (serviceRequestId: string) => void;
   onUpdateTreatmentData: (serviceRequestId: string, data: Record<string, unknown>) => void;
   onUploadPhotos: (serviceRequestId: string) => void;
   onDeletePhoto: (serviceRequestId: string, photoId: string) => void;
@@ -77,6 +78,7 @@ export function ServiceCard({
   consentStatus,
   onStartService,
   onCompleteService,
+  onSignConsent,
   onUpdateTreatmentData,
   onUploadPhotos,
   onDeletePhoto,
@@ -295,7 +297,7 @@ export function ServiceCard({
         <Divider my="md" />
 
         <Stack gap="md">
-          {/* Consent Warning */}
+            {/* Consent Warning */}
           {config.consentRequired && !consent?.hasConsent && !readonly && (
             <Box p="md" bg="red.0" style={{ borderRadius: '4px' }}>
               <Group gap="xs">
@@ -308,8 +310,19 @@ export function ServiceCard({
               </Group>
               <Text size="sm" c="red.7" mt="xs">
                 This service requires patient consent to be signed before treatment can begin.
-                Please use the "Sign All" button at the top of the page or sign consent for this specific service.
               </Text>
+              {onSignConsent && serviceRequest.id && (
+                <Button
+                  size="xs"
+                  variant="filled"
+                  color="blue"
+                  leftSection={<IconSignature size={14} />}
+                  onClick={() => onSignConsent(serviceRequest.id!)}
+                  mt="xs"
+                >
+                  Sign Consent
+                </Button>
+              )}
             </Box>
           )}
 
