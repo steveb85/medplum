@@ -34,6 +34,7 @@ import {
 import dayjs from 'dayjs';
 import type { ReactElement } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMediaQuery } from '@mantine/hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getMedSpaRole } from '../auth/role';
 import {
@@ -138,6 +139,9 @@ export function BookingDetailPage(): ReactElement {
   const [consentModalOpen, setConsentModalOpen] = useState(false);
   const [currentConsentServiceRequest, setCurrentConsentServiceRequest] = useState<ServiceRequest | null>(null);
   const [currentConsentService, setCurrentConsentService] = useState<ActivityDefinition | null>(null);
+
+  // Mobile detection for modal fullscreen
+  const isMobile = useMediaQuery('(max-width: 768px)');
   const [uncancelModalOpen, setUncancelModalOpen] = useState(false);
   const [uncancelReason, setUncancelReason] = useState('');
   const [markPaidModalOpen, setMarkPaidModalOpen] = useState(false);
@@ -1556,7 +1560,7 @@ export function BookingDetailPage(): ReactElement {
       </Grid>
 
       {/* Waive Deposit Modal */}
-      <Modal opened={waiveModalOpen} onClose={() => setWaiveModalOpen(false)} title="Waive Deposit">
+      <Modal opened={waiveModalOpen} onClose={() => setWaiveModalOpen(false)} title="Waive Deposit" fullScreen={isMobile}>
         <Stack>
           <Text size="sm">Please provide a reason for waiving the deposit:</Text>
           <Textarea
@@ -1580,7 +1584,7 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Cancel Modal */}
-      <Modal opened={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Cancel Booking">
+      <Modal opened={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Cancel Booking" fullScreen={isMobile}>
         <Stack>
           <Text size="sm">Please provide a reason for cancelling this booking:</Text>
           <Textarea
@@ -1604,7 +1608,7 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Uncancel Modal */}
-      <Modal opened={uncancelModalOpen} onClose={() => setUncancelModalOpen(false)} title="Uncancel Booking">
+      <Modal opened={uncancelModalOpen} onClose={() => setUncancelModalOpen(false)} title="Uncancel Booking" fullScreen={isMobile}>
         <Stack>
           <Text size="sm">Please provide a reason for uncancelling this booking:</Text>
           <Text size="xs" c="dimmed">
@@ -1651,7 +1655,7 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Mark Paid Modal */}
-      <Modal opened={markPaidModalOpen} onClose={() => setMarkPaidModalOpen(false)} title="Mark Deposit as Paid">
+      <Modal opened={markPaidModalOpen} onClose={() => setMarkPaidModalOpen(false)} title="Mark Deposit as Paid" fullScreen={isMobile}>
         <Stack>
           <Text size="sm">Enter payment details:</Text>
           <NumberInput
@@ -1695,7 +1699,7 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Undo Payment Modal */}
-      <Modal opened={undoPaymentModalOpen} onClose={() => setUndoPaymentModalOpen(false)} title="Undo Manual Payment">
+      <Modal opened={undoPaymentModalOpen} onClose={() => setUndoPaymentModalOpen(false)} title="Undo Manual Payment" fullScreen={isMobile}>
         <Stack>
           <Text size="sm">This will mark the deposit as requested again. Please provide a reason:</Text>
           <Text size="sm" fw={500}>
