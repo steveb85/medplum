@@ -44,6 +44,7 @@ import {
   recordPaymentUndone,
   recordRefundIssued,
   recordBookingStatusChange,
+  recordTreatmentMilestone,
   parseEntityDetails,
 } from '../utils/audit-events';
 import { sendDepositRequestEmail, sendPaymentConfirmationEmail } from '../utils/email';
@@ -169,16 +170,104 @@ export function BookingDetailPage(): ReactElement {
     });
   }, [serviceRequests, services]);
 
-  // Handler functions for ServiceCards (placeholder implementations)
-  const handleStartService = useCallback((serviceRequestId: string) => {
-    console.log('Start service:', serviceRequestId);
-    showNotification({ color: 'blue', title: 'Info', message: 'Start service functionality coming soon' });
-  }, []);
+  // Handler functions for ServiceCards
+  const handleStartService = useCallback(async (serviceRequestId: string) => {
+    if (!patient) return;
+    
+    try {
+      // Find the service request
+      const sr = serviceRequests.find(s => s.id === serviceRequestId);
+      if (!sr) {
+        showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
+        return;
+      }
 
-  const handleCompleteService = useCallback((serviceRequestId: string) => {
-    console.log('Complete service:', serviceRequestId);
-    showNotification({ color: 'green', title: 'Info', message: 'Complete service functionality coming soon' });
-  }, []);
+      // Update service status to in-progress
+      const updatedExtensions = [
+        ...(sr.extension || []).filter(e => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-status'),
+        {
+          url: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
+          valueString: 'in-progress',
+        },
+      ];
+
+      await medplum.updateResource({
+        ...sr,
+        extension: updatedExtensions,
+      });
+
+      // Record milestone
+      const currentUser = medplum.getProfile();
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
+      };
+
+      await recordTreatmentMilestone(
+        medplum,
+        patient,
+        sr,
+        'started',
+        currentUserPractitioner
+      );
+
+      showNotification({ color: 'green', title: 'Success', message: 'Service started' });
+      await loadData();
+    } catch (err) {
+      console.error('Error starting service:', err);
+      showNotification({ color: 'red', title: 'Error', message: 'Failed to start service' });
+    }
+  }, [patient, serviceRequests, medplum]);
+
+  const handleCompleteService = useCallback(async (serviceRequestId: string) => {
+    if (!patient) return;
+    
+    try {
+      // Find the service request
+      const sr = serviceRequests.find(s => s.id === serviceRequestId);
+      if (!sr) {
+        showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
+        return;
+      }
+
+      // Update service status to completed
+      const updatedExtensions = [
+        ...(sr.extension || []).filter(e => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-status'),
+        {
+          url: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
+          valueString: 'completed',
+        },
+      ];
+
+      await medplum.updateResource({
+        ...sr,
+        extension: updatedExtensions,
+      });
+
+      // Record milestone
+      const currentUser = medplum.getProfile();
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
+      };
+
+      await recordTreatmentMilestone(
+        medplum,
+        patient,
+        sr,
+        'completed',
+        currentUserPractitioner
+      );
+
+      showNotification({ color: 'green', title: 'Success', message: 'Service completed' });
+      await loadData();
+    } catch (err) {
+      console.error('Error completing service:', err);
+      showNotification({ color: 'red', title: 'Error', message: 'Failed to complete service' });
+    }
+  }, [patient, serviceRequests, medplum]);
 
   const handleUpdateTreatmentData = useCallback((serviceRequestId: string, data: Record<string, unknown>) => {
     console.log('Update treatment data:', serviceRequestId, data);
