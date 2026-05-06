@@ -87,17 +87,16 @@
 
 ---
 
-### TODO 6: Fix Service Status Display ⬜ PENDING
-**File**: `packages/app/src/components/ServiceCard.tsx` (lines 186-198)  
+### TODO 6: Fix Service Status Display ✅ COMPLETE
+**File**: `packages/app/src/components/ServiceCard.tsx` (lines 186-199)  
 **Goal**: Show correct status badge (pending/in-progress/completed/cancelled)  
-**Current State**: Status comes from `serviceStatus` extension, mapped to `ServiceStatus` type  
-**Verification Needed**:
-- Check status badge colors are correct (gray/orange/green/red)
-- Check status transitions work (pending → in-progress → completed)
-- Verify cancelled services show correctly
+**Current State**: Status comes from `service-status` extension, mapped to `ServiceStatus` type  
+**Verification**:
+- ✅ Status badge colors are correct: gray (pending), orange (in-progress), green (completed), red (cancelled)
+- ✅ Status transitions work: `handleStartService` → 'in-progress', `handleCompleteService` → 'completed'
+- ✅ Cancelled services show correctly (red badge)
 
-**Estimated Time**: 30 minutes  
-**Status**: ⬜ PENDING
+**Status**: ✅ COMPLETE (no commit needed - was already working)
 
 ---
 
