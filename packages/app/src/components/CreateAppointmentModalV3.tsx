@@ -767,6 +767,36 @@ export function CreateAppointmentModalV3({
           id: currentUser?.id || '',
           name: currentUser?.name,
         };
+
+        // Build changes description for audit
+        const changes: string[] = [];
+
+        // Check for room changes
+        for (let i = 0; i < selectedServices.length && i < existingServiceRequests.length; i++) {
+          const newRoom = selectedServices[i].room;
+          const oldRoomExt = existingServiceRequests[i]?.extension?.find(
+            (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/assigned-room'
+          );
+          const oldRoom = oldRoomExt?.valueString || 'none';
+          if (newRoom !== oldRoom) {
+            changes.push(`Room changed from ${oldRoom} to ${newRoom} for service ${i + 1}`);
+          }
+        }
+
+        // Check for provider changes
+        if (selectedServices[0]?.provider && existingServiceRequests[0]) {
+          const newProviderId = selectedServices[0].provider?.id;
+          const oldProviderRef = existingServiceRequests[0].requester?.reference;
+          const oldProviderId = oldProviderRef?.split('/')[1];
+          if (newProviderId !== oldProviderId) {
+            changes.push(`Provider changed for service 1`);
+          }
+        }
+
+        const changeDescription = changes.length > 0
+          ? `Booking edited: ${changes.join('; ')}`
+          : 'Booking edited from modal';
+
         // Use first service request for the audit event (booking = appointment + services)
         const firstServiceRequest = updatedServiceRequests?.[0];
         if (firstServiceRequest) {
@@ -775,7 +805,7 @@ export function CreateAppointmentModalV3({
             patient,
             firstServiceRequest,
             currentUserPractitioner,
-            'Booking edited from modal'
+            changeDescription
           );
         }
 

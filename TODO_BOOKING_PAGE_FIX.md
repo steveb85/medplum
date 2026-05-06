@@ -102,15 +102,14 @@
 
 ## 🟢 P3 - Nice to Have (Backlog)
 
-### TODO 7: Add Room/Equipment Change Logging ⬜ PENDING
+### TODO 7: Add Room/Equipment Change Logging ✅ COMPLETE
 **Goal**: Activity history shows "Room changed from Room 1 to Room 2"  
 **Solution**:
-- In `CreateAppointmentModalV3`, when editing, detect room/equipment changes
-- Call `recordBookingEdited()` with changes description
-- Parse in activity history as "Room changed: Room 1 → Room 2"
+- ✅ In `CreateAppointmentModalV3`, when editing, detect room/equipment changes (lines 771-792)
+- ✅ Call `recordBookingEdited()` with changes description
+- ✅ Activity history parses "Room changed" entries (added in TODO 5)
 
-**Estimated Time**: 1 hour  
-**Status**: ⬜ PENDING
+**Status**: ✅ COMPLETE (commit: pending)
 
 ---
 
