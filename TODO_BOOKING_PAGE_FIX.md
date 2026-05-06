@@ -74,27 +74,16 @@
 
 ## 🟡 P2 - Medium Priority (Fix Next Sprint)
 
-### TODO 5: Add Activity History Entries for Consent ⬜ PENDING
-**File**: `packages/app/src/utils/audit-events.ts` + `BookingDetailPage.tsx`  
+### TODO 5: Add Activity History Entries for Consent ✅ COMPLETE
+**File**: `packages/app/src/utils/audit-events.ts` + `BookingDetailPage.tsx` + `ConsentModal.tsx`  
 **Goal**: Activity history shows "Consent signed by [name] on [date]"  
 **Solution**:
-- Already have `recordConsentSigned()` function
-- Ensure ConsentModal calls it on success
-- Verify `parseEntityDetails()` extracts consent data correctly
-- Add mapping in BookingDetailPage.tsx activity parser:
-  ```typescript
-  if (desc.includes('consent signed')) {
-    audits.push({
-      timestamp,
-      action: 'Consent Signed',
-      details: `Service: ${details.serviceName || 'Unknown'}`,
-      user,
-    });
-  }
-  ```
+- ✅ `recordConsentSigned()` function exists in `audit-events.ts`
+- ✅ `ConsentModal.tsx` calls `recordConsentSigned()` on success (line 210)
+- ✅ `parseEntityDetails()` extracts consent data correctly
+- ✅ Added mapping in BookingDetailPage.tsx activity parser (line 523-531)
 
-**Estimated Time**: 30 minutes  
-**Status**: ⬜ PENDING
+**Status**: ✅ COMPLETE (commit: pending)
 
 ---
 

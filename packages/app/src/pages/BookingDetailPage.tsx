@@ -526,6 +526,14 @@ export function BookingDetailPage(): ReactElement {
               action: desc,
               user,
             });
+          } else if (desc.includes('consent signed')) {
+            const serviceName = details.serviceName || 'Unknown Service';
+            audits.push({
+              timestamp,
+              action: 'Consent Signed',
+              details: `Service: ${serviceName}`,
+              user,
+            });
           }
         }
 
