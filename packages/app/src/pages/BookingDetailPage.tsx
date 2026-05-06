@@ -294,22 +294,33 @@ export function BookingDetailPage(): ReactElement {
           patient: searchPatient,
           _count: '500',
         });
+        console.log('[BookingDetailPage] AuditEvent search result:', auditBundle.total, 'total,', auditBundle.entry?.length || 0, 'entries');
+        console.log('[BookingDetailPage] Full bundle:', JSON.stringify(auditBundle, null, 2).substring(0, 500));
 
         const auditEvents = (auditBundle.entry || []).map((e) => e.resource as any).sort((a: any, b: any) => {
           return new Date(b.recorded || 0).getTime() - new Date(a.recorded || 0).getTime();
         });
 
+        // Debug: Log all event descriptions
+        console.log('[BookingDetailPage] All AuditEvent descriptions:', auditEvents.map((e: any) => e.description));
+
         // Filter to ALL booking-related events (broader match)
         const relevantEvents = auditEvents.filter((event: any) => {
           const desc = (event.description || '').toLowerCase();
-          return (
+          const isRelevant = (
             desc.includes('deposit') ||
             desc.includes('payment') ||
             desc.includes('refund') ||
             desc.includes('booking') ||  // Catches "booking status changed", "booking cancelled", etc.
             desc.includes('treatment')
           );
+          if (!isRelevant) {
+            console.log('[BookingDetailPage] Filtered OUT:', desc);
+          }
+          return isRelevant;
         });
+
+        console.log('[BookingDetailPage] Relevant events count:', relevantEvents.length);
 
         for (const event of relevantEvents) {
           const desc = event.description || '';

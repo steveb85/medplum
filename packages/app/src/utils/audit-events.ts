@@ -331,7 +331,8 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
       patient: `Patient/${patientId}`,
       _count: '100',
     });
-    console.log('[audit-events] AuditEvent search result:', bundle.total, 'events found');
+    console.log('[audit-events] AuditEvent search result:', bundle.total, 'events found', 'entry count:', bundle.entry?.length || 0);
+    console.log('[audit-events] Full bundle:', JSON.stringify(bundle, null, 2).substring(0, 500));
 
     const allEvents = (bundle.entry || []).map((e) => e.resource as AuditEvent);
     const depositEvents = allEvents.filter((event) => {
