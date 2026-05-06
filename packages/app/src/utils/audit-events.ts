@@ -4,7 +4,10 @@ import type { MedplumClient } from '@medplum/core';
 import type { AuditEvent, Consent, Patient, Practitioner, ServiceRequest } from '@medplum/fhirtypes';
 import type { DepositInfo, DepositStatus } from './payments';
 
-type EntityDetails = Record<string, any>;
+// STRICT type: Only allow primitives that can safely become valueString
+// Objects (which might have 'extension' properties) are NOT allowed
+// This prevents FHIR constraint violations at compile time
+type EntityDetails = Record<string, string | number | boolean | null | undefined>;
 
 /**
  * Maps action codes to FHIR RESTful interaction codes
@@ -106,12 +109,33 @@ async function createAuditEvent(
   }
 
   // Build audit-details extension from entityDetails
+  // Validate that all values are primitives (no objects with 'extension' properties)
+  Object.entries(entityDetails).forEach(([key, value]) => {
+    if (typeof value === 'object' && value !== null) {
+      throw new Error(
+        `[audit-events] Invalid entityDetail "${key}": must be primitive (string|number|boolean), got ${typeof value}. ` +
+        `Objects can cause FHIR constraint violations (ext-1). Value: ${JSON.stringify(value).substring(0, 100)}`
+      );
+    }
+  });
+
+  // Create child extensions - ensure CLEAN objects with ONLY url and valueString
+  const childExtensions = Object.entries(entityDetails).map(([key, value]) => {
+    // Create a plain object with NO prototype to avoid any property leakage
+    const ext = Object.create(null);
+    ext.url = key;
+    ext.valueString = String(value ?? '');
+    // Double-check: remove any 'extension' property that might have leaked
+    if (ext.extension) {
+      console.error(`[audit-events] WARNING: 'extension' property found on child extension for key "${key}" - removing it`);
+      delete ext.extension;
+    }
+    return ext;
+  });
+
   const auditDetailsExtension = {
     url: 'http://melissaknudson.com/fhir/StructureDefinition/audit-details',
-    extension: Object.entries(entityDetails).map(([key, value]) => ({
-      url: key,
-      valueString: String(value),
-    })),
+    extension: childExtensions,
   };
 
   const auditEvent: AuditEvent = {
@@ -145,6 +169,43 @@ async function createAuditEvent(
     extension: [auditDetailsExtension],
     entity: entity.length > 0 ? entity : undefined,
   };
+
+  // Debug: Log the exact AuditEvent being sent
+  console.log('[audit-events] Creating AuditEvent:', JSON.stringify(auditEvent, null, 2).substring(0, 1000));
+
+  // Pre-send validation: Check for FHIR constraint violations (ext-1)
+  // Check extension[] array
+  (auditEvent.extension || []).forEach((ext, extIndex) => {
+    if ((ext as any).extension) {
+      ((ext as any).extension || []).forEach((child: any, childIndex: number) => {
+        if (child.extension && child.valueString) {
+          console.error(
+            `[audit-events] VIOLATION: extension[${extIndex}].extension[${childIndex}] has BOTH extension AND valueString! ` +
+            `url: ${child.url}, valueString: ${child.valueString}, extension: ${JSON.stringify(child.extension).substring(0, 50)}`
+          );
+          console.error('[audit-events] Full auditEvent:', JSON.stringify(auditEvent, null, 2));
+          throw new Error(
+            `[audit-events] Cannot create AuditEvent: extension[${extIndex}].extension[${childIndex}] violates FHIR constraint ext-1 ` +
+            `(cannot have both extension and value[x]). url: ${child.url}`
+          );
+        }
+      });
+    }
+  });
+
+  // Also check entity[] array (Medplum might move these to extension)
+  (auditEvent.entity || []).forEach((ent, entIndex) => {
+    if ((ent as any).extension) {
+      ((ent as any).extension || []).forEach((child: any, childIndex: number) => {
+        if (child.extension && child.valueString) {
+          console.error(
+            `[audit-events] VIOLATION: entity[${entIndex}].extension[${childIndex}] has BOTH extension AND valueString! ` +
+            `url: ${child.url}`
+          );
+        }
+      });
+    }
+  });
 
   return medplum.createResource(auditEvent);
 }
@@ -261,11 +322,11 @@ export async function recordDepositRequested(
   });
 }
 
-export async function getDepositStatusFromAuditEvents(medplum: MedPlumClient, patientId: string): Promise<DepositInfo> {
+export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, patientId: string): Promise<DepositInfo> {
   try {
-    // Search AuditEvent by patient - use full reference format for FHIR compliance
+    // Search AuditEvent by patient - use just the ID (Medplum handles reference search)
     const bundle = await medplum.search('AuditEvent', {
-      patient: `Patient/${patientId}`,
+      patient: patientId,
       _sort: '-recorded',
       _count: '100',
     });

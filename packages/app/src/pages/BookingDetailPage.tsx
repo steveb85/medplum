@@ -286,9 +286,10 @@ export function BookingDetailPage(): ReactElement {
       const audits: AuditEntry[] = [];
 
       try {
-        // Query AuditEvents for this patient (use full reference format)
+         // Query AuditEvents for this patient
+        // Use just the patient ID (Medplum handles reference search correctly)
         const auditBundle = await medplum.search('AuditEvent', {
-          patient: patientRef || '',  // patientRef is already "Patient/123" format
+          patient: patientId,  // patientId is just the ID part
           _count: '500',
         });
 
