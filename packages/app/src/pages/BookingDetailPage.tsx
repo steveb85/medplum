@@ -451,12 +451,12 @@ export function BookingDetailPage(): ReactElement {
         for (const event of relevantEvents) {
           const timestamp = new Date(event.recorded || Date.now());
 
-          // Extract user from agent
+          // Extract user from agent (may be undefined in search results without _elements)
           const agent = event.agent?.[0];
-          const user =
-            agent?.who?.display || agent?.name?.[0]
+          const user = agent?.who?.display ||
+            (agent?.name?.[0]
               ? `${agent.name[0].given?.[0] || ''} ${agent.name[0].family || ''}`.trim()
-              : 'System';
+              : 'System');
 
           // Parse entity details using shared function (handles both old and new formats)
           const { details, description: eventDesc } = parseEntityDetails(event);
