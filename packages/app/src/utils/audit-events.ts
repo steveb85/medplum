@@ -138,7 +138,8 @@ async function createAuditEvent(
     extension: childExtensions,
   };
 
-  // Store description in extension since FHIR R4 AuditEvent doesn't have a top-level description field
+  // Store description in extension (FHIR R4 doesn't have top-level description)
+  // Also try storing in subtype[0].display as backup (standard field)
   const descriptionExtension = {
     url: 'http://melissaknudson.com/fhir/StructureDefinition/audit-description',
     valueString: description,
@@ -155,7 +156,7 @@ async function createAuditEvent(
       {
         system: 'http://hl7.org/fhir/restful-interaction',
         code: mapActionToCode(action),
-        display: mapActionToDisplay(action),
+        display: description || mapActionToDisplay(action), // Put description in display as backup
       },
     ],
     action: action as any,
@@ -177,7 +178,8 @@ async function createAuditEvent(
   };
 
   // Debug: Log the exact AuditEvent being sent
-  console.log('[audit-events] Creating AuditEvent:', JSON.stringify(auditEvent, null, 2).substring(0, 1000));
+  console.log('[audit-events] Creating AuditEvent - extension:', JSON.stringify(auditEvent.extension, null, 2));
+  console.log('[audit-events] Full AuditEvent (first 1000 chars):', JSON.stringify(auditEvent, null, 2).substring(0, 1000));
 
   // Pre-send validation: Check for FHIR constraint violations (ext-1)
   // Check extension[] array
@@ -224,8 +226,16 @@ export function parseEntityDetails(event: AuditEvent): { details: EntityDetails;
   const descExt = event.extension?.find(
     (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/audit-description'
   );
+  console.log('[audit-events] parseEntityDetails: event.extension =', event.extension, 'descExt =', descExt, 'valueString =', descExt?.valueString);
+
+  // Also try reading from subtype[0].display (standard FHIR field, more likely to be preserved)
+  const subtypeDisplay = event.subtype?.[0]?.display;
+  console.log('[audit-events] parseEntityDetails: subtype[0].display =', subtypeDisplay);
+
   if (descExt?.valueString) {
     description = descExt.valueString;
+  } else if (subtypeDisplay) {
+    description = subtypeDisplay;
   }
 
   // Read entity details from extension (new format)
