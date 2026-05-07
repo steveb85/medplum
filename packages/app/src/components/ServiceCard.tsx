@@ -241,7 +241,7 @@ export function ServiceCard({
 
   return (
     <Card withBorder shadow="sm">
-      {/* Header - Always visible */}
+       {/* Header - Always visible */}
       <Group justify="space-between" wrap="nowrap">
         <Group gap="xs">
           <Text fw={600} size="lg">
@@ -249,6 +249,38 @@ export function ServiceCard({
           </Text>
           {statusBadge}
           {consentIndicator}
+        </Group>
+
+        <Group gap="xs">
+          {/* Sign Consent button - visible when consent required and not signed */}
+          {config.consentRequired && !consent?.hasConsent && !readonly && onSignConsent && serviceRequest.id && (
+            <Button
+              size="xs"
+              variant="filled"
+              color="blue"
+              leftSection={<IconSignature size={14} />}
+              onClick={() => onSignConsent(serviceRequest.id!)}
+            >
+              Sign Consent
+            </Button>
+          )}
+
+          {/* View Consent button - visible when consent is signed */}
+          {consent?.hasConsent && !readonly && (
+            <Button
+              size="xs"
+              variant="light"
+              color="green"
+              leftSection={<IconCheck size={14} />}
+              onClick={() => {
+                if (onSignConsent && serviceRequest.id) {
+                  onSignConsent(serviceRequest.id);
+                }
+              }}
+            >
+              View Consent
+            </Button>
+          )}
         </Group>
 
         <Group gap="xs">
@@ -311,18 +343,6 @@ export function ServiceCard({
               <Text size="sm" c="red.7" mt="xs">
                 This service requires patient consent to be signed before treatment can begin.
               </Text>
-              {onSignConsent && serviceRequest.id && (
-                <Button
-                  size="xs"
-                  variant="filled"
-                  color="blue"
-                  leftSection={<IconSignature size={14} />}
-                  onClick={() => onSignConsent(serviceRequest.id!)}
-                  mt="xs"
-                >
-                  Sign Consent
-                </Button>
-              )}
             </Box>
           )}
 
