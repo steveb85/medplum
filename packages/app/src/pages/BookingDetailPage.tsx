@@ -134,6 +134,8 @@ export function BookingDetailPage(): ReactElement {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [waiveModalOpen, setWaiveModalOpen] = useState(false);
   const [waiveReason, setWaiveReason] = useState('');
+  const [undoWaiveModalOpen, setUndoWaiveModalOpen] = useState(false);
+  const [undoWaiveReason, setUndoWaiveReason] = useState('');
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [consentModalOpen, setConsentModalOpen] = useState(false);
@@ -982,6 +984,58 @@ export function BookingDetailPage(): ReactElement {
     }
   }, [appointment, undoPaymentReason, medplum, loadData, updateStatus, patient, serviceRequests, depositAmount]);
 
+  // Undo waive deposit
+  const undoWaive = useCallback(async () => {
+    if (!appointment || !patient || serviceRequests.length === 0) {
+      return;
+    }
+
+    try {
+      const currentUser = medplum.getProfile();
+      const currentUserPractitioner = {
+        resourceType: 'Practitioner' as const,
+        id: currentUser?.id || '',
+        name: currentUser?.name,
+      };
+
+      // Revert deposit status to 'requested'
+      const updatedAppointment = { ...appointment };
+
+      // Record undo waive via AuditEvent
+      await recordPaymentUndone(
+        medplum,
+        patient,
+        serviceRequests[0],
+        depositAmount,
+        currentUserPractitioner,
+        undoWaiveReason || 'Waive undone'
+      );
+
+      // Revert booking status to pending (deposit no longer paid/waived)
+      if (appointment.status === 'booked') {
+        await updateStatus('pending', 'Waive undone - deposit now requested');
+      }
+
+      showNotification({
+        color: 'green',
+        title: 'Success',
+        message: 'Waived deposit has been restored to requested status',
+      });
+
+      setUndoWaiveModalOpen(false);
+      setUndoWaiveReason('');
+
+      await loadData();
+    } catch (err) {
+      console.error('Error undoing waive:', err);
+      showNotification({
+        color: 'red',
+        title: 'Error',
+        message: 'Failed to undo waive',
+      });
+    }
+  }, [appointment, undoWaiveReason, medplum, loadData, updateStatus, patient, serviceRequests, depositAmount]);
+
   // Issue refund
   const issueRefund = useCallback(async () => {
     if (!appointment || !patient) {
@@ -1076,6 +1130,7 @@ export function BookingDetailPage(): ReactElement {
     canWaive: boolean;
     canRefund: boolean;
     canUndoPayment: boolean;
+    canUndoWaive: boolean;
     canArrive: boolean;
     canNoShow: boolean;
     canCancel: boolean;
@@ -1089,6 +1144,7 @@ export function BookingDetailPage(): ReactElement {
         canWaive: false,
         canRefund: false,
         canUndoPayment: false,
+        canUndoWaive: false,
         canArrive: false,
         canNoShow: false,
         canCancel: false,
@@ -1112,12 +1168,16 @@ export function BookingDetailPage(): ReactElement {
     const canUndoPayment =
       depositInfo.status === 'paid' && depositInfo.paymentType === 'manual' && !depositInfo.isUndone;
 
+    // Undo waive: when deposit is waived, revert to 'requested' status
+    const canUndoWaive = depositInfo.status === 'waived';
+
     return {
       canSendPaymentLink,
       canMarkPaid,
       canWaive,
       canRefund,
       canUndoPayment,
+      canUndoWaive,
       canArrive: status === 'booked' && transitions.includes('arrived'),
       canNoShow: (status === 'booked' || status === 'arrived') && transitions.includes('noshow'),
       canCancel: transitions.includes('cancelled'),
@@ -1436,6 +1496,16 @@ export function BookingDetailPage(): ReactElement {
                           Waive Deposit
                         </Button>
                       )}
+                      {actions.canUndoWaive && (
+                        <Button
+                          color="blue"
+                          variant="light"
+                          onClick={() => setUndoWaiveModalOpen(true)}
+                          leftSection={<IconRefresh size={16} />}
+                        >
+                          Undo Waive
+                        </Button>
+                      )}
                       {actions.canRefund && (
                         <Button
                           color="red"
@@ -1720,6 +1790,37 @@ export function BookingDetailPage(): ReactElement {
               setUndoPaymentModalOpen(false);
             }} disabled={!undoPaymentReason.trim()}>
               Undo Payment
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Undo Waive Modal */}
+      <Modal opened={undoWaiveModalOpen} onClose={() => setUndoWaiveModalOpen(false)} title="Undo Waive Deposit" fullScreen={isMobile}>
+        <Stack>
+          <Text size="sm">This will revert the deposit to requested status. Please provide a reason:</Text>
+          <Text size="sm" fw={500}>
+            Amount: {formatDepositAmount(depositInfo.amount)}
+          </Text>
+          <Textarea
+            value={undoWaiveReason}
+            onChange={(e) => setUndoWaiveReason(e.currentTarget.value)}
+            placeholder="Reason for undoing waive (e.g., waived in error)..."
+            minRows={3}
+          />
+          <Group justify="flex-end">
+            <Button variant="light" onClick={() => setUndoWaiveModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              color="blue"
+              onClick={async () => {
+                await undoWaive();
+                setUndoWaiveModalOpen(false);
+              }}
+              disabled={!undoWaiveReason.trim()}
+            >
+              Undo Waive
             </Button>
           </Group>
         </Stack>
