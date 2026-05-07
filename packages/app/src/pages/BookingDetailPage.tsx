@@ -414,10 +414,11 @@ export function BookingDetailPage(): ReactElement {
         // Use full reference format, no _sort (Medplum doesn't support _sort=recorded)
         const searchPatient = patientRef || `Patient/${patientId}`;
         console.log('[BookingDetailPage] Loading AuditEvents for patient:', searchPatient);
-        const auditBundle = await medplum.search('AuditEvent', {
-          patient: searchPatient,
-          _count: '500',
-        });
+      const auditBundle = await medplum.search('AuditEvent', {
+        patient: searchPatient,
+        _count: '500',
+        _elements: 'extension,subtype,agent,entity,recorded', // Ensure all fields returned
+      });
         console.log('[BookingDetailPage] AuditEvent search result:', auditBundle.total, 'total,', auditBundle.entry?.length || 0, 'entries');
         console.log('[BookingDetailPage] Full bundle:', JSON.stringify(auditBundle, null, 2).substring(0, 500));
 

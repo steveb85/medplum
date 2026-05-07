@@ -387,7 +387,8 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
     let lastEntityDetails: any;
 
     for (const event of chronologicalEvents) {
-      const description = ((event as any).description || '').toLowerCase();
+      // FIX: Read description from subtype[0].display where audit-events.ts stores it
+      const description = (event.subtype?.[0]?.display || (event as any).description || '').toLowerCase();
       lastEntityDetails = parseEntityDetails(event);
 
       if (description.includes('deposit requested')) {
