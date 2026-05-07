@@ -389,12 +389,12 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
       const description = ((event as any).description || '').toLowerCase();
       lastEntityDetails = parseEntityDetails(event);
 
-      if (description.includes('deposit payment link sent')) {
+      if (description.includes('deposit requested')) {
         const amountMatch = description.match(/\$([\d.]+)/);
         currentAmount = amountMatch ? parseFloat(amountMatch[1]) : currentAmount;
         requestedAt = new Date(event.recorded);
         currentStatus = 'requested';
-      } else if (description.includes('deposit of $') && description.includes('paid via')) {
+      } else if (description.includes('deposit paid')) {
         const amountMatch = description.match(/\$([\d.]+)/);
         currentAmount = amountMatch ? parseFloat(amountMatch[1]) : currentAmount;
         actualPaidAmount = lastEntityDetails.actualPaidAmount
