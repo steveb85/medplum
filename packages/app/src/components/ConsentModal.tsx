@@ -263,7 +263,7 @@ export function ConsentModal({
         <Card withBorder p="sm">
           <Group justify="space-between">
             <div>
-              <Text fw={500}>{service.title}</Text>
+              <Text fw={500}>{service?.title || 'Treatment'}</Text>
               <Text size="sm" c="dimmed">
                 Patient: {patient.name?.[0]?.given?.[0]} {patient.name?.[0]?.family}
               </Text>

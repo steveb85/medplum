@@ -445,7 +445,6 @@ export function BookingDetailPage(): ReactElement {
         console.log('[BookingDetailPage] Relevant events count:', relevantEvents.length);
 
         for (const event of relevantEvents) {
-          const desc = event.description || '';
           const timestamp = new Date(event.recorded || Date.now());
 
           // Extract user from agent
@@ -456,7 +455,8 @@ export function BookingDetailPage(): ReactElement {
               : 'System';
 
           // Parse entity details using shared function (handles both old and new formats)
-          const details = parseEntityDetails(event) as Record<string, string>;
+          const { details, description: eventDesc } = parseEntityDetails(event);
+          const desc = eventDesc || (event as any).description || '';
 
           // Map to AuditEntry based on description
           if (desc.includes('deposit paid')) {
@@ -518,12 +518,12 @@ export function BookingDetailPage(): ReactElement {
             const previousStatus = details.previousStatus || 'unknown';
             const newStatus = details.newStatus || 'unknown';
             const reason = details.reason;
-            audits.push({
-              timestamp,
-              action: `Status changed: ${statusConfig[previousStatus]?.label || previousStatus} → ${statusConfig[newStatus]?.label || newStatus}`,
-              details: reason,
-              user,
-            });
+              audits.push({
+                timestamp,
+                action: `Status changed: ${statusConfig[previousStatus as keyof typeof statusConfig]?.label || previousStatus} → ${statusConfig[newStatus as keyof typeof statusConfig]?.label || newStatus}`,
+                details: typeof reason === 'string' ? reason : undefined,
+                user,
+              });
           } else if (desc.includes('treatment service')) {
             audits.push({
               timestamp,

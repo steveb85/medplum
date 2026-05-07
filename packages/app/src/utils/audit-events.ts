@@ -138,6 +138,12 @@ async function createAuditEvent(
     extension: childExtensions,
   };
 
+  // Store description in extension since FHIR R4 AuditEvent doesn't have a top-level description field
+  const descriptionExtension = {
+    url: 'http://melissaknudson.com/fhir/StructureDefinition/audit-description',
+    valueString: description,
+  };
+
   const auditEvent: AuditEvent = {
     resourceType: 'AuditEvent',
     type: {
@@ -162,12 +168,12 @@ async function createAuditEvent(
         {
           system: 'http://dicom.nema.org/resources/ontology/DCM',
           code: '110100',
-          display: 'Application Activity',
+          display: 'Application',
         },
       ],
     },
-    extension: [auditDetailsExtension],
-    entity: entity.length > 0 ? entity : undefined,
+    entity: entity,
+    extension: [auditDetailsExtension, descriptionExtension],
   };
 
   // Debug: Log the exact AuditEvent being sent
@@ -210,23 +216,32 @@ async function createAuditEvent(
   return medplum.createResource(auditEvent);
 }
 
-export function parseEntityDetails(event: AuditEvent): EntityDetails {
+export function parseEntityDetails(event: AuditEvent): { details: EntityDetails; description: string } {
   const details: EntityDetails = {};
-  
-  // Read from extension (new format) - entityDetails stored in AuditEvent.extension
+  let description = '';
+
+  // Read description from extension (new format)
+  const descExt = event.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/audit-description'
+  );
+  if (descExt?.valueString) {
+    description = descExt.valueString;
+  }
+
+  // Read entity details from extension (new format)
   const auditDetailsExt = event.extension?.find(
     (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/audit-details'
   );
-  
+
   if (auditDetailsExt?.extension) {
     auditDetailsExt.extension.forEach((ext) => {
       if (ext.valueString && ext.url) {
         details[ext.url] = ext.valueString;
       }
     });
-    return details;
+    return { details, description };
   }
-  
+
   // Fallback to old format (entity.detail) for backward compatibility
   event.entity?.forEach((entity) => {
     if (entity.detail && Array.isArray(entity.detail)) {
@@ -234,7 +249,7 @@ export function parseEntityDetails(event: AuditEvent): EntityDetails {
         if (detail.valueString) {
           // Extract type from multiple possible formats
           let typeCode = '';
-          
+
           // New format: type is a string
           if (typeof detail.type === 'string') {
             typeCode = detail.type;
@@ -247,7 +262,7 @@ export function parseEntityDetails(event: AuditEvent): EntityDetails {
           else if (detail.type?.text) {
             typeCode = detail.type.text;
           }
-          
+
           if (typeCode) {
             details[typeCode] = detail.valueString;
           }
@@ -260,7 +275,7 @@ export function parseEntityDetails(event: AuditEvent): EntityDetails {
     }
   });
   
-  return details;
+  return { details, description };
 }
 
 export async function recordDepositPaid(
