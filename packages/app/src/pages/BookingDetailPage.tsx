@@ -429,8 +429,10 @@ export function BookingDetailPage(): ReactElement {
         console.log('[BookingDetailPage] All AuditEvent descriptions:', auditEvents.map((e: any) => e.description));
 
         // Filter to ALL booking-related events (broader match)
+        // NOTE: AuditEvent stores description in subtype[0].display, NOT top-level description
         const relevantEvents = auditEvents.filter((event: any) => {
-          const desc = (event.description || '').toLowerCase();
+          // Read description from subtype[0].display (where audit-events.ts stores it)
+          const desc = (event.subtype?.[0]?.display || event.description || '').toLowerCase();
           const isRelevant = (
             desc.includes('deposit') ||
             desc.includes('payment') ||
@@ -458,7 +460,8 @@ export function BookingDetailPage(): ReactElement {
 
           // Parse entity details using shared function (handles both old and new formats)
           const { details, description: eventDesc } = parseEntityDetails(event);
-          const desc = eventDesc || (event as any).description || '';
+          // Also check subtype[0].display for description (where audit-events.ts stores it)
+          const desc = eventDesc || (event as any).subtype?.[0]?.display || (event as any).description || '';
 
           // Map to AuditEntry based on description
           if (desc.includes('deposit paid')) {
@@ -533,7 +536,7 @@ export function BookingDetailPage(): ReactElement {
               user,
             });
           } else if (desc.includes('consent signed')) {
-            const serviceName = details.serviceName || 'Unknown Service';
+            const serviceName = details.consentCategory || details.serviceName || 'Unknown Service';
             audits.push({
               timestamp,
               action: 'Consent Signed',
