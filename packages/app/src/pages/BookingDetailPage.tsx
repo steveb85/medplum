@@ -1472,9 +1472,13 @@ export function BookingDetailPage(): ReactElement {
                 )}
 
                 {/* Deposit Actions - Secondary */}
-                {/* TEMP TEST BUTTON - TODO: Remove after testing */}
-                <Button onClick={() => { console.log('Test button clicked!'); setMarkPaidModalOpen(true); }}>
-                  TEST Mark as Paid (temp)
+                <Button
+                  color="green"
+                  variant="light"
+                  onClick={() => setMarkPaidModalOpen(true)}
+                  leftSection={<IconCoin size={16} />}
+                >
+                  DEBUG: Mark as Paid (always shows)
                 </Button>
                 {(actions.canSendPaymentLink ||
                   actions.canMarkPaid ||
