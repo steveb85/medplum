@@ -112,12 +112,21 @@ async function createAuditEvent(
   // Validate that all values are primitives (no objects with 'extension' properties)
   Object.entries(entityDetails).forEach(([key, value]) => {
     if (typeof value === 'object' && value !== null) {
+      console.error(`[audit-events] Invalid entityDetail "${key}": must be primitive, got ${typeof value}. Value: ${JSON.stringify(value).substring(0, 100)}`);
       throw new Error(
         `[audit-events] Invalid entityDetail "${key}": must be primitive (string|number|boolean), got ${typeof value}. ` +
         `Objects can cause FHIR constraint violations (ext-1). Value: ${JSON.stringify(value).substring(0, 100)}`
       );
     }
+    // Also check if the string itself contains "extension" (weird edge case)
+    const strValue = String(value ?? '');
+    if (strValue.includes('extension') && strValue.length > 100) {
+      console.warn(`[audit-events] WARNING: entityDetail "${key}" string value contains "extension":`, strValue.substring(0, 200));
+    }
   });
+
+  // DEBUG: Log the exact entityDetails being used
+  console.log('[audit-events] entityDetails:', JSON.stringify(entityDetails, null, 2));
 
   // Create child extensions - use regular object literals (NOT Object.create(null))
   const childExtensions = Object.entries(entityDetails).map(([key, value]) => {
@@ -193,6 +202,24 @@ async function createAuditEvent(
   console.log('[audit-events] Creating AuditEvent - extension:', JSON.stringify(auditEvent.extension, null, 2));
   console.log('[audit-events] Full AuditEvent (first 1000 chars):', JSON.stringify(auditEvent, null, 2).substring(0, 1000));
 
+  // CRITICAL: Check each child extension in auditDetailsExtension for violations
+  const auditDetailsExt = auditEvent.extension?.[0];
+  if (auditDetailsExt?.extension) {
+    auditDetailsExt.extension.forEach((child: any, idx: number) => {
+      if (child.extension && child.valueString) {
+        console.error(`[audit-events] VIOLATION FOUND at index ${idx}:`, JSON.stringify(child, null, 2));
+        // Fix it: remove the extension property
+        delete child.extension;
+        console.log(`[audit-events] Fixed index ${idx}:`, JSON.stringify(child, null, 2));
+      }
+    });
+  }
+
+  // SUPER CRITICAL: Log exactly what extension[0].extension[2] looks like
+  if (auditDetailsExt?.extension && auditDetailsExt.extension.length > 2) {
+    console.log('[audit-events] extension[0].extension[2] BEFORE SEND:', JSON.stringify(auditDetailsExt.extension[2], null, 2));
+  }
+
   // Pre-send validation: Check for FHIR constraint violations (ext-1)
   // Check extension[] array
   (auditEvent.extension || []).forEach((ext, extIndex) => {
@@ -226,6 +253,19 @@ async function createAuditEvent(
       });
     }
   });
+
+  // CRITICAL DEBUG: Log the EXACT payload being sent
+  const payload = JSON.stringify(auditEvent, null, 2);
+  console.log('[audit-events] FINAL PAYLOAD being sent to Medplum:', payload);
+
+  // Check extension[0].extension[2] explicitly
+  const ext0 = auditEvent.extension?.[0];
+  if (ext0?.extension && ext0.extension.length > 2) {
+    const child2 = ext0.extension[2] as any;
+    console.log('[audit-events] extension[0].extension[2] BEFORE SEND:', JSON.stringify(child2, null, 2));
+    console.log('[audit-events] Has .extension?', !!child2.extension);
+    console.log('[audit-events] Has .valueString?', !!child2.valueString);
+  }
 
   return medplum.createResource(auditEvent);
 }
