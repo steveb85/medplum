@@ -119,18 +119,28 @@ async function createAuditEvent(
     }
   });
 
-  // Create child extensions - ensure CLEAN objects with ONLY url and valueString
+  // Create child extensions - use regular object literals (NOT Object.create(null))
   const childExtensions = Object.entries(entityDetails).map(([key, value]) => {
-    // Create a plain object with NO prototype to avoid any property leakage
-    const ext = Object.create(null);
-    ext.url = key;
-    ext.valueString = String(value ?? '');
-    // Double-check: remove any 'extension' property that might have leaked
-    if (ext.extension) {
-      console.error(`[audit-events] WARNING: 'extension' property found on child extension for key "${key}" - removing it`);
+    // Ensure value is a string (primitive)
+    const strValue = String(value ?? '');
+    // Create clean object with ONLY url and valueString
+    return {
+      url: key,
+      valueString: strValue,
+    };
+  });
+
+  // Debug: Log childExtensions to see what's being created
+  console.log('[audit-events] childExtensions:', JSON.stringify(childExtensions, null, 2));
+
+  // Validate each child extension before adding to auditDetailsExtension
+  childExtensions.forEach((ext: any, index: number) => {
+    if (ext.extension && ext.valueString) {
+      console.error(`[audit-events] VIOLATION at index ${index}: has both extension AND valueString!`, JSON.stringify(ext, null, 2));
+      // Remove the extension property to fix the violation
       delete ext.extension;
+      console.log(`[audit-events] Fixed index ${index}, now:`, JSON.stringify(ext, null, 2));
     }
-    return ext;
   });
 
   const auditDetailsExtension = {

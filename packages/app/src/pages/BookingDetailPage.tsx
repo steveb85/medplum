@@ -1478,25 +1478,16 @@ export function BookingDetailPage(): ReactElement {
                     Deposit
                   </Text>
                   <Group>
-                  {/* TODO: Remove this test button after debugging */}
-                  <Button
-                    color="green"
-                    variant="light"
-                    onClick={() => setMarkPaidModalOpen(true)}
-                    leftSection={<IconCoin size={16} />}
-                  >
-                    TEST: Mark as Paid (always shows)
-                  </Button>
-                  {actions.canMarkPaid && (
-                    <Button
-                      color="green"
-                      variant="light"
-                      onClick={() => setMarkPaidModalOpen(true)}
-                      leftSection={<IconCoin size={16} />}
-                    >
-                      Mark as Paid
-                    </Button>
-                  )}
+                    {actions.canMarkPaid && (
+                      <Button
+                        color="green"
+                        variant="light"
+                        onClick={() => setMarkPaidModalOpen(true)}
+                        leftSection={<IconCoin size={16} />}
+                      >
+                        Mark as Paid
+                      </Button>
+                    )}
                   </Group>
                 </Stack>
                 {(actions.canSendPaymentLink ||
@@ -1615,7 +1606,7 @@ export function BookingDetailPage(): ReactElement {
                   </Badge>
                 </Group>
 
-                {/* Deposit Amount - Editable if not paid/waived */}
+                {/* Deposit Amount - Editable if not paid/waived or if booked */}
                 <Group justify="space-between" align="flex-end">
                   <NumberInput
                     label="Amount"
@@ -1633,6 +1624,19 @@ export function BookingDetailPage(): ReactElement {
                     </Button>
                   )}
                 </Group>
+
+                {/* Mark as Paid Button - Show when deposit is requested or pending */}
+                {actions.canMarkPaid && (
+                  <Button
+                    color="green"
+                    variant="light"
+                    onClick={() => setMarkPaidModalOpen(true)}
+                    leftSection={<IconCoin size={16} />}
+                    fullWidth
+                  >
+                    Mark as Paid
+                  </Button>
+                )}
               </Stack>
             </Card>
 
