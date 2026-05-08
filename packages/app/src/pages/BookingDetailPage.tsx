@@ -348,9 +348,15 @@ export function BookingDetailPage(): ReactElement {
       }
 
       // Get deposit info from FHIR AuditEvents (single source of truth)
-      const depInfo = await getDepositStatusFromAuditEvents(medplum, patientId);
-      setDepositInfo(depInfo);
-      setDepositAmount(depInfo.amount || 250);
+      try {
+        const depInfo = await getDepositStatusFromAuditEvents(medplum, patientId);
+        console.log('[BookingDetailPage] depositInfo loaded:', depInfo);
+        setDepositInfo(depInfo);
+        setDepositAmount(depInfo.amount || 250);
+      } catch (err) {
+        console.error('[BookingDetailPage] Error loading depositInfo:', err);
+        // Keep default depositInfo (status: 'pending')
+      }
 
       // Load providers
       const practitionerParticipants =
@@ -1160,11 +1166,15 @@ export function BookingDetailPage(): ReactElement {
     const status = appointment.status || 'pending';
     const transitions = allowedTransitions[status] || [];
 
+    // DEBUG: Log depositInfo state
+    console.log('[BookingDetailPage] depositInfo:', depositInfo, 'appointment.status:', status);
+
     // Payment actions
-    const canSendPaymentLink = status === 'pending' && depositInfo.status === 'pending';
-    // SHOW "Mark as Paid" if deposit status is requested OR pending (for testing/flexibility)
-    const canMarkPaid = status === 'pending' && (depositInfo.status === 'requested' || depositInfo.status === 'pending');
-    const canWaive = status === 'pending' && (depositInfo.status === 'pending' || depositInfo.status === 'requested');
+    // For testing: Show payment link if deposit is pending (regardless of appointment status)
+    const canSendPaymentLink = depositInfo.status === 'pending';
+    // Show "Mark as Paid" if deposit isn't already paid/waived (for any appointment status)
+    const canMarkPaid = depositInfo.status === 'requested' || depositInfo.status === 'pending';
+    const canWaive = depositInfo.status === 'pending' || depositInfo.status === 'requested';
     const canRefund =
       (status === 'pending' || status === 'booked') &&
       depositInfo.status === 'paid' &&
@@ -1462,6 +1472,10 @@ export function BookingDetailPage(): ReactElement {
                 )}
 
                 {/* Deposit Actions - Secondary */}
+                {/* TEMP TEST BUTTON - TODO: Remove after testing */}
+                <Button onClick={() => { console.log('Test button clicked!'); setMarkPaidModalOpen(true); }}>
+                  TEST Mark as Paid (temp)
+                </Button>
                 {(actions.canSendPaymentLink ||
                   actions.canMarkPaid ||
                   actions.canWaive ||
