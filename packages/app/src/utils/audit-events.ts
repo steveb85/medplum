@@ -145,6 +145,8 @@ async function createAuditEvent(
     valueString: description,
   };
 
+  // FHIR R4: AuditEvent.subtype is Coding[] (not CodeableConcept[])
+  // Store description in subtype[0].display (Coding.display property)
   const auditEvent: AuditEvent = {
     resourceType: 'AuditEvent',
     type: {
@@ -156,7 +158,7 @@ async function createAuditEvent(
       {
         system: 'http://hl7.org/fhir/restful-interaction',
         code: mapActionToCode(action),
-        display: description || mapActionToDisplay(action), // Put description in display as backup
+        display: description || mapActionToDisplay(action),
       },
     ],
     action: action as any,
@@ -218,25 +220,27 @@ async function createAuditEvent(
   return medplum.createResource(auditEvent);
 }
 
-export function parseEntityDetails(event: AuditEvent): { details: EntityDetails; description: string } {
-  const details: EntityDetails = {};
-  let description = '';
+// Helper: Extract description from AuditEvent
+// FHIR R4: AuditEvent.subtype is Coding[] - description stored in subtype[0].display
+function getAuditEventDescription(event: AuditEvent): string {
+  // PRIMARY: Read from subtype[0].display (Coding.display)
+  const codingDisplay = event.subtype?.[0]?.display;
+  if (codingDisplay) return codingDisplay;
 
-  // Read description from extension (new format)
+  // FALLBACK: Read from extension (old format)
   const descExt = event.extension?.find(
     (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/audit-description'
   );
-  console.log('[audit-events] parseEntityDetails: event.extension =', event.extension, 'descExt =', descExt, 'valueString =', descExt?.valueString);
+  if (descExt?.valueString) return descExt.valueString;
 
-  // Also try reading from subtype[0].display (standard FHIR field, more likely to be preserved)
-  const subtypeDisplay = event.subtype?.[0]?.display;
-  console.log('[audit-events] parseEntityDetails: subtype[0].display =', subtypeDisplay);
+  return '';
+}
 
-  if (descExt?.valueString) {
-    description = descExt.valueString;
-  } else if (subtypeDisplay) {
-    description = subtypeDisplay;
-  }
+export function parseEntityDetails(event: AuditEvent): { details: EntityDetails; description: string } {
+  const details: EntityDetails = {};
+  const description = getAuditEventDescription(event);
+
+  console.log('[audit-events] parseEntityDetails: description =', description, 'from event.subtype =', event.subtype);
 
   // Read entity details from extension (new format)
   const auditDetailsExt = event.extension?.find(
@@ -362,7 +366,8 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
 
     const allEvents = (bundle.entry || []).map((e) => e.resource as AuditEvent);
     const depositEvents = allEvents.filter((event) => {
-      const description = ((event as any).description || '').toLowerCase();
+      // FIX: Read from subtype[0].text (CodeableConcept.text) where description is stored
+      const description = getAuditEventDescription(event).toLowerCase();
       return (
         description.includes('deposit') ||
         description.includes('payment') ||
@@ -387,8 +392,8 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
     let lastEntityDetails: any;
 
     for (const event of chronologicalEvents) {
-      // FIX: Read description from subtype[0].display where audit-events.ts stores it
-      const description = (event.subtype?.[0]?.display || (event as any).description || '').toLowerCase();
+      // FIX: Read description from subtype[0].display (Coding.display) where createAuditEvent stores it
+      const description = (event.subtype?.[0]?.display || '').toLowerCase();
       lastEntityDetails = parseEntityDetails(event);
 
       if (description.includes('deposit requested')) {
@@ -758,6 +763,120 @@ export async function recordBookingEdited(
       changes,
       reason: reason || '',
       editedByName,
+    },
+  });
+}
+
+export async function recordFinalPaymentRequested(
+  medplum: MedplumClient,
+  patient: Patient,
+  serviceRequest: ServiceRequest,
+  amount: number,
+  method: 'sms' | 'email' | 'sms+email',
+  requestedBy: Practitioner
+): Promise<AuditEvent> {
+  const requestedByName = requestedBy.name?.[0]
+    ? String(requestedBy.name[0].given?.[0] || '').trim() + ' ' + String(requestedBy.name[0].family || '').trim()
+    : 'Unknown Staff';
+
+  return createAuditEvent(medplum, {
+    action: 'E',
+    patient,
+    resource: serviceRequest,
+    agent: requestedBy,
+    description: 'Final payment requested via ' + method + ' by ' + requestedByName,
+    outcome: '0',
+    entityDetails: {
+      serviceRequestId: serviceRequest.id || '',
+      amount: String(amount),
+      method,
+      requestedByName,
+    },
+  });
+}
+
+export async function recordFinalPaymentReceived(
+  medplum: MedplumClient,
+  patient: Patient,
+  serviceRequest: ServiceRequest,
+  amount: number,
+  receivedBy: Practitioner,
+  paymentType: 'manual' | 'online',
+  actualAmount?: number,
+  notes?: string
+): Promise<AuditEvent> {
+  const receivedByName = receivedBy.name?.[0]
+    ? String(receivedBy.name[0].given?.[0] || '').trim() + ' ' + String(receivedBy.name[0].family || '').trim()
+    : 'Unknown Staff';
+
+  return createAuditEvent(medplum, {
+    action: 'E',
+    patient,
+    resource: serviceRequest,
+    agent: receivedBy,
+    description: 'Final payment received via ' + paymentType + ' by ' + receivedByName,
+    outcome: '0',
+    entityDetails: {
+      serviceRequestId: serviceRequest.id || '',
+      amount: String(amount),
+      paymentType,
+      actualAmount: actualAmount ? String(actualAmount) : undefined,
+      notes: notes || '',
+      receivedByName,
+    },
+  });
+}
+
+export async function recordBookingCompleted(
+  medplum: MedplumClient,
+  patient: Patient,
+  serviceRequest: ServiceRequest,
+  completedBy: Practitioner,
+  reason?: string
+): Promise<AuditEvent> {
+  const completedByName = completedBy.name?.[0]
+    ? String(completedBy.name[0].given?.[0] || '').trim() + ' ' + String(completedBy.name[0].family || '').trim()
+    : 'Unknown Staff';
+
+  return createAuditEvent(medplum, {
+    action: 'E',
+    patient,
+    resource: serviceRequest,
+    agent: completedBy,
+    description: 'Booking completed by ' + completedByName + (reason ? ': ' + reason : ''),
+    outcome: '0',
+    entityDetails: {
+      serviceRequestId: serviceRequest.id || '',
+      completedByName,
+      reason: reason || '',
+    },
+  });
+}
+
+export async function recordDepositWaiveUndone(
+  medplum: MedplumClient,
+  patient: Patient,
+  serviceRequest: ServiceRequest,
+  amount: number,
+  undoneBy: Practitioner,
+  reason?: string
+): Promise<AuditEvent> {
+  const undoneByName = undoneBy.name?.[0]
+    ? String(undoneBy.name[0].given?.[0] || '').trim() + ' ' + String(undoneBy.name[0].family || '').trim()
+    : 'Unknown Staff';
+
+  return createAuditEvent(medplum, {
+    action: 'U',
+    patient,
+    resource: serviceRequest,
+    agent: undoneBy,
+    description: 'Deposit waive undone by ' + undoneByName + (reason ? ': ' + reason : ''),
+    outcome: '0',
+    entityDetails: {
+      serviceRequestId: serviceRequest.id || '',
+      amount: String(amount),
+      undoneByName,
+      reason: reason || '',
     },
   });
 }

@@ -59,10 +59,10 @@ import { ServiceCard } from '../components/ServiceCard';
 import type { ServiceStatus, ServiceCardData } from '../components/ServiceCard';
 
 // Appointment status configuration
-// STATUS FLOW: pending (deposit required) → booked (deposit paid/waived) → arrived → fulfilled
+// STATUS FLOW: pending → booked → arrived → fulfilled
 const statusConfig: Record<string, { color: string; label: string }> = {
-  pending: { color: 'yellow', label: 'Pending (Deposit Required)' },
-  booked: { color: 'blue', label: 'Booked (Deposit Paid)' },
+  pending: { color: 'yellow', label: 'Pending' },
+  booked: { color: 'blue', label: 'Booked' },
   arrived: { color: 'teal', label: 'Arrived' },
   fulfilled: { color: 'green', label: 'Completed' },
   cancelled: { color: 'red', label: 'Cancelled' },
@@ -1162,7 +1162,8 @@ export function BookingDetailPage(): ReactElement {
 
     // Payment actions
     const canSendPaymentLink = status === 'pending' && depositInfo.status === 'pending';
-    const canMarkPaid = status === 'pending' && depositInfo.status === 'requested';
+    // SHOW "Mark as Paid" if deposit status is requested OR pending (for testing/flexibility)
+    const canMarkPaid = status === 'pending' && (depositInfo.status === 'requested' || depositInfo.status === 'pending');
     const canWaive = status === 'pending' && (depositInfo.status === 'pending' || depositInfo.status === 'requested');
     const canRefund =
       (status === 'pending' || status === 'booked') &&
@@ -1615,8 +1616,8 @@ export function BookingDetailPage(): ReactElement {
                         {dayjs(entry.timestamp).format('MMM D, YYYY h:mm A')}
                       </Text>
                       {entry.user && (
-                        <Text size="xs" c="dimmed">
-                          by {entry.user}
+                        <Text size="xs" c="dimmed" mt={4}>
+                          By: {entry.user}
                         </Text>
                       )}
                       {entry.details && (
