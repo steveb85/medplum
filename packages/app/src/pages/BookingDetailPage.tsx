@@ -1473,17 +1473,33 @@ export function BookingDetailPage(): ReactElement {
                 )}
 
                 {/* Deposit Actions - Secondary */}
-                {/* TODO: Remove this test button after debugging */}
-                <Button
-                  color="green"
-                  variant="light"
-                  onClick={() => setMarkPaidModalOpen(true)}
-                  leftSection={<IconCoin size={16} />}
-                >
-                  TEST: Mark as Paid (always shows)
-                </Button>
+                <Stack gap="xs">
+                  <Text size="sm" fw={500} c="dimmed">
+                    Deposit
+                  </Text>
+                  <Group>
+                  {/* TODO: Remove this test button after debugging */}
+                  <Button
+                    color="green"
+                    variant="light"
+                    onClick={() => setMarkPaidModalOpen(true)}
+                    leftSection={<IconCoin size={16} />}
+                  >
+                    TEST: Mark as Paid (always shows)
+                  </Button>
+                  {actions.canMarkPaid && (
+                    <Button
+                      color="green"
+                      variant="light"
+                      onClick={() => setMarkPaidModalOpen(true)}
+                      leftSection={<IconCoin size={16} />}
+                    >
+                      Mark as Paid
+                    </Button>
+                  )}
+                  </Group>
+                </Stack>
                 {(actions.canSendPaymentLink ||
-                  actions.canMarkPaid ||
                   actions.canWaive ||
                   actions.canRefund ||
                   actions.canUndoPayment) && (
