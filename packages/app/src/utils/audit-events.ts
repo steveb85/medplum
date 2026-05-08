@@ -267,6 +267,16 @@ async function createAuditEvent(
     console.log('[audit-events] Has .valueString?', !!child2.valueString);
   }
 
+  // HARD FIX: Strip any 'extension' property from child extensions before sending
+  if (ext0?.extension) {
+    ext0.extension.forEach((child: any, idx: number) => {
+      if (child.extension) {
+        console.warn(`[audit-events] HARD FIX: Removing 'extension' from child[${idx}] before send`);
+        delete child.extension;
+      }
+    });
+  }
+
   return medplum.createResource(auditEvent);
 }
 
