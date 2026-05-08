@@ -356,13 +356,14 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
     // Search AuditEvent by patient - use full reference format
     // Note: Medplum doesn't support _sort=recorded for AuditEvent
     console.log('[audit-events] Loading AuditEvents for patient:', `Patient/${patientId}`);
-  const bundle = await medplum.search('AuditEvent', {
-    patient: `Patient/${patientId}`,
-    _count: '100',
-    _elements: 'extension,subtype,agent,entity,recorded', // Explicitly request fields that may not be included by default
-  });
-    console.log('[audit-events] AuditEvent search result:', bundle.total, 'events found', 'entry count:', bundle.entry?.length || 0);
-    console.log('[audit-events] Full bundle:', JSON.stringify(bundle, null, 2).substring(0, 500));
+    const bundle = await medplum.search('AuditEvent', {
+      patient: `Patient/${patientId}`,
+      _count: '100',
+    });
+    console.log('[audit-events] AuditEvent search result: ' + bundle.total + ' events found, entry count: ' + (bundle.entry?.length || 0));
+    if (bundle.entry && bundle.entry.length > 0) {
+      console.log('[audit-events] First event sample:', JSON.stringify(bundle.entry[0].resource, null, 2).substring(0, 500));
+    }
 
     const allEvents = (bundle.entry || []).map((e) => e.resource as AuditEvent);
     const depositEvents = allEvents.filter((event) => {

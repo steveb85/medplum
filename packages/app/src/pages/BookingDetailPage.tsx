@@ -155,6 +155,11 @@ export function BookingDetailPage(): ReactElement {
   const [refundAmount, setRefundAmount] = useState<number>(0);
   const [refundReason, setRefundReason] = useState('');
 
+  // DEBUG: Log when depositInfo changes
+  useEffect(() => {
+    console.log('[BookingDetailPage] depositInfo changed:', depositInfo);
+  }, [depositInfo]);
+
   // Convert serviceRequests to ServiceCardData format
   const serviceCardData: ServiceCardData[] = useMemo(() => {
     return serviceRequests.map((sr) => {
@@ -1166,13 +1171,9 @@ export function BookingDetailPage(): ReactElement {
     const status = appointment.status || 'pending';
     const transitions = allowedTransitions[status] || [];
 
-    // DEBUG: Log depositInfo state
-    console.log('[BookingDetailPage] depositInfo:', depositInfo, 'appointment.status:', status);
-
-    // Payment actions
-    // For testing: Show payment link if deposit is pending (regardless of appointment status)
+    // Payment actions - based on deposit status only (not appointment status)
+    // "Mark as Paid" shows when deposit is requested or pending
     const canSendPaymentLink = depositInfo.status === 'pending';
-    // Show "Mark as Paid" if deposit isn't already paid/waived (for any appointment status)
     const canMarkPaid = depositInfo.status === 'requested' || depositInfo.status === 'pending';
     const canWaive = depositInfo.status === 'pending' || depositInfo.status === 'requested';
     const canRefund =
@@ -1472,15 +1473,9 @@ export function BookingDetailPage(): ReactElement {
                 )}
 
                 {/* Deposit Actions - Secondary */}
-                <Button
-                  color="green"
-                  variant="light"
-                  onClick={() => setMarkPaidModalOpen(true)}
-                  leftSection={<IconCoin size={16} />}
-                >
-                  DEBUG: Mark as Paid (always shows)
-                </Button>
-                {(actions.canSendPaymentLink ||
+                {/* TEMP: Always show the entire section for testing */}
+                <div>DEBUG: actions = {JSON.stringify(actions).substring(0, 200)}</div>
+                {(true || actions.canSendPaymentLink ||
                   actions.canMarkPaid ||
                   actions.canWaive ||
                   actions.canRefund ||
@@ -1582,8 +1577,9 @@ export function BookingDetailPage(): ReactElement {
             {/* Deposit Management - Info Only */}
             <Card withBorder>
               <Title order={5} mb="md">
-                Deposit Management
+                Deposit Management (status: {depositInfo.status})
               </Title>
+              <Text size="xs" c="red">DEBUG: depositInfo = {JSON.stringify(depositInfo).substring(0, 100)}</Text>
 
               <Stack gap="md">
                 {/* Deposit Status */}
