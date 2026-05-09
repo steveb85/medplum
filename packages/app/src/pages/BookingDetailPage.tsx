@@ -190,7 +190,7 @@ export function BookingDetailPage(): ReactElement {
         photos: [], // TODO: Load photos linked to this ServiceRequest
         status,
       };
-    }).filter((card): card is ServiceCardData & { service: ActivityDefinition } => 
+    }).filter((card) => 
       // Filter out cards where service is not yet loaded
       card.service !== undefined
     );
@@ -445,52 +445,68 @@ export function BookingDetailPage(): ReactElement {
       setServices(loadedServices);
       console.log('[BookingDetailPage] Total loaded services:', loadedServices.length, loadedServices.map(s => s.title || s.name));
 
-      // Build audit trail from FHIR AuditEvents
+      // Audit trail will be loaded by useEffect when serviceRequests changes
+    } catch (err) {
+      console.error('Error loading booking:', err);
+      showNotification({
+        color: 'red',
+        title: 'Error',
+        message: 'Failed to load booking details',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [medplum, id]);
+
+  useEffect(() => {
+    const load = async (): Promise<void> => {
+      await loadData();
+    };
+    load().catch(() => {});
+  }, [loadData]);
+
+  // Load audit trail when serviceRequests change (avoids race condition with React state)
+  useEffect(() => {
+    const loadAuditTrail = async (): Promise<void> => {
+      if (!patient || serviceRequests.length === 0) {
+        console.log('[BookingDetailPage] Skipping audit trail load - no patient or serviceRequests');
+        return;
+      }
+
+      console.log('[BookingDetailPage] Loading audit trail for', serviceRequests.length, 'serviceRequests');
       const audits: AuditEntry[] = [];
 
       try {
         // Query AuditEvents for this patient
-        // Use full reference format, no _sort (Medplum doesn't support _sort=recorded)
-        const searchPatient = patientRef || `Patient/${patientId}`;
-        console.log('[BookingDetailPage] Loading AuditEvents for patient:', searchPatient);
-      const auditBundle = await medplum.search('AuditEvent', {
-        patient: searchPatient,
-        _count: '500',
-        _elements: 'extension,subtype,agent,entity,recorded', // Ensure all fields returned
-      });
+        const patientId = patient.id;
+        const auditBundle = await medplum.search('AuditEvent', {
+          patient: `Patient/${patientId}`,
+          _count: '500',
+        });
+
         console.log('[BookingDetailPage] AuditEvent search result:', auditBundle.total, 'total,', auditBundle.entry?.length || 0, 'entries');
-        console.log('[BookingDetailPage] Full bundle:', JSON.stringify(auditBundle, null, 2).substring(0, 500));
 
         const auditEvents = (auditBundle.entry || []).map((e) => e.resource as any).sort((a: any, b: any) => {
           return new Date(b.recorded || 0).getTime() - new Date(a.recorded || 0).getTime();
         });
 
-        // Debug: Log all event descriptions
-        console.log('[BookingDetailPage] All AuditEvent descriptions:', auditEvents.map((e: any) => e.description));
-
-        // Filter to ALL booking-related events (broader match)
-        // NOTE: AuditEvent stores description in subtype[0].display, NOT top-level description
+        // Filter to booking-related events
         const relevantEvents = auditEvents.filter((event: any) => {
-          // Read description from subtype[0].display (where audit-events.ts stores it)
           const desc = (event.subtype?.[0]?.display || event.description || '').toLowerCase();
-          const isRelevant = (
+          return (
             desc.includes('deposit') ||
             desc.includes('payment') ||
             desc.includes('refund') ||
-            desc.includes('booking') ||  // Catches "booking status changed", "booking cancelled", etc.
+            desc.includes('booking') ||
             desc.includes('treatment')
           );
-          if (!isRelevant) {
-            console.log('[BookingDetailPage] Filtered OUT:', desc);
-          }
-          return isRelevant;
         });
 
         console.log('[BookingDetailPage] Relevant events count:', relevantEvents.length);
 
-        // Get ServiceRequest IDs for this booking to filter events
+        // Get ServiceRequest IDs for this booking
         const serviceRequestIds = new Set(serviceRequests.map(sr => sr.id));
-        console.log('[BookingDetailPage] ServiceRequest IDs for this booking:', Array.from(serviceRequestIds));
+        console.log('[BookingDetailPage] ServiceRequest IDs for filtering:', Array.from(serviceRequestIds));
 
         for (const event of relevantEvents) {
           // Filter to only events for THIS booking's ServiceRequests
@@ -504,24 +520,23 @@ export function BookingDetailPage(): ReactElement {
           });
 
           if (!hasMatchingServiceRequest) {
-            console.log('[BookingDetailPage] Skipping event - not for this booking:', event.subtype?.[0]?.display);
             continue;
           }
+
           const timestamp = new Date(event.recorded || Date.now());
 
-          // Extract user from agent (may be undefined in search results without _elements)
+          // Extract user from agent
           const agent = event.agent?.[0];
           const user = agent?.who?.display ||
             (agent?.name?.[0]
               ? `${agent.name[0].given?.[0] || ''} ${agent.name[0].family || ''}`.trim()
               : 'System');
 
-          // Parse entity details using shared function (handles both old and new formats)
+          // Parse entity details
           const { details, description: eventDesc } = parseEntityDetails(event);
-          // Also check subtype[0].display for description (where audit-events.ts stores it)
           const desc = eventDesc || (event as any).subtype?.[0]?.display || (event as any).description || '';
 
-          // Map to AuditEntry based on description (case-insensitive)
+          // Map to AuditEntry
           const descLower = desc.toLowerCase();
           if (descLower.includes('deposit paid')) {
             const amount = details.amount || '0';
@@ -582,12 +597,12 @@ export function BookingDetailPage(): ReactElement {
             const previousStatus = details.previousStatus || 'unknown';
             const newStatus = details.newStatus || 'unknown';
             const reason = details.reason;
-              audits.push({
-                timestamp,
-                action: `Status changed: ${statusConfig[previousStatus as keyof typeof statusConfig]?.label || previousStatus} → ${statusConfig[newStatus as keyof typeof statusConfig]?.label || newStatus}`,
-                details: typeof reason === 'string' ? reason : undefined,
-                user,
-              });
+            audits.push({
+              timestamp,
+              action: `Status changed: ${statusConfig[previousStatus as keyof typeof statusConfig]?.label || previousStatus} → ${statusConfig[newStatus as keyof typeof statusConfig]?.label || newStatus}`,
+              details: typeof reason === 'string' ? reason : undefined,
+              user,
+            });
           } else if (descLower.includes('booking created')) {
             audits.push({
               timestamp,
@@ -619,58 +634,17 @@ export function BookingDetailPage(): ReactElement {
           }
         }
 
-        // Also check for status-change-audit extensions as fallback (legacy data)
-        const statusChanges =
-          appt.extension?.filter(
-            (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/status-change-audit'
-          ) || [];
-
-        for (const change of statusChanges) {
-          const from = change.extension?.find((e) => e.url === 'from')?.valueString;
-          const to = change.extension?.find((e) => e.url === 'to')?.valueString;
-          const changedAt = change.extension?.find((e) => e.url === 'changedAt')?.valueDateTime;
-          const changedBy = change.extension?.find((e) => e.url === 'changedBy')?.valueReference?.display;
-
-          if (from && to && changedAt) {
-            // Check if we already have this event from AuditEvents
-            const exists = audits.some(
-              (a) => a.timestamp.getTime() === new Date(changedAt).getTime() && a.action.includes('Status changed')
-            );
-            if (!exists) {
-              audits.push({
-                timestamp: new Date(changedAt),
-                action: `Status changed: ${statusConfig[from]?.label || from} → ${statusConfig[to]?.label || to}`,
-                user: changedBy,
-              });
-            }
-          }
-        }
+        // Sort by timestamp (newest first)
+        audits.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        console.log('[BookingDetailPage] Audit trail loaded:', audits.length, 'entries');
+        setAuditTrail(audits);
       } catch (err) {
-        console.error('Error loading audit trail:', err);
+        console.error('[BookingDetailPage] Error loading audit trail:', err);
       }
-
-      // Sort by timestamp (newest first)
-      audits.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-      console.log('[BookingDetailPage] Final audits array:', audits.length, 'entries:', audits);
-      setAuditTrail(audits);
-    } catch (err) {
-      console.error('Error loading booking:', err);
-      showNotification({
-        color: 'red',
-        title: 'Error',
-        message: 'Failed to load booking details',
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [medplum, id]);
-
-  useEffect(() => {
-    const load = async (): Promise<void> => {
-      await loadData();
     };
-    load().catch(() => {});
-  }, [loadData]);
+
+    loadAuditTrail();
+  }, [serviceRequests, patient, medplum]);
 
   // Update appointment status
   const updateStatus = useCallback(

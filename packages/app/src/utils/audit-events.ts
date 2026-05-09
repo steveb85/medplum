@@ -94,23 +94,14 @@ async function createAuditEvent(
     });
   }
 
-  // Add a third entity to store the details (avoids ext-1 constraint issues with extensions)
-  // Using entity.detail array is cleaner and FHIR-compliant
-  if (Object.keys(entityDetails).length > 0) {
-    const detailArray = Object.entries(entityDetails).map(([key, value]) => ({
-      type: key,  // Simple string type
-      valueString: String(value ?? ''),
-    }));
-    
-    entity.push({
-      what: { display: 'Audit Details' },
-      role: {
-        system: 'http://terminology.hl7.org/CodeSystem/object-role',
-        code: '21', // Report - appropriate for audit details
-        display: 'Audit Details',
-      },
-      detail: detailArray,
-    });
+  // Store audit details as JSON in the ServiceRequest entity's description field
+  // This avoids FHIR validation issues with entity.detail array and ext-1 constraints
+  if (resource && Object.keys(entityDetails).length > 0) {
+    // Find the ServiceRequest entity (index 1) and add description
+    const srEntity = entity.find(e => e.what?.reference?.startsWith('ServiceRequest/'));
+    if (srEntity) {
+      srEntity.description = JSON.stringify(entityDetails);
+    }
   }
 
   // Build agent array
@@ -206,48 +197,29 @@ export function parseEntityDetails(event: AuditEvent): { details: EntityDetails;
 
   console.log('[audit-events] parseEntityDetails: description =', description);
   console.log('[audit-events] parseEntityDetails: event.entity count =', event.entity?.length);
-  console.log('[audit-events] parseEntityDetails: event.entity =', JSON.stringify(event.entity, null, 2)?.substring(0, 800));
 
-  // PRIMARY: Read from entity.detail array (entity[2] contains audit details)
-  // This is the new FHIR-compliant format that avoids ext-1 constraint issues
-  event.entity?.forEach((entity, idx) => {
-    console.log(`[audit-events] Checking entity[${idx}]:`, entity.what?.reference || entity.what?.display);
-    if (entity.detail && Array.isArray(entity.detail)) {
-      console.log(`[audit-events] Found entity[${idx}].detail with ${entity.detail.length} items:`, JSON.stringify(entity.detail));
-      entity.detail.forEach((detail: any) => {
-        if (detail.valueString) {
-          // Extract type from multiple possible formats
-          let typeCode = '';
-
-          // New format: type is a string
-          if (typeof detail.type === 'string') {
-            typeCode = detail.type;
-          }
-          // Old format: type is an object with coding array
-          else if (detail.type?.coding?.[0]?.code) {
-            typeCode = detail.type.coding[0].code;
-          }
-          // Legacy text format
-          else if (detail.type?.text) {
-            typeCode = detail.type.text;
-          }
-
-          console.log(`[audit-events] Extracted detail: ${typeCode} = ${detail.valueString}`);
-          if (typeCode) {
-            details[typeCode] = detail.valueString;
-          }
-        }
-      });
+  // PRIMARY: Read from ServiceRequest entity description (JSON format)
+  // This is the new FHIR-compliant format that avoids validation issues
+  const srEntity = event.entity?.find(e => e.what?.reference?.startsWith('ServiceRequest/'));
+  if (srEntity?.description) {
+    try {
+      const parsed = JSON.parse(srEntity.description);
+      console.log('[audit-events] Parsed details from entity.description:', parsed);
+      Object.assign(details, parsed);
+    } catch (err) {
+      console.warn('[audit-events] Failed to parse entity.description as JSON:', srEntity.description);
     }
-    // Also check for direct properties on entity (legacy format)
-    if (entity.what?.reference) {
-      details['resourceReference'] = entity.what.reference;
-    }
-  });
+  }
 
-  console.log('[audit-events] Details extracted from entity:', details);
+  // Also check for resource reference
+  if (srEntity?.what?.reference) {
+    details['resourceReference'] = srEntity.what.reference;
+    details['serviceRequestId'] = srEntity.what.reference.split('/')[1];
+  }
 
-  // If details found in entity, return them
+  console.log('[audit-events] Details extracted:', details);
+
+  // If details found, return them
   if (Object.keys(details).length > 0) {
     return { details, description };
   }
