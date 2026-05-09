@@ -1727,6 +1727,7 @@ export function CreateAppointmentModalV3({
               />
 
               <Select
+                key={`time-select-${initialSlot?.start?.getTime() || 'default'}`}
                 label="Time"
                 placeholder="Select time"
                 value={selectedTime}

@@ -162,10 +162,17 @@ export function BookingDetailPage(): ReactElement {
 
   // Convert serviceRequests to ServiceCardData format
   const serviceCardData: ServiceCardData[] = useMemo(() => {
-    return serviceRequests.map((sr) => {
+    console.log('[BookingDetailPage] Computing serviceCardData:', serviceRequests.length, 'serviceRequests,', services.length, 'services');
+    console.log('[BookingDetailPage] Service codes:', serviceRequests.map(sr => sr.code?.coding?.[0]?.code));
+    console.log('[BookingDetailPage] Loaded service codes:', services.map(s => s.code?.coding?.[0]?.code));
+    
+    const cards = serviceRequests.map((sr) => {
+      const srCode = sr.code?.coding?.[0]?.code;
       const service = services.find(
-        (s) => s.code?.coding?.[0]?.code === sr.code?.coding?.[0]?.code
+        (s) => s.code?.coding?.[0]?.code === srCode
       );
+      
+      console.log('[BookingDetailPage] Matching ServiceRequest code', srCode, 'to service:', service ? (service.title || service.name) : 'NOT FOUND');
 
       // Determine status from extensions or defaults
       const statusExt = sr.extension?.find(
@@ -187,6 +194,9 @@ export function BookingDetailPage(): ReactElement {
       // Filter out cards where service is not yet loaded
       card.service !== undefined
     );
+    
+    console.log('[BookingDetailPage] serviceCardData result:', cards.length, 'cards');
+    return cards;
   }, [serviceRequests, services]);
 
   // Handler functions for ServiceCards
@@ -360,10 +370,13 @@ export function BookingDetailPage(): ReactElement {
       
       // Load services from ServiceRequests linked to this appointment via extension
       // ServiceRequests use linked-appointment extension, not a standard search param
+      console.log('[BookingDetailPage] Loading ServiceRequests for appointment:', id);
       const srBundle = await medplum.search('ServiceRequest', {
         _count: '100',
       });
       const allSrs = (srBundle.entry || []).map((e) => e.resource as ServiceRequest);
+      console.log('[BookingDetailPage] Total ServiceRequests found:', allSrs.length);
+      
       // Filter to only ServiceRequests linked to this appointment
       const srs = allSrs.filter((sr) =>
         sr.extension?.some(
@@ -372,6 +385,7 @@ export function BookingDetailPage(): ReactElement {
             e.valueReference?.reference === `Appointment/${id}`
         )
       );
+      console.log('[BookingDetailPage] ServiceRequests linked to this appointment:', srs.length, srs.map(sr => ({id: sr.id, code: sr.code?.coding?.[0]?.code})));
       setServiceRequests(srs);
 
       // Now get deposit info for the first ServiceRequest (if any)
@@ -403,26 +417,33 @@ export function BookingDetailPage(): ReactElement {
       }
       setProviders(loadedProviders);
 
-      // Load ActivityDefinitions for services (ServiceRequests already loaded above for deposit status)
+      // Load ActivityDefinitions for services (use local srs variable, not state)
+      console.log('[BookingDetailPage] Loading ActivityDefinitions for', srs.length, 'ServiceRequests');
       const loadedServices: ActivityDefinition[] = [];
-      for (const sr of serviceRequests) {
+      for (const sr of srs) {
         const code = sr.code?.coding?.[0]?.code;
+        console.log('[BookingDetailPage] Looking for ActivityDefinition with code:', code);
         if (code) {
           try {
             const adBundle = await medplum.search('ActivityDefinition', {
               'code:exact': code,
               status: 'active',
             });
+            console.log('[BookingDetailPage] ActivityDefinition search result for code', code, ':', adBundle.entry?.length || 0, 'entries');
             const ad = adBundle.entry?.[0]?.resource as ActivityDefinition;
             if (ad) {
+              console.log('[BookingDetailPage] Found ActivityDefinition:', ad.title || ad.name, 'with code:', ad.code?.coding?.[0]?.code);
               loadedServices.push(ad);
+            } else {
+              console.warn('[BookingDetailPage] No ActivityDefinition found for code:', code);
             }
-          } catch {
-            // Skip if can't load
+          } catch (err) {
+            console.error('[BookingDetailPage] Error loading ActivityDefinition for code', code, ':', err);
           }
         }
       }
       setServices(loadedServices);
+      console.log('[BookingDetailPage] Total loaded services:', loadedServices.length, loadedServices.map(s => s.title || s.name));
 
       // Build audit trail from FHIR AuditEvents
       const audits: AuditEntry[] = [];
@@ -467,7 +488,25 @@ export function BookingDetailPage(): ReactElement {
 
         console.log('[BookingDetailPage] Relevant events count:', relevantEvents.length);
 
+        // Get ServiceRequest IDs for this booking to filter events
+        const serviceRequestIds = new Set(serviceRequests.map(sr => sr.id));
+        console.log('[BookingDetailPage] ServiceRequest IDs for this booking:', Array.from(serviceRequestIds));
+
         for (const event of relevantEvents) {
+          // Filter to only events for THIS booking's ServiceRequests
+          const hasMatchingServiceRequest = event.entity?.some((e: any) => {
+            const ref = e.what?.reference;
+            if (ref?.startsWith('ServiceRequest/')) {
+              const srId = ref.split('/')[1];
+              return serviceRequestIds.has(srId);
+            }
+            return false;
+          });
+
+          if (!hasMatchingServiceRequest) {
+            console.log('[BookingDetailPage] Skipping event - not for this booking:', event.subtype?.[0]?.display);
+            continue;
+          }
           const timestamp = new Date(event.recorded || Date.now());
 
           // Extract user from agent (may be undefined in search results without _elements)
@@ -1368,16 +1407,24 @@ export function BookingDetailPage(): ReactElement {
                   </Text>
                   <Text>{getRoom(appointment)}</Text>
                 </Grid.Col>
-                <Grid.Col span={6}>
-                  <Text size="sm" c="dimmed">
-                    Providers
-                  </Text>
-                  <Text>
-                    {providers.map((p) => `${p.name?.[0]?.given?.[0]} ${p.name?.[0]?.family}`).join(', ') || '-'}
-                  </Text>
-                </Grid.Col>
-                </Grid>
-             </Card>
+                 <Grid.Col span={6}>
+                   <Text size="sm" c="dimmed">
+                     Providers
+                   </Text>
+                   <Text>
+                     {providers.map((p) => `${p.name?.[0]?.given?.[0]} ${p.name?.[0]?.family}`).join(', ') || '-'}
+                   </Text>
+                 </Grid.Col>
+                 {appointment.comment && (
+                   <Grid.Col span={12}>
+                     <Text size="sm" c="dimmed">
+                       Notes
+                     </Text>
+                     <Text>{appointment.comment}</Text>
+                   </Grid.Col>
+                 )}
+               </Grid>
+              </Card>
 
              {/* Services Section */}
              <Card withBorder>

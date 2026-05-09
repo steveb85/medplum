@@ -204,12 +204,16 @@ export function parseEntityDetails(event: AuditEvent): { details: EntityDetails;
   const details: EntityDetails = {};
   const description = getAuditEventDescription(event);
 
-  console.log('[audit-events] parseEntityDetails: description =', description, 'from event.subtype =', event.subtype);
+  console.log('[audit-events] parseEntityDetails: description =', description);
+  console.log('[audit-events] parseEntityDetails: event.entity count =', event.entity?.length);
+  console.log('[audit-events] parseEntityDetails: event.entity =', JSON.stringify(event.entity, null, 2)?.substring(0, 800));
 
   // PRIMARY: Read from entity.detail array (entity[2] contains audit details)
   // This is the new FHIR-compliant format that avoids ext-1 constraint issues
-  event.entity?.forEach((entity) => {
+  event.entity?.forEach((entity, idx) => {
+    console.log(`[audit-events] Checking entity[${idx}]:`, entity.what?.reference || entity.what?.display);
     if (entity.detail && Array.isArray(entity.detail)) {
+      console.log(`[audit-events] Found entity[${idx}].detail with ${entity.detail.length} items:`, JSON.stringify(entity.detail));
       entity.detail.forEach((detail: any) => {
         if (detail.valueString) {
           // Extract type from multiple possible formats
@@ -228,6 +232,7 @@ export function parseEntityDetails(event: AuditEvent): { details: EntityDetails;
             typeCode = detail.type.text;
           }
 
+          console.log(`[audit-events] Extracted detail: ${typeCode} = ${detail.valueString}`);
           if (typeCode) {
             details[typeCode] = detail.valueString;
           }
@@ -239,6 +244,8 @@ export function parseEntityDetails(event: AuditEvent): { details: EntityDetails;
       details['resourceReference'] = entity.what.reference;
     }
   });
+
+  console.log('[audit-events] Details extracted from entity:', details);
 
   // If details found in entity, return them
   if (Object.keys(details).length > 0) {
