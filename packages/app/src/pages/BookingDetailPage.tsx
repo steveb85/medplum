@@ -183,7 +183,10 @@ export function BookingDetailPage(): ReactElement {
         photos: [], // TODO: Load photos linked to this ServiceRequest
         status,
       };
-    });
+    }).filter((card): card is ServiceCardData & { service: ActivityDefinition } => 
+      // Filter out cards where service is not yet loaded
+      card.service !== undefined
+    );
   }, [serviceRequests, services]);
 
   // Handler functions for ServiceCards
@@ -353,8 +356,28 @@ export function BookingDetailPage(): ReactElement {
       }
 
       // Get deposit info from FHIR AuditEvents (single source of truth)
+      // Need to load ServiceRequests first to get the specific booking's deposit status
+      
+      // Load services from ServiceRequests linked to this appointment via extension
+      // ServiceRequests use linked-appointment extension, not a standard search param
+      const srBundle = await medplum.search('ServiceRequest', {
+        _count: '100',
+      });
+      const allSrs = (srBundle.entry || []).map((e) => e.resource as ServiceRequest);
+      // Filter to only ServiceRequests linked to this appointment
+      const srs = allSrs.filter((sr) =>
+        sr.extension?.some(
+          (e) =>
+            e.url === 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment' &&
+            e.valueReference?.reference === `Appointment/${id}`
+        )
+      );
+      setServiceRequests(srs);
+
+      // Now get deposit info for the first ServiceRequest (if any)
       try {
-        const depInfo = await getDepositStatusFromAuditEvents(medplum, patientId);
+        const firstServiceRequestId = srs[0]?.id;
+        const depInfo = await getDepositStatusFromAuditEvents(medplum, patientId, firstServiceRequestId);
         console.log('[BookingDetailPage] depositInfo loaded:', depInfo);
         setDepositInfo(depInfo);
         setDepositAmount(depInfo.amount || 250);
@@ -380,25 +403,9 @@ export function BookingDetailPage(): ReactElement {
       }
       setProviders(loadedProviders);
 
-      // Load services from ServiceRequests linked to this appointment via extension
-      // ServiceRequests use linked-appointment extension, not a standard search param
-      const srBundle = await medplum.search('ServiceRequest', {
-        _count: '100',
-      });
-      const allSrs = (srBundle.entry || []).map((e) => e.resource as ServiceRequest);
-      // Filter to only ServiceRequests linked to this appointment
-      const srs = allSrs.filter((sr) =>
-        sr.extension?.some(
-          (e) =>
-            e.url === 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment' &&
-            e.valueReference?.reference === `Appointment/${id}`
-        )
-      );
-      setServiceRequests(srs);
-
-      // Load ActivityDefinitions for services
+      // Load ActivityDefinitions for services (ServiceRequests already loaded above for deposit status)
       const loadedServices: ActivityDefinition[] = [];
-      for (const sr of srs) {
+      for (const sr of serviceRequests) {
         const code = sr.code?.coding?.[0]?.code;
         if (code) {
           try {
@@ -475,8 +482,9 @@ export function BookingDetailPage(): ReactElement {
           // Also check subtype[0].display for description (where audit-events.ts stores it)
           const desc = eventDesc || (event as any).subtype?.[0]?.display || (event as any).description || '';
 
-          // Map to AuditEntry based on description
-          if (desc.includes('deposit paid')) {
+          // Map to AuditEntry based on description (case-insensitive)
+          const descLower = desc.toLowerCase();
+          if (descLower.includes('deposit paid')) {
             const amount = details.amount || '0';
             const paymentType = details.paymentType || 'manual';
             const notes = details.notes;
@@ -486,7 +494,7 @@ export function BookingDetailPage(): ReactElement {
               details: `Amount: $${amount} • Type: ${paymentType}${notes ? ' • Notes: ' + notes : ''}`,
               user,
             });
-          } else if (desc.includes('deposit requested')) {
+          } else if (descLower.includes('deposit requested')) {
             const amount = details.amount || '0';
             const method = details.method || 'sms';
             audits.push({
@@ -495,7 +503,7 @@ export function BookingDetailPage(): ReactElement {
               details: `Amount: $${amount} • Via: ${method}`,
               user,
             });
-          } else if (desc.includes('deposit waived')) {
+          } else if (descLower.includes('deposit waived')) {
             const amount = details.amount || '0';
             const waivedReason = details.waivedReason;
             audits.push({
@@ -504,7 +512,7 @@ export function BookingDetailPage(): ReactElement {
               details: `Amount: $${amount}${waivedReason ? ' • Reason: ' + waivedReason : ''}`,
               user,
             });
-          } else if (desc.includes('payment undone')) {
+          } else if (descLower.includes('payment undone')) {
             const amount = details.amount || '0';
             const reason = details.reason;
             audits.push({
@@ -513,7 +521,7 @@ export function BookingDetailPage(): ReactElement {
               details: `Amount: $${amount}${reason ? ' • Reason: ' + reason : ''}`,
               user,
             });
-          } else if (desc.includes('refund')) {
+          } else if (descLower.includes('refund')) {
             const amount = details.amount || '0';
             const reason = details.reason;
             audits.push({
@@ -522,7 +530,7 @@ export function BookingDetailPage(): ReactElement {
               details: `Amount: $${amount}${reason ? ' • Reason: ' + reason : ''}`,
               user,
             });
-          } else if (desc.includes('deposit amount changed')) {
+          } else if (descLower.includes('deposit amount changed')) {
             const previousAmount = details.previousAmount || '0';
             const newAmount = details.newAmount || '0';
             audits.push({
@@ -531,7 +539,7 @@ export function BookingDetailPage(): ReactElement {
               details: `From $${previousAmount} to $${newAmount}`,
               user,
             });
-          } else if (desc.includes('booking status changed')) {
+          } else if (descLower.includes('booking status changed')) {
             const previousStatus = details.previousStatus || 'unknown';
             const newStatus = details.newStatus || 'unknown';
             const reason = details.reason;
@@ -541,13 +549,27 @@ export function BookingDetailPage(): ReactElement {
                 details: typeof reason === 'string' ? reason : undefined,
                 user,
               });
-          } else if (desc.includes('treatment service')) {
+          } else if (descLower.includes('booking created')) {
+            audits.push({
+              timestamp,
+              action: 'Booking created',
+              details: desc,
+              user,
+            });
+          } else if (descLower.includes('booking edited')) {
+            audits.push({
+              timestamp,
+              action: 'Booking edited',
+              details: desc,
+              user,
+            });
+          } else if (descLower.includes('treatment service')) {
             audits.push({
               timestamp,
               action: desc,
               user,
             });
-          } else if (desc.includes('consent signed')) {
+          } else if (descLower.includes('consent signed')) {
             const serviceName = details.consentCategory || details.serviceName || 'Unknown Service';
             audits.push({
               timestamp,
@@ -590,6 +612,7 @@ export function BookingDetailPage(): ReactElement {
 
       // Sort by timestamp (newest first)
       audits.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      console.log('[BookingDetailPage] Final audits array:', audits.length, 'entries:', audits);
       setAuditTrail(audits);
     } catch (err) {
       console.error('Error loading booking:', err);
@@ -1472,96 +1495,6 @@ export function BookingDetailPage(): ReactElement {
                   </Stack>
                 )}
 
-                {/* Deposit Actions - Secondary */}
-                <Stack gap="xs">
-                  <Text size="sm" fw={500} c="dimmed">
-                    Deposit
-                  </Text>
-                  <Group>
-                    {actions.canMarkPaid && (
-                      <Button
-                        color="green"
-                        variant="light"
-                        onClick={() => setMarkPaidModalOpen(true)}
-                        leftSection={<IconCoin size={16} />}
-                      >
-                        Mark as Paid
-                      </Button>
-                    )}
-                  </Group>
-                </Stack>
-                {(actions.canSendPaymentLink ||
-                  actions.canWaive ||
-                  actions.canRefund ||
-                  actions.canUndoPayment) && (
-                  <Stack gap="xs">
-                    <Text size="sm" fw={500} c="dimmed">
-                      Deposit
-                    </Text>
-                    <Group>
-                      {actions.canSendPaymentLink && (
-                        <Button
-                          onClick={sendPaymentLink}
-                          leftSection={<IconMessage size={16} />}
-                          disabled={!patient?.telecom?.find((t) => t.system === 'phone')}
-                        >
-                          Send Payment Link
-                        </Button>
-                      )}
-                      {actions.canMarkPaid && (
-                        <Button
-                          color="green"
-                          variant="light"
-                          onClick={() => setMarkPaidModalOpen(true)}
-                          leftSection={<IconCoin size={16} />}
-                        >
-                          Mark as Paid
-                        </Button>
-                      )}
-                      {actions.canWaive && (
-                        <Button
-                          color="orange"
-                          variant="light"
-                          onClick={() => setWaiveModalOpen(true)}
-                          leftSection={<IconX size={16} />}
-                        >
-                          Waive Deposit
-                        </Button>
-                      )}
-                      {actions.canUndoWaive && (
-                        <Button
-                          color="blue"
-                          variant="light"
-                          onClick={() => setUndoWaiveModalOpen(true)}
-                          leftSection={<IconRefresh size={16} />}
-                        >
-                          Undo Waive
-                        </Button>
-                      )}
-                      {actions.canRefund && (
-                        <Button
-                          color="red"
-                          variant="light"
-                          onClick={() => setRefundModalOpen(true)}
-                          leftSection={<IconRefresh size={16} />}
-                        >
-                          Issue Refund
-                        </Button>
-                      )}
-                      {actions.canUndoPayment && (
-                        <Button
-                          color="orange"
-                          variant="light"
-                          onClick={() => setUndoPaymentModalOpen(true)}
-                          leftSection={<IconRefresh size={16} />}
-                        >
-                          Undo Payment
-                        </Button>
-                      )}
-                    </Group>
-                  </Stack>
-                )}
-
                 {/* Booking Management - Tertiary */}
                 {actions.canCancel && (
                   <Stack gap="xs">
@@ -1591,9 +1524,8 @@ export function BookingDetailPage(): ReactElement {
             {/* Deposit Management - Info Only */}
             <Card withBorder>
               <Title order={5} mb="md">
-                Deposit Management (status: {depositInfo.status})
+                Deposit Management
               </Title>
-              <Text size="xs" c="red">DEBUG: depositInfo = {JSON.stringify(depositInfo).substring(0, 100)}</Text>
 
               <Stack gap="md">
                 {/* Deposit Status */}
@@ -1625,18 +1557,74 @@ export function BookingDetailPage(): ReactElement {
                   )}
                 </Group>
 
-                {/* Mark as Paid Button - Show when deposit is requested or pending */}
-                {actions.canMarkPaid && (
-                  <Button
-                    color="green"
-                    variant="light"
-                    onClick={() => setMarkPaidModalOpen(true)}
-                    leftSection={<IconCoin size={16} />}
-                    fullWidth
-                  >
-                    Mark as Paid
-                  </Button>
-                )}
+                {/* Deposit Action Buttons */}
+                <Stack gap="xs">
+                  {actions.canSendPaymentLink && (
+                    <Button
+                      onClick={sendPaymentLink}
+                      leftSection={<IconMessage size={16} />}
+                      disabled={!patient?.telecom?.find((t) => t.system === 'phone')}
+                      fullWidth
+                    >
+                      Send Payment Link
+                    </Button>
+                  )}
+                  {actions.canMarkPaid && (
+                    <Button
+                      color="green"
+                      variant="light"
+                      onClick={() => setMarkPaidModalOpen(true)}
+                      leftSection={<IconCoin size={16} />}
+                      fullWidth
+                    >
+                      Mark as Paid
+                    </Button>
+                  )}
+                  {actions.canWaive && (
+                    <Button
+                      color="orange"
+                      variant="light"
+                      onClick={() => setWaiveModalOpen(true)}
+                      leftSection={<IconX size={16} />}
+                      fullWidth
+                    >
+                      Waive Deposit
+                    </Button>
+                  )}
+                  {actions.canUndoWaive && (
+                    <Button
+                      color="blue"
+                      variant="light"
+                      onClick={() => setUndoWaiveModalOpen(true)}
+                      leftSection={<IconRefresh size={16} />}
+                      fullWidth
+                    >
+                      Undo Waive
+                    </Button>
+                  )}
+                  {actions.canRefund && (
+                    <Button
+                      color="red"
+                      variant="light"
+                      onClick={() => setRefundModalOpen(true)}
+                      leftSection={<IconRefresh size={16} />}
+                      fullWidth
+                    >
+                      Issue Refund
+                    </Button>
+                  )}
+                  {actions.canUndoPayment && (
+                    <Button
+                      color="orange"
+                      variant="light"
+                      onClick={() => setUndoPaymentModalOpen(true)}
+                      leftSection={<IconRefresh size={16} />}
+                      fullWidth
+                    >
+                      Undo Payment
+                    </Button>
+                  )}
+                </Stack>
               </Stack>
             </Card>
 

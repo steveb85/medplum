@@ -980,23 +980,23 @@ export function CreateAppointmentModalV3({
         });
 
 // Record booking created via AuditEvent
-        // const currentUser = medplum.getProfile();
-        // const currentUserPractitioner = {
-        //   resourceType: 'Practitioner' as const,
-        //   id: currentUser?.id || '',
-        //   name: currentUser?.name,
-        // };
-        // const serviceNames = selectedServices.map((s) => s.activityDefinition.title || '').filter((name): name is string => name !== '');
-        // if (serviceRequests.length > 0) {
-        //   await recordBookingCreated(
-        //     medplum,
-        //     patient,
-        //     serviceRequests[0],
-        //     currentUserPractitioner,
-        //     serviceNames,
-        //     notes || undefined
-        //   );
-        // }
+        const currentUser = medplum.getProfile();
+        const currentUserPractitioner = {
+          resourceType: 'Practitioner' as const,
+          id: currentUser?.id || '',
+          name: currentUser?.name,
+        };
+        const serviceNames = selectedServices.map((s) => s.activityDefinition.title || '').filter((name): name is string => name !== '');
+        if (serviceRequests.length > 0) {
+          await recordBookingCreated(
+            medplum,
+            patient,
+            serviceRequests[0],
+            currentUserPractitioner,
+            serviceNames,
+            notes || undefined
+          );
+        }
       }
 
       onSuccess();
@@ -1023,6 +1023,39 @@ export function CreateAppointmentModalV3({
     editAppointment,
     editServiceRequests,
   ]);
+
+  // Memoize time slots so they don't regenerate on every render
+  const timeSlots = useMemo(() => generateTimeSlots(), []);
+
+  // Handle initialSlot changes when modal is open
+  useEffect(() => {
+    if (isOpen && initialSlot) {
+      console.log('[CreateAppointmentModalV3] Setting date/time from initialSlot:', initialSlot);
+      setSelectedDate(initialSlot.start);
+      
+      // Round to nearest 30-minute interval to match dropdown options
+      const slotHour = initialSlot.start.getHours();
+      const slotMinute = initialSlot.start.getMinutes();
+      const roundedMinute = slotMinute < 15 ? 0 : slotMinute < 45 ? 30 : 0;
+      const roundedHour = slotMinute >= 45 ? slotHour + 1 : slotHour;
+      
+      const hours = roundedHour.toString().padStart(2, '0');
+      const minutes = roundedMinute.toString().padStart(2, '0');
+      const roundedTime = `${hours}:${minutes}`;
+      
+      console.log('[CreateAppointmentModalV3] Rounded time:', roundedTime, '(original:', `${slotHour}:${slotMinute}`, ')');
+      
+      // Verify the rounded time exists in the slots
+      const slotExists = timeSlots.some(slot => slot.value === roundedTime);
+      if (slotExists) {
+        console.log('[CreateAppointmentModalV3] Time slot found in options:', roundedTime);
+        setSelectedTime(roundedTime);
+      } else {
+        console.warn('[CreateAppointmentModalV3] Time slot NOT found:', roundedTime, '- using 09:00');
+        setSelectedTime('09:00');
+      }
+    }
+  }, [isOpen, initialSlot, timeSlots]);
 
   // Reset form when modal closes
   useEffect(() => {
@@ -1698,7 +1731,7 @@ export function CreateAppointmentModalV3({
                 placeholder="Select time"
                 value={selectedTime}
                 onChange={(t) => setSelectedTime(t || '09:00')}
-                data={generateTimeSlots()}
+                data={timeSlots}
                 searchable
                 required
               />

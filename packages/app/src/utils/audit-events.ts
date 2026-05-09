@@ -82,6 +82,37 @@ async function createAuditEvent(
     },
   ];
 
+  // Add the service request as a second entity if provided
+  if (resource) {
+    entity.push({
+      what: { reference: `ServiceRequest/${resource.id}` },
+      role: {
+        system: 'http://terminology.hl7.org/CodeSystem/object-role',
+        code: '2',
+        display: 'ServiceRequest',
+      },
+    });
+  }
+
+  // Add a third entity to store the details (avoids ext-1 constraint issues with extensions)
+  // Using entity.detail array is cleaner and FHIR-compliant
+  if (Object.keys(entityDetails).length > 0) {
+    const detailArray = Object.entries(entityDetails).map(([key, value]) => ({
+      type: key,  // Simple string type
+      valueString: String(value ?? ''),
+    }));
+    
+    entity.push({
+      what: { display: 'Audit Details' },
+      role: {
+        system: 'http://terminology.hl7.org/CodeSystem/object-role',
+        code: '21', // Report - appropriate for audit details
+        display: 'Audit Details',
+      },
+      detail: detailArray,
+    });
+  }
+
   // Build agent array
   const agents: any[] = [
     {
@@ -108,49 +139,8 @@ async function createAuditEvent(
     });
   }
 
-  // Build audit-details extension from entityDetails
-  // Validate that all values are primitives (no objects with 'extension' properties)
-  Object.entries(entityDetails).forEach(([key, value]) => {
-    if (typeof value === 'object' && value !== null) {
-      console.error(`[audit-events] Invalid entityDetail "${key}": must be primitive, got ${typeof value}. Value: ${JSON.stringify(value).substring(0, 100)}`);
-      throw new Error(
-        `[audit-events] Invalid entityDetail "${key}": must be primitive (string|number|boolean), got ${typeof value}. ` +
-        `Objects can cause FHIR constraint violations (ext-1). Value: ${JSON.stringify(value).substring(0, 100)}`
-      );
-    }
-    // Also check if the string itself contains "extension" (weird edge case)
-    const strValue = String(value ?? '');
-    if (strValue.includes('extension') && strValue.length > 100) {
-      console.warn(`[audit-events] WARNING: entityDetail "${key}" string value contains "extension":`, strValue.substring(0, 200));
-    }
-  });
-
   // DEBUG: Log the exact entityDetails being used
   console.log('[audit-events] entityDetails:', JSON.stringify(entityDetails, null, 2));
-
-  // Create child extensions - use regular object literals (NOT Object.create(null))
-  const childExtensions = Object.entries(entityDetails).map(([key, value]) => {
-    // Ensure value is a string (primitive)
-    const strValue = String(value ?? '');
-    // Create clean object with ONLY url and valueString
-    return {
-      url: key,
-      valueString: strValue,
-    };
-  });
-
-  // Debug: Log childExtensions to see what's being created
-  console.log('[audit-events] childExtensions:', JSON.stringify(childExtensions, null, 2));
-
-  // Validate each child extension before adding to auditDetailsExtension
-  childExtensions.forEach((ext: any, index: number) => {
-    if (ext.extension && ext.valueString) {
-      console.error(`[audit-events] VIOLATION at index ${index}: has both extension AND valueString!`, JSON.stringify(ext, null, 2));
-      // Remove the extension property to fix the violation
-      delete ext.extension;
-      console.log(`[audit-events] Fixed index ${index}, now:`, JSON.stringify(ext, null, 2));
-    }
-  });
 
   // FHIR R4: AuditEvent.subtype is Coding[] (not CodeableConcept[])
   // Store description in subtype[0].display (Coding.display property)
@@ -183,117 +173,12 @@ async function createAuditEvent(
       ],
     },
     entity: entity,
-    // NUCLEAR OPTION: Don't send ANY extensions - store details in entity if needed
+    // No extensions - details stored in entity[2].detail array (FHIR-compliant)
     extension: [],
   };
 
   // Debug: Log the exact AuditEvent being sent
-  console.log('[audit-events] Creating AuditEvent - extension:', JSON.stringify(auditEvent.extension, null, 2));
-  console.log('[audit-events] Full AuditEvent (first 1000 chars):', JSON.stringify(auditEvent, null, 2).substring(0, 1000));
-
-  // CRITICAL: Check each child extension in auditDetailsExtension for violations
-  const auditDetailsExt = auditEvent.extension?.[0];
-  if (auditDetailsExt?.extension) {
-    auditDetailsExt.extension.forEach((child: any, idx: number) => {
-      if (child.extension && child.valueString) {
-        console.error(`[audit-events] VIOLATION FOUND at index ${idx}:`, JSON.stringify(child, null, 2));
-        // Fix it: remove the extension property
-        delete child.extension;
-        console.log(`[audit-events] Fixed index ${idx}:`, JSON.stringify(child, null, 2));
-      }
-    });
-  }
-
-  // SUPER CRITICAL: Log exactly what extension[0].extension[2] looks like
-  if (auditDetailsExt?.extension && auditDetailsExt.extension.length > 2) {
-    console.log('[audit-events] extension[0].extension[2] BEFORE SEND:', JSON.stringify(auditDetailsExt.extension[2], null, 2));
-  }
-
-  // Pre-send validation: Check for FHIR constraint violations (ext-1)
-  // Check extension[] array
-  (auditEvent.extension || []).forEach((ext, extIndex) => {
-    if ((ext as any).extension) {
-      ((ext as any).extension || []).forEach((child: any, childIndex: number) => {
-        if (child.extension && child.valueString) {
-          console.error(
-            `[audit-events] VIOLATION: extension[${extIndex}].extension[${childIndex}] has BOTH extension AND valueString! ` +
-            `url: ${child.url}, valueString: ${child.valueString}, extension: ${JSON.stringify(child.extension).substring(0, 50)}`
-          );
-          console.error('[audit-events] Full auditEvent:', JSON.stringify(auditEvent, null, 2));
-          throw new Error(
-            `[audit-events] Cannot create AuditEvent: extension[${extIndex}].extension[${childIndex}] violates FHIR constraint ext-1 ` +
-            `(cannot have both extension and value[x]). url: ${child.url}`
-          );
-        }
-      });
-    }
-  });
-
-  // Also check entity[] array (Medplum might move these to extension)
-  (auditEvent.entity || []).forEach((ent, entIndex) => {
-    if ((ent as any).extension) {
-      ((ent as any).extension || []).forEach((child: any, childIndex: number) => {
-        if (child.extension && child.valueString) {
-          console.error(
-            `[audit-events] VIOLATION: entity[${entIndex}].extension[${childIndex}] has BOTH extension AND valueString! ` +
-            `url: ${child.url}`
-          );
-        }
-      });
-    }
-  });
-
-  // CRITICAL DEBUG: Log the EXACT payload being sent
-  const payload = JSON.stringify(auditEvent, null, 2);
-  console.log('[audit-events] FINAL PAYLOAD being sent to Medplum:', payload);
-
-  // Check extension[0].extension[2] explicitly
-  const ext0 = auditEvent.extension?.[0];
-  if (ext0?.extension && ext0.extension.length > 2) {
-    const child2 = ext0.extension[2] as any;
-    console.log('[audit-events] extension[0].extension[2] BEFORE SEND:', JSON.stringify(child2, null, 2));
-    console.log('[audit-events] Has .extension?', !!child2.extension);
-    console.log('[audit-events] Has .valueString?', !!child2.valueString);
-  }
-
-  // NUCLEAR OPTION: Check if description is an object (not string)
-  if (typeof description !== 'string') {
-    console.error('[audit-events] DESCRIPTION IS NOT A STRING! It is:', typeof description, JSON.stringify(description, null, 2));
-    // Force it to be a string
-    (auditEvent as any).subtype[0].display = String(description || '');
-  }
-
-  // HARD FIX: Strip any 'extension' property from child extensions before sending
-  if (ext0?.extension) {
-    ext0.extension.forEach((child: any, idx: number) => {
-      if (child.extension) {
-        console.warn(`[audit-events] HARD FIX: Removing 'extension' from child[${idx}] before send`);
-        delete child.extension;
-      }
-    });
-  }
-
-  // NUCLEAR OPTION: Remove ANY extension that has BOTH extension AND valueString
-  if (auditEvent.extension) {
-    auditEvent.extension = auditEvent.extension.filter((ext: any) => {
-      if (ext.extension && ext.extension.length > 0) {
-        // This extension has child extensions - it's a container
-        // Check if any child has both extension AND valueString
-        const hasViolation = ext.extension.some((child: any) => child.extension && child.valueString);
-        if (hasViolation) {
-          console.error('[audit-events] NUCLEAR: Found violation in extension, removing it entirely');
-          return false; // Remove this extension
-        }
-      }
-      return true; // Keep this extension
-    });
-  }
-
-  // FINAL CHECK: Ensure extension[0] does NOT have an extension array
-  if (auditEvent.extension?.[0]?.extension) {
-    console.error('[audit-events] FINAL CHECK: extension[0] STILL has extension array! Removing it...');
-    delete (auditEvent.extension[0] as any).extension;
-  }
+  console.log('[audit-events] Creating AuditEvent:', JSON.stringify(auditEvent, null, 2).substring(0, 800));
 
   console.log('[audit-events] About to call medplum.createResource...');
   return medplum.createResource(auditEvent);
@@ -321,21 +206,8 @@ export function parseEntityDetails(event: AuditEvent): { details: EntityDetails;
 
   console.log('[audit-events] parseEntityDetails: description =', description, 'from event.subtype =', event.subtype);
 
-  // Read entity details from extension (new format)
-  const auditDetailsExt = event.extension?.find(
-    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/audit-details'
-  );
-
-  if (auditDetailsExt?.extension) {
-    auditDetailsExt.extension.forEach((ext) => {
-      if (ext.valueString && ext.url) {
-        details[ext.url] = ext.valueString;
-      }
-    });
-    return { details, description };
-  }
-
-  // Fallback to old format (entity.detail) for backward compatibility
+  // PRIMARY: Read from entity.detail array (entity[2] contains audit details)
+  // This is the new FHIR-compliant format that avoids ext-1 constraint issues
   event.entity?.forEach((entity) => {
     if (entity.detail && Array.isArray(entity.detail)) {
       entity.detail.forEach((detail: any) => {
@@ -367,6 +239,24 @@ export function parseEntityDetails(event: AuditEvent): { details: EntityDetails;
       details['resourceReference'] = entity.what.reference;
     }
   });
+
+  // If details found in entity, return them
+  if (Object.keys(details).length > 0) {
+    return { details, description };
+  }
+
+  // FALLBACK: Read from extension (old format for backward compatibility)
+  const auditDetailsExt = event.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/audit-details'
+  );
+
+  if (auditDetailsExt?.extension) {
+    auditDetailsExt.extension.forEach((ext) => {
+      if (ext.valueString && ext.url) {
+        details[ext.url] = ext.valueString;
+      }
+    });
+  }
   
   return { details, description };
 }
@@ -430,7 +320,14 @@ export async function recordDepositRequested(
   });
 }
 
-export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, patientId: string): Promise<DepositInfo> {
+export async function getDepositStatusFromAuditEvents(
+  medplum: MedplumClient,
+  patientId: string,
+  serviceRequestId?: string
+): Promise<DepositInfo> {
+  // If no serviceRequestId, search ALL patient events (backward compatible)
+  // If serviceRequestId, filter events to specific booking
+  console.log('[audit-events] getDepositStatusFromAuditEvents: patientId=' + patientId + ', serviceRequestId=' + (serviceRequestId || '(all bookings)'));
   try {
     // Search AuditEvent by patient - use full reference format
     // Note: Medplum doesn't support _sort=recorded for AuditEvent
@@ -448,11 +345,18 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
     const depositEvents = allEvents.filter((event) => {
       // FIX: Read from subtype[0].text (CodeableConcept.text) where description is stored
       const description = getAuditEventDescription(event).toLowerCase();
-      return (
-        description.includes('deposit') ||
-        description.includes('payment') ||
-        event.entity?.some((e) => (e.detail || []).some((d) => d.type === 'serviceRequestId'))
-      );
+      const isDepositOrPayment = description.includes('deposit') || description.includes('payment');
+      
+      // If serviceRequestId provided, filter to events for that specific booking
+      if (serviceRequestId && isDepositOrPayment) {
+        const hasServiceRequestEntity = event.entity?.some(
+          (e) => e.what?.reference === `ServiceRequest/${serviceRequestId}`
+        );
+        return hasServiceRequestEntity;
+      }
+      
+      // Otherwise, return all deposit/payment events (backward compatible)
+      return isDepositOrPayment;
     });
 
     const chronologicalEvents = [...depositEvents].sort(
@@ -460,7 +364,7 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
     );
 
     let currentStatus: DepositStatus = 'pending';
-    let currentAmount = 50;
+    let currentAmount = 250; // Default deposit amount
     let requestedAt: Date | undefined;
     let paidAt: Date | undefined;
     let waivedAt: Date | undefined;
@@ -522,7 +426,7 @@ export async function getDepositStatusFromAuditEvents(medplum: MedplumClient, pa
   } catch (err) {
     return {
       status: 'pending',
-      amount: 50,
+      amount: 250, // Default deposit amount
     };
   }
 }

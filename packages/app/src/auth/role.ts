@@ -293,8 +293,9 @@ export function isMainProviderEligible(practitioner: Practitioner): boolean {
   )?.valueString;
 
   if (medspaRole) {
-    // These roles can be main providers
-    return ['provider', 'project-admin', 'super-admin'].includes(medspaRole.toLowerCase());
+    // STRICT: Only 'provider' role can be main providers
+    // 'project-admin' and 'super-admin' are administrative roles, not clinical providers
+    return ['provider'].includes(medspaRole.toLowerCase());
   }
 
   // Check qualifications for role codes that indicate non-clinical staff
@@ -327,8 +328,8 @@ export function isMainProviderEligible(practitioner: Practitioner): boolean {
 
 /**
  * Check if a Practitioner can act as an assistant
- * Assistants can be: providers OR assistants
- * Excludes: coordinator, admin, receptionist
+ * Assistants can be: assistants ONLY (not providers)
+ * Excludes: provider, coordinator, admin, receptionist
  *
  * @param practitioner - The Practitioner resource
  * @returns True if practitioner can be an assistant
@@ -340,12 +341,13 @@ export function isAssistantEligible(practitioner: Practitioner): boolean {
   )?.valueString;
 
   if (medspaRole) {
-    // These roles can be assistants
-    return ['provider', 'assistant', 'project-admin', 'super-admin'].includes(medspaRole.toLowerCase());
+    // STRICT: Only 'assistant' role can be assistants
+    // 'provider' is EXCLUDED - providers go in Main Provider dropdown only
+    return ['assistant'].includes(medspaRole.toLowerCase());
   }
 
-  // Check qualifications for excluded role codes
-  const excludedRoleCodes = ['coordinator', 'admin', 'receptionist'];
+  // Check qualifications for excluded role codes (includes 'provider' now)
+  const excludedRoleCodes = ['provider', 'coordinator', 'admin', 'receptionist'];
   const hasExcludedRoleCode = practitioner.qualification?.some((q) =>
     q.code?.coding?.some((c) => {
       const code = c.code?.toLowerCase() ?? '';
@@ -358,13 +360,13 @@ export function isAssistantEligible(practitioner: Practitioner): boolean {
     return false;
   }
 
-  // Check qualifications for included role codes (assistant OR clinical)
-  const includedRoleCodes = ['assistant', 'RN', 'NP', 'MD', 'DO', 'PA', 'LPN', 'APRN', 'CRNA'];
-  const hasIncludedRoleCode = practitioner.qualification?.some((q) =>
-    q.code?.coding?.some((c) => includedRoleCodes.includes(c.code ?? ''))
+  // Check qualifications for assistant role code ONLY (not clinical)
+  const assistantCodes = ['assistant'];
+  const hasAssistantCode = practitioner.qualification?.some((q) =>
+    q.code?.coding?.some((c) => assistantCodes.includes(c.code ?? ''))
   );
 
-  if (hasIncludedRoleCode) {
+  if (hasAssistantCode) {
     return true;
   }
 
