@@ -339,9 +339,6 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
                   <Table.Th>Service</Table.Th>
                   <Table.Th>Date</Table.Th>
                   <Table.Th>Time</Table.Th>
-                  <Table.Th>Areas</Table.Th>
-                  <Table.Th>Units</Table.Th>
-                  <Table.Th>Photos</Table.Th>
                   <Table.Th>Actions</Table.Th>
                   <Table.Th>Status</Table.Th>
                 </Table.Tr>
@@ -370,38 +367,6 @@ export function TreatmentsTab({ patientId }: TreatmentsTabProps): JSX.Element {
                       <Text size="sm" c="dimmed">
                         {formatTime(treatment.date)}
                       </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" lineClamp={2} style={{ maxWidth: 150 }}>
-                        {treatment.type === 'procedure'
-                          ? getTreatmentAreas(treatment.resource)
-                          : '-'
-                        }
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      {treatment.type === 'procedure' && getTotalUnits(treatment.resource) > 0 ? (
-                        <Text size="sm" fw={500}>{getTotalUnits(treatment.resource)} units</Text>
-                      ) : (
-                        <Text size="sm" c="dimmed">-</Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap="xs">
-                        {treatment.beforePhotoCount > 0 && (
-                          <Badge size="sm" color="gray" variant="light" leftSection={<IconPhoto size={12} />}>
-                            {treatment.beforePhotoCount}
-                          </Badge>
-                        )}
-                        {treatment.afterPhotoCount > 0 && (
-                          <Badge size="sm" color="green" variant="light" leftSection={<IconPhoto size={12} />}>
-                            {treatment.afterPhotoCount}
-                          </Badge>
-                        )}
-                        {treatment.beforePhotoCount === 0 && treatment.afterPhotoCount === 0 && (
-                          <Text size="sm" c="dimmed">-</Text>
-                        )}
-                      </Group>
                     </Table.Td>
                     <Table.Td>
                       <Tooltip label="Open treatment">

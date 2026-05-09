@@ -356,18 +356,6 @@ export function BookingsPage(): JSX.Element {
     return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
   };
 
-  // Get room from extension
-  const getRoom = (appointment: Appointment): string => {
-    const roomExt = appointment.extension?.find(
-      (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
-    )?.valueString;
-    const roomMap: Record<string, string> = {
-      'room-1': 'Room 1',
-      'room-2': 'Room 2',
-    };
-    return roomMap[roomExt || ''] || '-';
-  };
-
   // Get provider names
   const getProviders = (appointment: Appointment): string => {
     const providers = appointment.participant
@@ -440,11 +428,6 @@ export function BookingsPage(): JSX.Element {
         if (dateStr.includes(needle)) {
           return true;
         }
-        // Search room
-        const room = getRoom(row.appointment).toLowerCase();
-        if (room.includes(needle)) {
-          return true;
-        }
         // Search providers
         const providers = getProviders(row.appointment).toLowerCase();
         if (providers.includes(needle)) {
@@ -494,7 +477,7 @@ export function BookingsPage(): JSX.Element {
         <Stack gap="md">
           {/* Search input */}
           <TextInput
-            placeholder="Search by patient, service, provider, date, or room..."
+            placeholder="Search by patient, service, provider, or date..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.currentTarget.value)}
             leftSection={<IconSearch size={16} />}
@@ -618,7 +601,7 @@ export function BookingsPage(): JSX.Element {
           </Text>
           {debouncedQuery && (
             <Text size="xs" c="dimmed">
-              Try searching by patient name, service, provider, date, or room
+              Try searching by patient name, service, provider, or date
             </Text>
           )}
         </Stack>
@@ -634,7 +617,6 @@ export function BookingsPage(): JSX.Element {
             <Table.Th>Date</Table.Th>
             <Table.Th>Time</Table.Th>
             <Table.Th>Duration</Table.Th>
-            <Table.Th>Room</Table.Th>
             <Table.Th>Providers</Table.Th>
             <Table.Th>Status</Table.Th>
             <Table.Th>Deposit</Table.Th>
@@ -676,7 +658,6 @@ export function BookingsPage(): JSX.Element {
                 <Table.Td>{formatDate(row.appointment)}</Table.Td>
                 <Table.Td>{formatTime(row.appointment)}</Table.Td>
                 <Table.Td>{getDuration(row.appointment)}</Table.Td>
-                <Table.Td>{getRoom(row.appointment)}</Table.Td>
                 <Table.Td>{getProviders(row.appointment)}</Table.Td>
                 <Table.Td>
                   <Badge color={statusConfig[row.appointment.status as keyof typeof statusConfig]?.color || 'gray'}>
