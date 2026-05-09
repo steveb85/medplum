@@ -505,7 +505,9 @@ export async function recordConsentSigned(
   patient: Patient,
   consent: Consent,
   serviceRequest: ServiceRequest,
-  signedByRole: string
+  signedByRole: string,
+  witness?: Practitioner,
+  serviceName?: string
 ): Promise<AuditEvent> {
   const consentActor = consent.provision?.actor?.[0]?.reference?.display;
   const patientName = patient.name?.[0];
@@ -517,6 +519,7 @@ export async function recordConsentSigned(
     action: 'E',
     patient,
     resource: serviceRequest,
+    agent: witness, // Pass witness as the staff agent who facilitated the consent
     description: consentCategory + ' consent signed by ' + signedByName + ' (' + signedByRole + ')',
     outcome: '0',
     entityDetails: {
@@ -524,6 +527,8 @@ export async function recordConsentSigned(
       consentCategory,
       signedByRole,
       signedByName,
+      serviceName: serviceName || consentCategory,
+      witnessName: witness?.name?.[0] ? `${witness.name[0].given?.[0] || ''} ${witness.name[0].family || ''}`.trim() : undefined,
     },
   });
 }

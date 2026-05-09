@@ -207,7 +207,18 @@ export function ConsentModal({
     });
 
     // Record consent signing in audit trail
-    await recordConsentSigned(medplum, patient, consent, serviceRequest, 'patient');
+    // Get current logged-in user (who clicked the button) as the witness
+    const currentUser = medplum.getProfile();
+    const currentUserPractitioner = currentUser ? {
+      resourceType: 'Practitioner' as const,
+      id: currentUser.id || '',
+      name: currentUser.name,
+    } : undefined;
+    
+    // Get service name for audit trail
+    const serviceName = service.title || service.name || 'Unknown Service';
+    
+    await recordConsentSigned(medplum, patient, consent, serviceRequest, 'patient', currentUserPractitioner, serviceName);
 
     showNotification({
       color: 'green',

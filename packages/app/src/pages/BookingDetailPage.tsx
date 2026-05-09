@@ -688,7 +688,7 @@ export function BookingDetailPage(): ReactElement {
               user,
             });
           } else if (descLower.includes('consent signed')) {
-            const serviceName = details.consentCategory || details.serviceName || 'Unknown Service';
+            const serviceName = details.serviceName || details.consentCategory || 'Unknown Service';
             audits.push({
               timestamp,
               action: 'Consent Signed',
