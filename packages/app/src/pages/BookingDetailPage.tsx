@@ -277,7 +277,7 @@ export function BookingDetailPage(): ReactElement {
         showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
         return;
       }
-      const service = services.find((s) => s.id === sr.code?.coding?.[0]?.code);
+      const service = services.find((s) => s.code?.coding?.[0]?.code === sr.code?.coding?.[0]?.code);
       if (!service) {
         showNotification({ color: 'red', title: 'Error', message: 'Service definition not found' });
         return;
