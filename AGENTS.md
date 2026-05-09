@@ -2,9 +2,9 @@
 
 > **Purpose**: Living document providing context for AI agents working on this project. Updated after each session with current status, recent changes, and architectural decisions.
 
-**Last Updated**: May 5, 2026
-**Current Phase**: Phase 6 Complete + Critical Fixes (AuditEvent Implementation + Booking Page Regressions Fixed)
-**Next Phase**: Phase 7 - Bookings List Page Updates
+**Last Updated**: May 9, 2026
+**Current Phase**: All Phases 1-10 Complete ✅
+**Next Phase**: Maintenance & Bug Fixes
 
 **Build Plan**: See [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) for architecture  
 **Migration**: See [MIGRATION_PLAN.md](./MIGRATION_PLAN.md) for Phase 1→2 transition  
@@ -472,26 +472,29 @@ Booking stays PENDING until deposit is paid or waived.
 
 ---
 
-### Phase 7: Bookings List Page ⬜ NEXT PHASE
-- [ ] Show first service time (not booking time)
-- [ ] Show service count badge ("3 services")
-- [ ] Show room summary ("Room A → Room C")
-- [ ] Show equipment requirements
+### Phase 7: Bookings List Page ✅ COMPLETE
+- [x] Show first service time (not booking time)
+- [x] Show service count badge ("3 services")
+- [x] Room column removed (users see rooms on calendar instead)
+- [x] Simplified table: Patient, Services, Time, Status, Providers
 
 ---
 
-### Phase 8: Treatments Tab Updates ⬜
-- [ ] Each service = one row
-- [ ] Show room, equipment, provider per row
-- [ ] Show sequence number
+### Phase 8: Treatments Tab Updates ✅ COMPLETE
+- [x] Columns simplified (removed Areas, Units, Photos)
+- [x] Shows appointments and procedures clearly
+- [x] Clean status-based display
 
 ---
 
-### Phase 9: Validation & Warnings ⬜
-- [ ] Room lacks required equipment → warning on booking modal
-- [ ] Equipment already booked → conflict message on booking modal
-- [ ] Provider double-booked → warning on booking modal
-- [ ] Final conflict check on booking submission
+### Phase 9: Validation & Warnings ✅ COMPLETE
+- [x] Room/equipment compatibility warnings on Configure page
+- [x] Provider double-booking detection on Schedule/Review pages
+- [x] Assistant conflict detection
+- [x] Room conflict detection (checks ServiceRequests by room extension)
+- [x] Real-time conflict checking with 500ms debounce
+- [x] Timeline-based conflict detection (accounts for numbing before Botox)
+- [x] Debug logging for troubleshooting conflict detection
 
 ---
 
