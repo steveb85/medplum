@@ -701,20 +701,34 @@ export function BookingDetailPage(): ReactElement {
         // Sort by timestamp (newest first)
         audits.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
-        // Deduplicate entries (same timestamp + action + user within 1 second)
-        const seen = new Map<string, number>(); // key -> timestamp
-        audits = audits.filter((audit) => {
+        // Deduplicate entries (same action + user within 1 second window)
+        // Keep the entry with the most specific (non-generic) reason
+        const seen = new Map<string, AuditEntry>(); // key -> entry
+        audits.forEach((audit) => {
           const key = `${audit.action}_${audit.user}`;
-          const lastSeen = seen.get(key);
-          const currentTime = audit.timestamp.getTime();
+          const existing = seen.get(key);
 
-          // If we haven't seen this action+user combo, or it's been more than 1 second
-          if (!lastSeen || currentTime - lastSeen > 1000) {
-            seen.set(key, currentTime);
-            return true;
+          if (!existing) {
+            seen.set(key, audit);
+          } else {
+            // If existing has a generic reason and new one has specific reason, replace it
+            const existingReason = existing.details?.toLowerCase() || '';
+            const newReason = audit.details?.toLowerCase() || '';
+
+            // Check if existing has generic "payment undone" or "deposit paid" as reason
+            const isExistingGeneric =
+              existingReason.includes('reason: payment undone') ||
+              existingReason.includes('reason: deposit paid') ||
+              existingReason.includes('reason: deposit waived');
+
+            // If new one is more specific (doesn't have generic reason text), use it
+            if (isExistingGeneric && !newReason.includes('reason: payment undone')) {
+              seen.set(key, audit);
+            }
           }
-          return false;
         });
+        audits = Array.from(seen.values());
+        audits.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
         console.log('[BookingDetailPage] Audit trail loaded:', audits.length, 'entries');
         setAuditTrail(audits);
