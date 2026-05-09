@@ -328,8 +328,8 @@ export function isMainProviderEligible(practitioner: Practitioner): boolean {
 
 /**
  * Check if a Practitioner can act as an assistant
- * Assistants can be: assistants ONLY (not providers)
- * Excludes: provider, coordinator, admin, receptionist
+ * Assistants can be: assistants OR providers (providers can assist too)
+ * Excludes: coordinator, admin, receptionist (non-clinical staff only)
  *
  * @param practitioner - The Practitioner resource
  * @returns True if practitioner can be an assistant
@@ -341,13 +341,13 @@ export function isAssistantEligible(practitioner: Practitioner): boolean {
   )?.valueString;
 
   if (medspaRole) {
-    // STRICT: Only 'assistant' role can be assistants
-    // 'provider' is EXCLUDED - providers go in Main Provider dropdown only
-    return ['assistant'].includes(medspaRole.toLowerCase());
+    // Assistants can be either 'assistant' OR 'provider' (providers can assist too)
+    // Only exclude non-clinical roles
+    return ['assistant', 'provider'].includes(medspaRole.toLowerCase());
   }
 
-  // Check qualifications for excluded role codes (includes 'provider' now)
-  const excludedRoleCodes = ['provider', 'coordinator', 'admin', 'receptionist'];
+  // Check qualifications for excluded role codes (non-clinical only)
+  const excludedRoleCodes = ['coordinator', 'admin', 'receptionist'];
   const hasExcludedRoleCode = practitioner.qualification?.some((q) =>
     q.code?.coding?.some((c) => {
       const code = c.code?.toLowerCase() ?? '';
@@ -360,13 +360,13 @@ export function isAssistantEligible(practitioner: Practitioner): boolean {
     return false;
   }
 
-  // Check qualifications for assistant role code ONLY (not clinical)
-  const assistantCodes = ['assistant'];
-  const hasAssistantCode = practitioner.qualification?.some((q) =>
-    q.code?.coding?.some((c) => assistantCodes.includes(c.code ?? ''))
+  // Check qualifications for assistant OR provider/clinical codes
+  const eligibleCodes = ['assistant', 'RN', 'NP', 'MD', 'DO', 'PA', 'LPN', 'APRN', 'CRNA'];
+  const hasEligibleCode = practitioner.qualification?.some((q) =>
+    q.code?.coding?.some((c) => eligibleCodes.includes(c.code ?? ''))
   );
 
-  if (hasAssistantCode) {
+  if (hasEligibleCode) {
     return true;
   }
 
