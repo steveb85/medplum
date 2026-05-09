@@ -26,7 +26,6 @@ import {
   TextInput,
   ThemeIcon,
   Timeline,
-  Title,
   Tooltip,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
@@ -63,9 +62,9 @@ import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMedSpaRole, isAssistantEligible, isMainProviderEligible } from '../auth/role';
 import { createNotification } from '../notifications/utils';
+import { recordBookingCreated, recordBookingEdited } from '../utils/audit-events';
 import type { EquipmentRequirement, ServiceConfig } from '../utils/fhir-extensions';
 import { parseServiceConfig } from '../utils/fhir-extensions';
-import { recordBookingCreated, recordBookingEdited } from '../utils/audit-events';
 
 type Step = 'patient' | 'services' | 'configure' | 'schedule' | 'review';
 
@@ -398,6 +397,353 @@ export function CreateAppointmentModalV3({
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Validation warnings state (Configure page - room/equipment only)
+  const [validationWarnings, setValidationWarnings] = useState<Map<string, string[]>>(new Map());
+
+  // Provider conflict warnings (Schedule/Review page with correct timing)
+  const [providerConflictWarnings, setProviderConflictWarnings] = useState<string[]>([]);
+
+  // Calculate timeline items at component level (avoids hooks in conditional)
+  const scheduleTimelineItems = useMemo(() => {
+    if (!selectedDate || !selectedTime) return [];
+    const startTime = dayjs(selectedDate)
+      .hour(parseInt(selectedTime.split(':')[0], 10))
+      .minute(parseInt(selectedTime.split(':')[1], 10));
+    const { items } = calculateTimeline(selectedServices, startTime);
+    return items;
+  }, [selectedDate, selectedTime, selectedServices]);
+
+  // Check room/equipment compatibility
+  const checkRoomEquipmentCompatibility = useCallback(
+    (service: ServiceBookingConfig, serviceIndex: number): string[] => {
+      const warnings: string[] = [];
+
+      // Get equipment requirements for this service
+      const requiredEquipment = service.config.equipmentRequirements.filter((req) => req.required);
+
+      for (const req of requiredEquipment) {
+        const assignment = service.equipmentAssignments.find(
+          (a) => a.requirementIndex === service.config.equipmentRequirements.indexOf(req)
+        );
+
+        if (!assignment?.deviceId) {
+          // Check if any equipment of this type is available in the selected room
+          const compatibleInRoom = allEquipment.filter((d) => {
+            if (req.equipmentType && !d.type?.text?.toLowerCase().includes(req.equipmentType.toLowerCase())) {
+              return false;
+            }
+            // Check if equipment is assigned to this room
+            const deviceRoom = d.extension?.find(
+              (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/assigned-room'
+            )?.valueString;
+            return deviceRoom === service.room;
+          });
+
+          if (compatibleInRoom.length === 0) {
+            // Find rooms that have this equipment
+            const roomsWithEquipment = new Set<string>();
+            allEquipment.forEach((d) => {
+              if (req.equipmentType && d.type?.text?.toLowerCase().includes(req.equipmentType.toLowerCase())) {
+                const deviceRoom = d.extension?.find(
+                  (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/assigned-room'
+                )?.valueString;
+                if (deviceRoom)
+                  roomsWithEquipment.add(deviceRoom === 'room-1' ? 'Treatment Room 1' : 'Treatment Room 2');
+              }
+            });
+
+            if (roomsWithEquipment.size > 0) {
+              warnings.push(
+                `${req.equipmentName || req.equipmentType} not available in ${getRoomDisplay(service.room)}. Available in: ${Array.from(roomsWithEquipment).join(', ')}`
+              );
+            }
+          }
+        }
+      }
+
+      return warnings;
+    },
+    [allEquipment]
+  );
+
+  // Check for gaps between services
+  const checkServiceGaps = useCallback((): string[] => {
+    const warnings: string[] = [];
+    const GAP_THRESHOLD_MINUTES = 15;
+
+    if (selectedServices.length < 2 || !selectedDate || !selectedTime) return warnings;
+
+    // Calculate timings
+    let currentTime = dayjs(selectedDate)
+      .hour(parseInt(selectedTime.split(':')[0]))
+      .minute(parseInt(selectedTime.split(':')[1]));
+
+    for (let i = 0; i < selectedServices.length; i++) {
+      const service = selectedServices[i];
+      const serviceEnd = currentTime.add(service.duration, 'minute');
+
+      // Check gap to next service
+      if (i < selectedServices.length - 1) {
+        const nextService = selectedServices[i + 1];
+        const gapMinutes = 0; // Services are sequential with no gap by default
+
+        // In sequential timing, services are back-to-back
+        // Gap would be if user manually adjusted times (future feature)
+        // For now, this is a placeholder for when we support custom timing per service
+      }
+
+      currentTime = serviceEnd;
+    }
+
+    return warnings;
+  }, [selectedServices, selectedDate, selectedTime]);
+
+  // Check all conflicts using calculated timeline (for Schedule/Review pages)
+  // Includes: provider conflicts, assistant conflicts, room conflicts
+  const checkAllConflicts = useCallback(
+    async (timelineItems: TimelineItem[]): Promise<string[]> => {
+      const warnings: string[] = [];
+
+      if (!selectedDate) {
+        console.log('[Conflict Check] No selected date, skipping');
+        return warnings;
+      }
+
+      const dateStr = dayjs(selectedDate).format('YYYY-MM-DD');
+      console.log('[Conflict Check] Starting check for date:', dateStr, 'with', timelineItems.length, 'timeline items');
+
+      for (const item of timelineItems) {
+        // Only check main services, not accompanying items
+        if (item.type !== 'service') {
+          console.log('[Conflict Check] Skipping non-service item:', item.title);
+          continue;
+        }
+
+        const start = item.startTime.toISOString();
+        const end = item.endTime.toISOString();
+        const serviceTimeStr = `${item.startTime.format('h:mm A')} - ${item.endTime.format('h:mm A')}`;
+        
+        console.log('[Conflict Check] Checking service:', item.title, 'time:', serviceTimeStr);
+        console.log('[Conflict Check] Provider:', item.service.provider?.name?.[0]?.given?.[0], 'ID:', item.service.provider?.id);
+        console.log('[Conflict Check] Assistant:', item.service.assistant?.name?.[0]?.given?.[0], 'ID:', item.service.assistant?.id);
+        console.log('[Conflict Check] Room:', item.service.room);
+
+        // 1. Check main provider conflicts
+        const provider = item.service.provider;
+        if (provider?.id) {
+          console.log('[Conflict Check] Searching for provider conflicts, ID:', provider.id);
+          try {
+            const result = await medplum.search('Appointment', {
+              date: `ge${dateStr}`,
+              _count: '50',
+            });
+            
+            console.log('[Conflict Check] Found', result.entry?.length || 0, 'appointments on date');
+
+            const appointments = (result.entry || [])
+              .map((e) => e.resource as Appointment)
+              .filter((a) => {
+                if (editMode && editAppointment?.id === a.id) {
+                  console.log('[Conflict Check] Skipping current appointment in edit mode');
+                  return false;
+                }
+                
+                const hasProvider = a.participant?.some((p) => {
+                  const includesId = p.actor?.reference?.includes(provider.id || '');
+                  if (includesId) {
+                    console.log('[Conflict Check] Found matching provider in appointment:', a.id, 'participant:', p.actor?.reference);
+                  }
+                  return includesId;
+                });
+                
+                const timeOverlap = a.start && a.start < end && a.end && a.end > start;
+                if (hasProvider && !timeOverlap) {
+                  console.log('[Conflict Check] Provider matches but no time overlap. Appt:', a.start, '-', a.end, 'vs service:', start, '-', end);
+                }
+                
+                return hasProvider && timeOverlap;
+              });
+
+            console.log('[Conflict Check] Provider conflicts found:', appointments.length);
+            
+            if (appointments.length > 0) {
+              const conflictMsg = `${provider.name?.[0]?.given?.[0]} ${provider.name?.[0]?.family} is already booked ${serviceTimeStr}`;
+              console.log('[Conflict Check] Adding provider warning:', conflictMsg);
+              warnings.push(conflictMsg);
+            }
+          } catch (err) {
+            console.error('Error checking provider conflicts:', err);
+          }
+        }
+
+        // 2. Check assistant conflicts
+        const assistant = item.service.assistant;
+        if (assistant?.id) {
+          console.log('[Conflict Check] Searching for assistant conflicts, ID:', assistant.id);
+          try {
+            const result = await medplum.search('Appointment', {
+              date: `ge${dateStr}`,
+              _count: '50',
+            });
+            
+            console.log('[Conflict Check] Found', result.entry?.length || 0, 'appointments for assistant check');
+
+            const appointments = (result.entry || [])
+              .map((e) => e.resource as Appointment)
+              .filter((a) => {
+                if (editMode && editAppointment?.id === a.id) return false;
+                
+                const hasAssistant = a.participant?.some((p) => {
+                  const includesId = p.actor?.reference?.includes(assistant.id || '');
+                  if (includesId) {
+                    console.log('[Conflict Check] Found matching assistant in appointment:', a.id);
+                  }
+                  return includesId;
+                });
+                
+                const timeOverlap = a.start && a.start < end && a.end && a.end > start;
+                return hasAssistant && timeOverlap;
+              });
+
+            console.log('[Conflict Check] Assistant conflicts found:', appointments.length);
+
+            if (appointments.length > 0) {
+              const conflictMsg = `Assistant ${assistant.name?.[0]?.given?.[0]} ${assistant.name?.[0]?.family} is already booked ${serviceTimeStr}`;
+              console.log('[Conflict Check] Adding assistant warning:', conflictMsg);
+              warnings.push(conflictMsg);
+            }
+          } catch (err) {
+            console.error('Error checking assistant conflicts:', err);
+          }
+        }
+
+        // 3. Check room conflicts (via ServiceRequests)
+        const room = item.service.room;
+        if (room) {
+          console.log('[Conflict Check] Searching for room conflicts, room:', room);
+          try {
+            // Search ServiceRequests with this room assignment
+            const result = await medplum.search('ServiceRequest', {
+              _count: '50',
+            });
+            
+            console.log('[Conflict Check] Found', result.entry?.length || 0, 'ServiceRequests total');
+
+            const serviceRequests = (result.entry || [])
+              .map((e) => e.resource as ServiceRequest)
+              .filter((sr) => {
+                // Check if this SR uses the same room
+                const srRoom = sr.extension?.find(
+                  (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/assigned-room'
+                )?.valueString;
+                
+                if (srRoom === room) {
+                  console.log('[Conflict Check] Found SR with matching room:', sr.id, 'room:', srRoom);
+                  return true;
+                }
+                return false;
+              });
+
+            console.log('[Conflict Check] ServiceRequests in room', room, ':', serviceRequests.length);
+
+            if (serviceRequests.length > 0) {
+              // Get linked appointments to check times
+              for (const sr of serviceRequests) {
+                const linkedApptExt = sr.extension?.find(
+                  (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/linked-appointment'
+                );
+                if (linkedApptExt?.valueReference?.reference) {
+                  const apptId = linkedApptExt.valueReference.reference.split('/')[1];
+                  console.log('[Conflict Check] Checking linked appointment:', apptId);
+                  
+                  if (apptId && (!editMode || editAppointment?.id !== apptId)) {
+                    try {
+                      const appt = await medplum.readResource('Appointment', apptId);
+                      console.log('[Conflict Check] Linked appt time:', appt.start, '-', appt.end);
+                      
+                      if (
+                        appt.start &&
+                        appt.start < end &&
+                        appt.end &&
+                        appt.end > start
+                      ) {
+                        console.log('[Conflict Check] TIME OVERLAP DETECTED!');
+                        const conflictMsg = `${getRoomDisplay(room)} is already booked ${serviceTimeStr}`;
+                        warnings.push(conflictMsg);
+                        break; // Only show one room conflict per service
+                      } else {
+                        console.log('[Conflict Check] No time overlap with linked appt');
+                      }
+                    } catch (err) {
+                      console.log('[Conflict Check] Error reading appointment:', apptId, err);
+                    }
+                  } else {
+                    console.log('[Conflict Check] Skipping current appointment in edit mode or no apptId');
+                  }
+                } else {
+                  console.log('[Conflict Check] SR has no linked appointment:', sr.id);
+                }
+              }
+            }
+          } catch (err) {
+            console.error('Error checking room conflicts:', err);
+          }
+        }
+      }
+
+      console.log('[Conflict Check] Total warnings:', warnings.length, warnings);
+      return warnings;
+    },
+    [medplum, editMode, editAppointment, selectedDate]
+  );
+
+  // Run validation when services configuration changes (room/equipment only)
+  // Provider conflicts are checked on Schedule/Review page with correct timing
+  useEffect(() => {
+    const runValidation = async (): Promise<void> => {
+      const newWarnings = new Map<string, string[]>();
+
+      selectedServices.forEach((service, index) => {
+        const serviceWarnings: string[] = [];
+
+        // Check room/equipment compatibility
+        const roomWarnings = checkRoomEquipmentCompatibility(service, index);
+        serviceWarnings.push(...roomWarnings);
+
+        // Add to map with service index as key
+        if (serviceWarnings.length > 0) {
+          newWarnings.set(`service-${index}`, serviceWarnings);
+        }
+      });
+
+      setValidationWarnings(newWarnings);
+    };
+
+    runValidation();
+  }, [selectedServices, checkRoomEquipmentCompatibility]);
+
+  // Check all conflicts when timeline changes (on Schedule/Review pages)
+  // Debounced to avoid too many searches while user is selecting
+  useEffect(() => {
+    console.log('[CreateAppointmentModalV3] Scheduling conflict check, items:', scheduleTimelineItems.length);
+    
+    const timeoutId = setTimeout(() => {
+      console.log('[CreateAppointmentModalV3] Running conflict check for', scheduleTimelineItems.length, 'items');
+      if (scheduleTimelineItems.length > 0) {
+        checkAllConflicts(scheduleTimelineItems).then((warnings) => {
+          console.log('[CreateAppointmentModalV3] Conflict check result:', warnings);
+          setProviderConflictWarnings(warnings);
+        });
+      } else {
+        setProviderConflictWarnings([]);
+      }
+    }, 500); // 500ms debounce
+
+    return () => {
+      console.log('[CreateAppointmentModalV3] Cancelling previous conflict check');
+      clearTimeout(timeoutId);
+    };
+  }, [scheduleTimelineItems, checkAllConflicts]);
   // Load available services
   useEffect(() => {
     if (!isOpen) {
@@ -725,10 +1071,14 @@ export function CreateAppointmentModalV3({
                 valueInteger: svc.duration,
               },
               // Add per-service notes if provided
-              ...(svc.notes ? [{
-                url: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
-                valueString: svc.notes,
-              }] : []),
+              ...(svc.notes
+                ? [
+                    {
+                      url: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
+                      valueString: svc.notes,
+                    },
+                  ]
+                : []),
             ],
           };
 
@@ -798,20 +1148,13 @@ export function CreateAppointmentModalV3({
           }
         }
 
-        const changeDescription = changes.length > 0
-          ? `Booking edited: ${changes.join('; ')}`
-          : 'Booking edited from modal';
+        const changeDescription =
+          changes.length > 0 ? `Booking edited: ${changes.join('; ')}` : 'Booking edited from modal';
 
         // Use first service request for the audit event (booking = appointment + services)
         const firstServiceRequest = updatedServiceRequests?.[0];
         if (firstServiceRequest) {
-          await recordBookingEdited(
-            medplum,
-            patient,
-            firstServiceRequest,
-            currentUserPractitioner,
-            changeDescription
-          );
+          await recordBookingEdited(medplum, patient, firstServiceRequest, currentUserPractitioner, changeDescription);
         }
 
         showNotification({
@@ -926,10 +1269,14 @@ export function CreateAppointmentModalV3({
                 valueInteger: svc.duration,
               },
               // Add per-service notes if provided
-              ...(svc.notes ? [{
-                url: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
-                valueString: svc.notes,
-              }] : []),
+              ...(svc.notes
+                ? [
+                    {
+                      url: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
+                      valueString: svc.notes,
+                    },
+                  ]
+                : []),
             ],
           };
 
@@ -989,14 +1336,16 @@ export function CreateAppointmentModalV3({
           color: 'green',
         });
 
-// Record booking created via AuditEvent
+        // Record booking created via AuditEvent
         const currentUser = medplum.getProfile();
         const currentUserPractitioner = {
           resourceType: 'Practitioner' as const,
           id: currentUser?.id || '',
           name: currentUser?.name,
         };
-        const serviceNames = selectedServices.map((s) => s.activityDefinition.title || '').filter((name): name is string => name !== '');
+        const serviceNames = selectedServices
+          .map((s) => s.activityDefinition.title || '')
+          .filter((name): name is string => name !== '');
         if (serviceRequests.length > 0) {
           await recordBookingCreated(
             medplum,
@@ -1042,21 +1391,27 @@ export function CreateAppointmentModalV3({
     if (isOpen && initialSlot) {
       console.log('[CreateAppointmentModalV3] Setting date/time from initialSlot:', initialSlot);
       setSelectedDate(initialSlot.start);
-      
+
       // Round to nearest 30-minute interval to match dropdown options
       const slotHour = initialSlot.start.getHours();
       const slotMinute = initialSlot.start.getMinutes();
       const roundedMinute = slotMinute < 15 ? 0 : slotMinute < 45 ? 30 : 0;
       const roundedHour = slotMinute >= 45 ? slotHour + 1 : slotHour;
-      
+
       const hours = roundedHour.toString().padStart(2, '0');
       const minutes = roundedMinute.toString().padStart(2, '0');
       const roundedTime = `${hours}:${minutes}`;
-      
-      console.log('[CreateAppointmentModalV3] Rounded time:', roundedTime, '(original:', `${slotHour}:${slotMinute}`, ')');
-      
+
+      console.log(
+        '[CreateAppointmentModalV3] Rounded time:',
+        roundedTime,
+        '(original:',
+        `${slotHour}:${slotMinute}`,
+        ')'
+      );
+
       // Verify the rounded time exists in the slots
-      const slotExists = timeSlots.some(slot => slot.value === roundedTime);
+      const slotExists = timeSlots.some((slot) => slot.value === roundedTime);
       if (slotExists) {
         console.log('[CreateAppointmentModalV3] Time slot found in options:', roundedTime);
         setSelectedTime(roundedTime);
@@ -1120,11 +1475,15 @@ export function CreateAppointmentModalV3({
       const services: ServiceBookingConfig[] = [];
       for (const sr of editServiceRequests) {
         const serviceCode = sr.code?.coding?.[0]?.code;
-        if (!serviceCode) {continue;}
+        if (!serviceCode) {
+          continue;
+        }
 
         // Find matching ActivityDefinition
         const matchingActivity = availableServices.find((a) => a.code?.coding?.[0]?.code === serviceCode);
-        if (!matchingActivity) {continue;}
+        if (!matchingActivity) {
+          continue;
+        }
 
         // Extract provider and assistant from ServiceRequest
         const provider = allPractitioners.find((p) => {
@@ -1195,7 +1554,9 @@ export function CreateAppointmentModalV3({
         return (
           <Stack gap="md">
             <Text size="sm" c="dimmed">
-              {editMode ? 'Patient for this booking (read-only in edit mode):' : 'Select a patient for this appointment.'}
+              {editMode
+                ? 'Patient for this booking (read-only in edit mode):'
+                : 'Select a patient for this appointment.'}
             </Text>
 
             <div>
@@ -1449,20 +1810,23 @@ export function CreateAppointmentModalV3({
                             {practitionersLoading ? (
                               <Loader size="sm" />
                             ) : (
-                              <Select
-                                placeholder="Select provider..."
-                                value={service.provider?.id}
-                                onChange={(val) => {
-                                  const provider = eligibleMainProviders.find((p) => p.id === val);
-                                  updateServiceConfig(index, { provider });
-                                }}
-                                data={eligibleMainProviders.map((p) => ({
-                                  value: p.id || '',
-                                  label:
-                                    `${p.name?.[0]?.given?.[0] || ''} ${p.name?.[0]?.family || ''}`.trim() || 'Unknown',
-                                }))}
-                                searchable
-                              />
+                              <>
+                                <Select
+                                  placeholder="Select provider..."
+                                  value={service.provider?.id}
+                                  onChange={(val) => {
+                                    const provider = eligibleMainProviders.find((p) => p.id === val);
+                                    updateServiceConfig(index, { provider });
+                                  }}
+                                  data={eligibleMainProviders.map((p) => ({
+                                    value: p.id || '',
+                                    label:
+                                      `${p.name?.[0]?.given?.[0] || ''} ${p.name?.[0]?.family || ''}`.trim() ||
+                                      'Unknown',
+                                  }))}
+                                  searchable
+                                />
+                              </>
                             )}
                           </Grid.Col>
                           <Grid.Col span={6}>
@@ -1512,6 +1876,12 @@ export function CreateAppointmentModalV3({
                                 { value: 'room-2', label: 'Treatment Room 2' },
                               ]}
                             />
+                            {/* Room/Equipment Compatibility Warnings */}
+                            {validationWarnings.get(`service-${index}`)?.map((warning, wIdx) => (
+                              <Alert key={wIdx} color="orange" mt="xs" py="xs" icon={<IconAlertCircle size={16} />}>
+                                <Text size="xs">{warning}</Text>
+                              </Alert>
+                            ))}
                           </Grid.Col>
                           <Grid.Col span={6}>
                             <Text size="sm" fw={500} mb="xs">
@@ -1717,15 +2087,11 @@ export function CreateAppointmentModalV3({
       }
 
       case 'schedule': {
-        const startTime =
-          selectedDate && selectedTime
-            ? dayjs(selectedDate)
-                .hour(parseInt(selectedTime.split(':')[0], 10))
-                .minute(parseInt(selectedTime.split(':')[1], 10))
-            : null;
-        const { items: timelineItems, totalDuration } = startTime
-          ? calculateTimeline(selectedServices, startTime)
-          : { items: [], totalDuration: 0 };
+        // Timeline items are calculated at component level to avoid re-render loops
+        const totalDuration = scheduleTimelineItems.reduce(
+          (sum, item) => sum + item.endTime.diff(item.startTime, 'minute'),
+          0
+        );
 
         return (
           <Stack gap="md">
@@ -1756,16 +2122,23 @@ export function CreateAppointmentModalV3({
             </Group>
 
             {/* Timeline Preview */}
-            {startTime && timelineItems.length > 0 && (
+            {scheduleTimelineItems.length > 0 && (
               <Card withBorder>
                 <Stack gap="md">
                   <Group justify="space-between">
                     <Text fw={500}>Timeline Preview</Text>
-                    <Badge>Total: {totalDuration} min</Badge>
+                    <Badge>
+                      Total:{' '}
+                      {scheduleTimelineItems.reduce(
+                        (sum, item) => sum + item.endTime.diff(item.startTime, 'minute'),
+                        0
+                      )}{' '}
+                      min
+                    </Badge>
                   </Group>
 
                   <Timeline active={-1} bulletSize={24}>
-                    {timelineItems.map((item, idx) => (
+                    {scheduleTimelineItems.map((item: TimelineItem, idx: number) => (
                       <Timeline.Item
                         key={idx}
                         bullet={
@@ -1807,6 +2180,20 @@ export function CreateAppointmentModalV3({
                 </Stack>
               </Card>
             )}
+
+            {/* Provider Conflict Warnings */}
+            {providerConflictWarnings.length > 0 && (
+              <Alert color="orange" icon={<IconAlertCircle size={16} />}>
+                <Stack gap="xs">
+                  <Text fw={500}>Scheduling Conflicts Detected:</Text>
+                  {providerConflictWarnings.map((warning, idx) => (
+                    <Text key={idx} size="sm">
+                      • {warning}
+                    </Text>
+                  ))}
+                </Stack>
+              </Alert>
+            )}
           </Stack>
         );
       }
@@ -1817,6 +2204,20 @@ export function CreateAppointmentModalV3({
             <Text size="sm" c="dimmed">
               Review all details before creating the booking.
             </Text>
+
+            {/* Provider Conflict Warnings */}
+            {providerConflictWarnings.length > 0 && (
+              <Alert color="orange" icon={<IconAlertCircle size={16} />}>
+                <Stack gap="xs">
+                  <Text fw={500}>Scheduling Conflicts Detected:</Text>
+                  {providerConflictWarnings.map((warning, idx) => (
+                    <Text key={idx} size="sm">
+                      • {warning}
+                    </Text>
+                  ))}
+                </Stack>
+              </Alert>
+            )}
 
             <Card withBorder>
               <Stack gap="xs">
@@ -1888,7 +2289,11 @@ export function CreateAppointmentModalV3({
     <Modal
       opened={isOpen}
       onClose={onClose}
-      title={<span style={{ fontSize: 'var(--mantine-font-size-md)', fontWeight: 500 }}>{editMode ? 'Edit Booking' : 'New Appointment'}</span>}
+      title={
+        <span style={{ fontSize: 'var(--mantine-font-size-md)', fontWeight: 500 }}>
+          {editMode ? 'Edit Booking' : 'New Appointment'}
+        </span>
+      }
       size={900}
       fullScreen={isMobile}
     >
