@@ -505,28 +505,20 @@ export function CreateAppointmentModalV3({
       const warnings: string[] = [];
 
       if (!selectedDate) {
-        console.log('[Conflict Check] No selected date, skipping');
         return warnings;
       }
 
       const dateStr = dayjs(selectedDate).format('YYYY-MM-DD');
-      console.log('[Conflict Check] Starting check for date:', dateStr, 'with', timelineItems.length, 'timeline items');
 
       for (const item of timelineItems) {
         // Only check main services, not accompanying items
         if (item.type !== 'service') {
-          console.log('[Conflict Check] Skipping non-service item:', item.title);
           continue;
         }
 
         const start = item.startTime.toISOString();
         const end = item.endTime.toISOString();
         const serviceTimeStr = `${item.startTime.format('h:mm A')} - ${item.endTime.format('h:mm A')}`;
-        
-        console.log('[Conflict Check] Checking service:', item.title, 'time:', serviceTimeStr);
-        console.log('[Conflict Check] Provider:', item.service.provider?.name?.[0]?.given?.[0], 'ID:', item.service.provider?.id);
-        console.log('[Conflict Check] Assistant:', item.service.assistant?.name?.[0]?.given?.[0], 'ID:', item.service.assistant?.id);
-        console.log('[Conflict Check] Room:', item.service.room);
 
         // 1. Check main provider conflicts
         const provider = item.service.provider;
