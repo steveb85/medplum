@@ -24,6 +24,7 @@ export const EXTENSION_URLS = {
     linkedServices: 'http://melissaknudson.com/fhir/StructureDefinition/linked-services',
     serviceStatus: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
     actualDuration: 'http://melissaknudson.com/fhir/StructureDefinition/actual-duration',
+    serviceNotes: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
   },
   // ActivityDefinition (Service Catalog) extensions
   activityDefinition: {
@@ -107,6 +108,7 @@ export interface ServiceRequestDetails {
   linkedServices?: Reference[];
   serviceStatus?: 'pending' | 'in-progress' | 'completed' | 'cancelled';
   actualDuration?: number; // Minutes
+  serviceNotes?: string; // Per-service notes from booking modal
 }
 
 // ============================================================================
@@ -154,6 +156,12 @@ export function parseServiceRequestExtensions(sr: ServiceRequest): ServiceReques
   const durationExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.actualDuration);
   if (durationExt?.valueInteger !== undefined) {
     result.actualDuration = durationExt.valueInteger;
+  }
+
+  // Service Notes
+  const notesExt = sr.extension?.find((e) => e.url === EXTENSION_URLS.serviceRequest.serviceNotes);
+  if (notesExt?.valueString) {
+    result.serviceNotes = notesExt.valueString;
   }
 
   return result;
@@ -205,6 +213,14 @@ export function buildServiceRequestExtensions(details: ServiceRequestDetails): E
     extensions.push({
       url: EXTENSION_URLS.serviceRequest.actualDuration,
       valueInteger: details.actualDuration,
+    });
+  }
+
+  // Service Notes
+  if (details.serviceNotes) {
+    extensions.push({
+      url: EXTENSION_URLS.serviceRequest.serviceNotes,
+      valueString: details.serviceNotes,
     });
   }
 

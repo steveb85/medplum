@@ -597,12 +597,24 @@ export function BookingDetailPage(): ReactElement {
             const previousStatus = details.previousStatus || 'unknown';
             const newStatus = details.newStatus || 'unknown';
             const reason = details.reason;
-            audits.push({
-              timestamp,
-              action: `Status changed: ${statusConfig[previousStatus as keyof typeof statusConfig]?.label || previousStatus} → ${statusConfig[newStatus as keyof typeof statusConfig]?.label || newStatus}`,
-              details: typeof reason === 'string' ? reason : undefined,
-              user,
-            });
+            
+            // Skip showing status change events that are redundant with deposit actions
+            // We already show "Deposit paid", "Deposit waived" etc., so don't show the status change too
+            const isDepositRelatedReason = 
+              typeof reason === 'string' && 
+              (reason.toLowerCase().includes('deposit paid') ||
+               reason.toLowerCase().includes('deposit waived') ||
+               reason.toLowerCase().includes('payment undone') ||
+               reason.toLowerCase().includes('waive undone'));
+            
+            if (!isDepositRelatedReason) {
+              audits.push({
+                timestamp,
+                action: `Status changed: ${statusConfig[previousStatus as keyof typeof statusConfig]?.label || previousStatus} → ${statusConfig[newStatus as keyof typeof statusConfig]?.label || newStatus}`,
+                details: typeof reason === 'string' ? reason : undefined,
+                user,
+              });
+            }
           } else if (descLower.includes('booking created')) {
             audits.push({
               timestamp,
@@ -706,6 +718,15 @@ export function BookingDetailPage(): ReactElement {
 
         // Record status change via AuditEvent (FHIR-compliant, auditable)
         if (patient && serviceRequests.length > 0) {
+          // Include payment details when status changes due to payment
+          const paymentDetails = (newStatus === 'booked' && (reason === 'Deposit paid' || reason === 'Deposit waived'))
+            ? {
+                amount: depositAmount,
+                paymentType: reason === 'Deposit paid' ? 'manual' : undefined,
+                notes: reason === 'Deposit paid' ? paymentNotes : undefined,
+              }
+            : undefined;
+
           await recordBookingStatusChange(
             medplum,
             patient,
@@ -713,7 +734,8 @@ export function BookingDetailPage(): ReactElement {
             appointment.status || 'unknown',
             newStatus,
             currentUserPractitioner,
-            reason
+            reason,
+            paymentDetails
           );
         }
 
@@ -737,7 +759,7 @@ export function BookingDetailPage(): ReactElement {
         });
       }
     },
-    [appointment, medplum, loadData, patient, serviceRequests]
+    [appointment, medplum, loadData, patient, serviceRequests, depositAmount, paymentNotes]
   );
 
   // Update deposit amount
@@ -1217,6 +1239,7 @@ export function BookingDetailPage(): ReactElement {
       depositInfo.status === 'paid' &&
       depositInfo.paymentType === 'manual' &&
       !depositInfo.isUndone;
+    // Undo payment: can undo if deposit is paid with manual payment type
     const canUndoPayment =
       depositInfo.status === 'paid' && depositInfo.paymentType === 'manual' && !depositInfo.isUndone;
 
@@ -1268,17 +1291,36 @@ export function BookingDetailPage(): ReactElement {
     return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
   };
 
-  const getRoom = (appt: Appointment): string => {
-    const roomExt = appt.extension?.find(
-      (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
-    )?.valueString;
-    if (roomExt === 'room-1') {
-      return 'Room 1';
+  const getRoom = (): string => {
+    // Get rooms from ServiceRequests (each service can have its own room)
+    const roomSet = new Set<string>();
+    
+    for (const sr of serviceRequests) {
+      const roomExt = sr.extension?.find(
+        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/assigned-room'
+      )?.valueString;
+      
+      if (roomExt === 'room-1') {
+        roomSet.add('Room 1');
+      } else if (roomExt === 'room-2') {
+        roomSet.add('Room 2');
+      }
     }
-    if (roomExt === 'room-2') {
-      return 'Room 2';
+    
+    // Fallback to appointment extension if no ServiceRequest rooms found
+    if (roomSet.size === 0 && appointment) {
+      const roomExt = appointment.extension?.find(
+        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
+      )?.valueString;
+      
+      if (roomExt === 'room-1') {
+        roomSet.add('Room 1');
+      } else if (roomExt === 'room-2') {
+        roomSet.add('Room 2');
+      }
     }
-    return '-';
+    
+    return roomSet.size > 0 ? Array.from(roomSet).join(', ') : '-';
   };
 
   if (loading) {
@@ -1379,7 +1421,7 @@ export function BookingDetailPage(): ReactElement {
                   <Text size="sm" c="dimmed">
                     Room
                   </Text>
-                  <Text>{getRoom(appointment)}</Text>
+                  <Text>{getRoom()}</Text>
                 </Grid.Col>
                  <Grid.Col span={6}>
                    <Text size="sm" c="dimmed">
@@ -1388,17 +1430,45 @@ export function BookingDetailPage(): ReactElement {
                    <Text>
                      {providers.map((p) => `${p.name?.[0]?.given?.[0]} ${p.name?.[0]?.family}`).join(', ') || '-'}
                    </Text>
-                 </Grid.Col>
-                 {appointment.comment && (
-                   <Grid.Col span={12}>
-                     <Text size="sm" c="dimmed">
-                       Notes
-                     </Text>
-                     <Text>{appointment.comment}</Text>
-                   </Grid.Col>
-                 )}
-               </Grid>
-              </Card>
+                  </Grid.Col>
+                </Grid>
+               </Card>
+
+             {/* Notes Summary Card */}
+             {(appointment?.comment || serviceRequests.some(sr => sr.extension?.find(e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes')?.valueString)) && (
+               <Card withBorder>
+                 <Title order={5} mb="md">
+                   Notes
+                 </Title>
+                 <Stack gap="md">
+                   {/* Booking Notes */}
+                   {appointment?.comment && (
+                     <div>
+                       <Text size="sm" fw={500} c="dimmed">
+                         Booking Notes
+                       </Text>
+                       <Text>{appointment.comment}</Text>
+                     </div>
+                   )}
+                   
+                   {/* Per-Service Notes */}
+                   {serviceRequests
+                     .filter(sr => sr.extension?.find(e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes')?.valueString)
+                     .map((sr, index) => {
+                       const serviceName = services.find(s => s.code?.coding?.[0]?.code === sr.code?.coding?.[0]?.code)?.title || `Service ${index + 1}`;
+                       const notes = sr.extension?.find(e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes')?.valueString;
+                       return (
+                         <div key={sr.id}>
+                           <Text size="sm" fw={500} c="dimmed">
+                             {serviceName}
+                           </Text>
+                           <Text>{notes}</Text>
+                         </div>
+                       );
+                     })}
+                 </Stack>
+               </Card>
+             )}
 
              {/* Services Section */}
              <Card withBorder>

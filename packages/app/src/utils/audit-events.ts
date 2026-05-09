@@ -357,7 +357,8 @@ export async function getDepositStatusFromAuditEvents(
     for (const event of chronologicalEvents) {
       // FIX: Read description from subtype[0].display (Coding.display) where createAuditEvent stores it
       const description = (event.subtype?.[0]?.display || '').toLowerCase();
-      lastEntityDetails = parseEntityDetails(event);
+      const eventDetails = parseEntityDetails(event);
+      lastEntityDetails = eventDetails;
 
       if (description.includes('deposit requested')) {
         const amountMatch = description.match(/\$([\d.]+)/);
@@ -367,18 +368,38 @@ export async function getDepositStatusFromAuditEvents(
       } else if (description.includes('deposit paid')) {
         const amountMatch = description.match(/\$([\d.]+)/);
         currentAmount = amountMatch ? parseFloat(amountMatch[1]) : currentAmount;
-        actualPaidAmount = lastEntityDetails.actualPaidAmount
-          ? parseFloat(lastEntityDetails.actualPaidAmount.toString())
+        // Type-safe access to event details
+        const details = eventDetails.details as Record<string, string | number | boolean | undefined>;
+        actualPaidAmount = details.actualPaidAmount
+          ? parseFloat(String(details.actualPaidAmount))
           : currentAmount;
-        paymentType = lastEntityDetails.paymentType;
+        paymentType = (details.paymentType as string) || paymentType; // Preserve previous if not set
         paidAt = new Date(event.recorded);
         currentStatus = 'paid';
         isUndone = false;
+      } else if (description.includes('booking status changed') && description.includes('booked')) {
+        // Booking status changed to booked - extract payment details if present
+        // Note: We don't change deposit status here, but we capture paymentType for the Undo button
+        const details = eventDetails.details as Record<string, string | number | boolean | undefined>;
+        if (details.paymentType) {
+          paymentType = details.paymentType as string;
+        }
+        if (details.amount) {
+          actualPaidAmount = parseFloat(String(details.amount));
+        }
+        // Don't change currentStatus - deposit status is separate from booking status
       } else if (description.includes('deposit waived')) {
         const amountMatch = description.match(/\$([\d.]+)/);
         currentAmount = amountMatch ? parseFloat(amountMatch[1]) : currentAmount;
         waivedAt = new Date(event.recorded);
-        waivedBy = lastEntityDetails.waivedBy;
+        // waivedBy info is in event.agent, not entityDetails
+        const agent = event.agent?.find((a) => a.requestor);
+        if (agent?.who) {
+          waivedBy = {
+            reference: agent.who.reference || '',
+            display: agent.who.display,
+          };
+        }
         currentStatus = 'waived';
         isUndone = false;
       } else if (description.includes('payment undone') || description.includes('deposit undone')) {
@@ -588,11 +609,37 @@ export async function recordBookingStatusChange(
   previousStatus: string,
   newStatus: string,
   changedBy: Practitioner,
-  reason?: string
+  reason?: string,
+  paymentDetails?: {
+    amount?: number;
+    paymentType?: string;
+    notes?: string;
+  }
 ): Promise<AuditEvent> {
   const changedByName = changedBy.name?.[0]
     ? String(changedBy.name[0].given?.[0] || '').trim() + ' ' + String(changedBy.name[0].family || '').trim()
     : 'Unknown Staff';
+
+  const entityDetails: Record<string, string> = {
+    serviceRequestId: serviceRequest.id || '',
+    previousStatus,
+    newStatus,
+    changedByName,
+    reason: reason || '',
+  };
+
+  // Include payment details if provided (e.g., when status changes due to payment)
+  if (paymentDetails) {
+    if (paymentDetails.amount !== undefined) {
+      entityDetails.amount = String(paymentDetails.amount);
+    }
+    if (paymentDetails.paymentType) {
+      entityDetails.paymentType = paymentDetails.paymentType;
+    }
+    if (paymentDetails.notes) {
+      entityDetails.notes = paymentDetails.notes;
+    }
+  }
 
   return createAuditEvent(medplum, {
     action: 'U',
@@ -608,13 +655,7 @@ export async function recordBookingStatusChange(
       changedByName +
       (reason ? ': ' + reason : ''),
     outcome: '0',
-    entityDetails: {
-      serviceRequestId: serviceRequest.id || '',
-      previousStatus,
-      newStatus,
-      changedByName,
-      reason: reason || '',
-    },
+    entityDetails,
   });
 }
 

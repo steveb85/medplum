@@ -724,6 +724,11 @@ export function CreateAppointmentModalV3({
                 url: 'http://melissaknudson.com/fhir/StructureDefinition/actual-duration',
                 valueInteger: svc.duration,
               },
+              // Add per-service notes if provided
+              ...(svc.notes ? [{
+                url: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
+                valueString: svc.notes,
+              }] : []),
             ],
           };
 
@@ -920,6 +925,11 @@ export function CreateAppointmentModalV3({
                 url: 'http://melissaknudson.com/fhir/StructureDefinition/actual-duration',
                 valueInteger: svc.duration,
               },
+              // Add per-service notes if provided
+              ...(svc.notes ? [{
+                url: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
+                valueString: svc.notes,
+              }] : []),
             ],
           };
 
@@ -1147,6 +1157,12 @@ export function CreateAppointmentModalV3({
         // Get duration from ActivityDefinition timingDuration or default
         const duration = matchingActivity.timingDuration?.value ?? 60;
 
+        // Extract notes from extension
+        const notesExt = sr.extension?.find(
+          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes'
+        );
+        const notes = notesExt?.valueString || '';
+
         services.push({
           activityDefinition: matchingActivity,
           config: parseServiceConfigExtended(matchingActivity),
@@ -1155,6 +1171,7 @@ export function CreateAppointmentModalV3({
           provider,
           assistant,
           equipmentAssignments,
+          notes,
         });
       }
 
