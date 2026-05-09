@@ -16,6 +16,7 @@ import {
   Timeline,
   Title,
 } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { showNotification } from '@mantine/notifications';
 import type { ActivityDefinition, Appointment, Patient, Practitioner, ServiceRequest } from '@medplum/fhirtypes';
 import { useMedplum } from '@medplum/react';
@@ -26,7 +27,6 @@ import {
   IconEye,
   IconMessage,
   IconRefresh,
-  IconSignature,
   IconUserCheck,
   IconUserX,
   IconX,
@@ -34,29 +34,28 @@ import {
 import dayjs from 'dayjs';
 import type { ReactElement } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useMediaQuery } from '@mantine/hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getMedSpaRole } from '../auth/role';
+import { ConsentModal } from '../components/ConsentModal';
+import { CreateAppointmentModalV3 } from '../components/CreateAppointmentModalV3';
+import type { ServiceCardData, ServiceStatus } from '../components/ServiceCard';
+import { ServiceCard } from '../components/ServiceCard';
 import {
   getDepositStatusFromAuditEvents,
+  parseEntityDetails,
+  recordBookingStatusChange,
   recordDepositAmountChanged,
   recordDepositPaid,
   recordDepositRequested,
   recordDepositWaived,
   recordPaymentUndone,
   recordRefundIssued,
-  recordBookingStatusChange,
   recordTreatmentMilestone,
-  parseEntityDetails,
 } from '../utils/audit-events';
 import { sendDepositRequestEmail, sendPaymentConfirmationEmail } from '../utils/email';
-import { ConsentModal } from '../components/ConsentModal';
 import type { DepositStatus } from '../utils/payments';
 import { formatDepositAmount, getDepositStatusColor } from '../utils/payments';
 import { sendDepositRequestSMS, sendPaymentConfirmationSMS } from '../utils/sms';
-import { CreateAppointmentModalV3 } from '../components/CreateAppointmentModalV3';
-import { ServiceCard } from '../components/ServiceCard';
-import type { ServiceStatus, ServiceCardData } from '../components/ServiceCard';
 
 // Appointment status configuration
 // STATUS FLOW: pending → booked → arrived → fulfilled
@@ -162,109 +161,133 @@ export function BookingDetailPage(): ReactElement {
 
   // Convert serviceRequests to ServiceCardData format
   const serviceCardData: ServiceCardData[] = useMemo(() => {
-    console.log('[BookingDetailPage] Computing serviceCardData:', serviceRequests.length, 'serviceRequests,', services.length, 'services');
-    console.log('[BookingDetailPage] Service codes:', serviceRequests.map(sr => sr.code?.coding?.[0]?.code));
-    console.log('[BookingDetailPage] Loaded service codes:', services.map(s => s.code?.coding?.[0]?.code));
-    
-    const cards = serviceRequests.map((sr) => {
-      const srCode = sr.code?.coding?.[0]?.code;
-      const service = services.find(
-        (s) => s.code?.coding?.[0]?.code === srCode
-      );
-      
-      console.log('[BookingDetailPage] Matching ServiceRequest code', srCode, 'to service:', service ? (service.title || service.name) : 'NOT FOUND');
-
-      // Determine status from extensions or defaults
-      const statusExt = sr.extension?.find(
-        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/serviceStatus'
-      );
-      // Map status to ServiceStatus type (handles type conversion)
-      const rawStatus = statusExt?.valueString || 'pending';
-      const status: ServiceStatus = (['pending', 'in-progress', 'completed', 'cancelled'] as const).includes(rawStatus as any)
-        ? rawStatus as ServiceStatus
-        : 'pending';
-
-      return {
-        serviceRequest: sr,
-        service: service as ActivityDefinition,
-        photos: [], // TODO: Load photos linked to this ServiceRequest
-        status,
-      };
-    }).filter((card) => 
-      // Filter out cards where service is not yet loaded
-      card.service !== undefined
+    console.log(
+      '[BookingDetailPage] Computing serviceCardData:',
+      serviceRequests.length,
+      'serviceRequests,',
+      services.length,
+      'services'
     );
-    
+    console.log(
+      '[BookingDetailPage] Service codes:',
+      serviceRequests.map((sr) => sr.code?.coding?.[0]?.code)
+    );
+    console.log(
+      '[BookingDetailPage] Loaded service codes:',
+      services.map((s) => s.code?.coding?.[0]?.code)
+    );
+
+    const cards = serviceRequests
+      .map((sr) => {
+        const srCode = sr.code?.coding?.[0]?.code;
+        const service = services.find((s) => s.code?.coding?.[0]?.code === srCode);
+
+        console.log(
+          '[BookingDetailPage] Matching ServiceRequest code',
+          srCode,
+          'to service:',
+          service ? service.title || service.name : 'NOT FOUND'
+        );
+
+        // Determine status from extensions or defaults
+        const statusExt = sr.extension?.find(
+          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/serviceStatus'
+        );
+        // Map status to ServiceStatus type (handles type conversion)
+        const rawStatus = statusExt?.valueString || 'pending';
+        const status: ServiceStatus = (['pending', 'in-progress', 'completed', 'cancelled'] as const).includes(
+          rawStatus as any
+        )
+          ? (rawStatus as ServiceStatus)
+          : 'pending';
+
+        return {
+          serviceRequest: sr,
+          service: service as ActivityDefinition,
+          photos: [], // TODO: Load photos linked to this ServiceRequest
+          status,
+        };
+      })
+      .filter(
+        (card) =>
+          // Filter out cards where service is not yet loaded
+          card.service !== undefined
+      );
+
     console.log('[BookingDetailPage] serviceCardData result:', cards.length, 'cards');
     return cards;
   }, [serviceRequests, services]);
 
   // Handler functions for ServiceCards
-  const handleStartService = useCallback(async (serviceRequestId: string) => {
-    if (!patient) return;
-    
-    try {
-      // Find the service request
-      const sr = serviceRequests.find(s => s.id === serviceRequestId);
+  const handleStartService = useCallback(
+    async (serviceRequestId: string) => {
+      if (!patient) {
+        return;
+      }
+
+      try {
+        // Find the service request
+        const sr = serviceRequests.find((s) => s.id === serviceRequestId);
+        if (!sr) {
+          showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
+          return;
+        }
+
+        // Update service status to in-progress
+        const updatedExtensions = [
+          ...(sr.extension || []).filter(
+            (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-status'
+          ),
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
+            valueString: 'in-progress',
+          },
+        ];
+
+        await medplum.updateResource({
+          ...sr,
+          extension: updatedExtensions,
+        });
+
+        // Record milestone
+        const currentUser = medplum.getProfile();
+        const currentUserPractitioner = {
+          resourceType: 'Practitioner' as const,
+          id: currentUser?.id || '',
+          name: currentUser?.name,
+        };
+
+        await recordTreatmentMilestone(medplum, patient, sr, 'started', currentUserPractitioner);
+
+        showNotification({ color: 'green', title: 'Success', message: 'Service started' });
+        await loadData();
+      } catch (err) {
+        console.error('Error starting service:', err);
+        showNotification({ color: 'red', title: 'Error', message: 'Failed to start service' });
+      }
+    },
+    [patient, serviceRequests, medplum]
+  );
+
+  // Handle signing consent for a service
+  const handleSignConsent = useCallback(
+    (serviceRequestId: string) => {
+      const sr = serviceRequests.find((s) => s.id === serviceRequestId);
       if (!sr) {
         showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
         return;
       }
-
-      // Update service status to in-progress
-      const updatedExtensions = [
-        ...(sr.extension || []).filter(e => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-status'),
-        {
-          url: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
-          valueString: 'in-progress',
-        },
-      ];
-
-      await medplum.updateResource({
-        ...sr,
-        extension: updatedExtensions,
-      });
-
-      // Record milestone
-      const currentUser = medplum.getProfile();
-      const currentUserPractitioner = {
-        resourceType: 'Practitioner' as const,
-        id: currentUser?.id || '',
-        name: currentUser?.name,
-      };
-
-      await recordTreatmentMilestone(
-        medplum,
-        patient,
-        sr,
-        'started',
-        currentUserPractitioner
-      );
-
-      showNotification({ color: 'green', title: 'Success', message: 'Service started' });
-      await loadData();
-    } catch (err) {
-      console.error('Error starting service:', err);
-      showNotification({ color: 'red', title: 'Error', message: 'Failed to start service' });
-    }
-  }, [patient, serviceRequests, medplum]);
-
-  // Handle signing consent for a service
-  const handleSignConsent = useCallback((serviceRequestId: string) => {
-    const sr = serviceRequests.find(s => s.id === serviceRequestId);
-    if (!sr) {
-      showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
-      return;
-    }
-    const service = services.find(s => s.id === sr.code?.coding?.[0]?.code);
-    if (!service) {
-      showNotification({ color: 'red', title: 'Error', message: 'Service definition not found' });
-      return;
-    }
-    setCurrentConsentServiceRequest(sr);
-    setCurrentConsentService(service);
-    setConsentModalOpen(true);
-  }, [serviceRequests, services]);
+      const service = services.find((s) => s.id === sr.code?.coding?.[0]?.code);
+      if (!service) {
+        showNotification({ color: 'red', title: 'Error', message: 'Service definition not found' });
+        return;
+      }
+      setCurrentConsentServiceRequest(sr);
+      setCurrentConsentService(service);
+      setConsentModalOpen(true);
+    },
+    [serviceRequests, services]
+  );
 
   const handleConsentSuccess = useCallback(async () => {
     setConsentModalOpen(false);
@@ -272,54 +295,55 @@ export function BookingDetailPage(): ReactElement {
     await loadData();
   }, []);
 
-  const handleCompleteService = useCallback(async (serviceRequestId: string) => {
-    if (!patient) return;
-    
-    try {
-      // Find the service request
-      const sr = serviceRequests.find(s => s.id === serviceRequestId);
-      if (!sr) {
-        showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
+  const handleCompleteService = useCallback(
+    async (serviceRequestId: string) => {
+      if (!patient) {
         return;
       }
 
-      // Update service status to completed
-      const updatedExtensions = [
-        ...(sr.extension || []).filter(e => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-status'),
-        {
-          url: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
-          valueString: 'completed',
-        },
-      ];
+      try {
+        // Find the service request
+        const sr = serviceRequests.find((s) => s.id === serviceRequestId);
+        if (!sr) {
+          showNotification({ color: 'red', title: 'Error', message: 'Service not found' });
+          return;
+        }
 
-      await medplum.updateResource({
-        ...sr,
-        extension: updatedExtensions,
-      });
+        // Update service status to completed
+        const updatedExtensions = [
+          ...(sr.extension || []).filter(
+            (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-status'
+          ),
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
+            valueString: 'completed',
+          },
+        ];
 
-      // Record milestone
-      const currentUser = medplum.getProfile();
-      const currentUserPractitioner = {
-        resourceType: 'Practitioner' as const,
-        id: currentUser?.id || '',
-        name: currentUser?.name,
-      };
+        await medplum.updateResource({
+          ...sr,
+          extension: updatedExtensions,
+        });
 
-      await recordTreatmentMilestone(
-        medplum,
-        patient,
-        sr,
-        'completed',
-        currentUserPractitioner
-      );
+        // Record milestone
+        const currentUser = medplum.getProfile();
+        const currentUserPractitioner = {
+          resourceType: 'Practitioner' as const,
+          id: currentUser?.id || '',
+          name: currentUser?.name,
+        };
 
-      showNotification({ color: 'green', title: 'Success', message: 'Service completed' });
-      await loadData();
-    } catch (err) {
-      console.error('Error completing service:', err);
-      showNotification({ color: 'red', title: 'Error', message: 'Failed to complete service' });
-    }
-  }, [patient, serviceRequests, medplum]);
+        await recordTreatmentMilestone(medplum, patient, sr, 'completed', currentUserPractitioner);
+
+        showNotification({ color: 'green', title: 'Success', message: 'Service completed' });
+        await loadData();
+      } catch (err) {
+        console.error('Error completing service:', err);
+        showNotification({ color: 'red', title: 'Error', message: 'Failed to complete service' });
+      }
+    },
+    [patient, serviceRequests, medplum]
+  );
 
   const handleUpdateTreatmentData = useCallback((serviceRequestId: string, data: Record<string, unknown>) => {
     console.log('Update treatment data:', serviceRequestId, data);
@@ -367,7 +391,7 @@ export function BookingDetailPage(): ReactElement {
 
       // Get deposit info from FHIR AuditEvents (single source of truth)
       // Need to load ServiceRequests first to get the specific booking's deposit status
-      
+
       // Load services from ServiceRequests linked to this appointment via extension
       // ServiceRequests use linked-appointment extension, not a standard search param
       console.log('[BookingDetailPage] Loading ServiceRequests for appointment:', id);
@@ -376,7 +400,7 @@ export function BookingDetailPage(): ReactElement {
       });
       const allSrs = (srBundle.entry || []).map((e) => e.resource as ServiceRequest);
       console.log('[BookingDetailPage] Total ServiceRequests found:', allSrs.length);
-      
+
       // Filter to only ServiceRequests linked to this appointment
       const srs = allSrs.filter((sr) =>
         sr.extension?.some(
@@ -385,7 +409,11 @@ export function BookingDetailPage(): ReactElement {
             e.valueReference?.reference === `Appointment/${id}`
         )
       );
-      console.log('[BookingDetailPage] ServiceRequests linked to this appointment:', srs.length, srs.map(sr => ({id: sr.id, code: sr.code?.coding?.[0]?.code})));
+      console.log(
+        '[BookingDetailPage] ServiceRequests linked to this appointment:',
+        srs.length,
+        srs.map((sr) => ({ id: sr.id, code: sr.code?.coding?.[0]?.code }))
+      );
       setServiceRequests(srs);
 
       // Now get deposit info for the first ServiceRequest (if any)
@@ -429,10 +457,21 @@ export function BookingDetailPage(): ReactElement {
               'code:exact': code,
               status: 'active',
             });
-            console.log('[BookingDetailPage] ActivityDefinition search result for code', code, ':', adBundle.entry?.length || 0, 'entries');
+            console.log(
+              '[BookingDetailPage] ActivityDefinition search result for code',
+              code,
+              ':',
+              adBundle.entry?.length || 0,
+              'entries'
+            );
             const ad = adBundle.entry?.[0]?.resource as ActivityDefinition;
             if (ad) {
-              console.log('[BookingDetailPage] Found ActivityDefinition:', ad.title || ad.name, 'with code:', ad.code?.coding?.[0]?.code);
+              console.log(
+                '[BookingDetailPage] Found ActivityDefinition:',
+                ad.title || ad.name,
+                'with code:',
+                ad.code?.coding?.[0]?.code
+              );
               loadedServices.push(ad);
             } else {
               console.warn('[BookingDetailPage] No ActivityDefinition found for code:', code);
@@ -443,7 +482,11 @@ export function BookingDetailPage(): ReactElement {
         }
       }
       setServices(loadedServices);
-      console.log('[BookingDetailPage] Total loaded services:', loadedServices.length, loadedServices.map(s => s.title || s.name));
+      console.log(
+        '[BookingDetailPage] Total loaded services:',
+        loadedServices.length,
+        loadedServices.map((s) => s.title || s.name)
+      );
 
       // Audit trail will be loaded by useEffect when serviceRequests changes
     } catch (err) {
@@ -474,7 +517,7 @@ export function BookingDetailPage(): ReactElement {
       }
 
       console.log('[BookingDetailPage] Loading audit trail for', serviceRequests.length, 'serviceRequests');
-      const audits: AuditEntry[] = [];
+      let audits: AuditEntry[] = [];
 
       try {
         // Query AuditEvents for this patient
@@ -484,11 +527,19 @@ export function BookingDetailPage(): ReactElement {
           _count: '500',
         });
 
-        console.log('[BookingDetailPage] AuditEvent search result:', auditBundle.total, 'total,', auditBundle.entry?.length || 0, 'entries');
+        console.log(
+          '[BookingDetailPage] AuditEvent search result:',
+          auditBundle.total,
+          'total,',
+          auditBundle.entry?.length || 0,
+          'entries'
+        );
 
-        const auditEvents = (auditBundle.entry || []).map((e) => e.resource as any).sort((a: any, b: any) => {
-          return new Date(b.recorded || 0).getTime() - new Date(a.recorded || 0).getTime();
-        });
+        const auditEvents = (auditBundle.entry || [])
+          .map((e) => e.resource as any)
+          .sort((a: any, b: any) => {
+            return new Date(b.recorded || 0).getTime() - new Date(a.recorded || 0).getTime();
+          });
 
         // Filter to booking-related events
         const relevantEvents = auditEvents.filter((event: any) => {
@@ -505,7 +556,7 @@ export function BookingDetailPage(): ReactElement {
         console.log('[BookingDetailPage] Relevant events count:', relevantEvents.length);
 
         // Get ServiceRequest IDs for this booking
-        const serviceRequestIds = new Set(serviceRequests.map(sr => sr.id));
+        const serviceRequestIds = new Set(serviceRequests.map((sr) => sr.id));
         console.log('[BookingDetailPage] ServiceRequest IDs for filtering:', Array.from(serviceRequestIds));
 
         for (const event of relevantEvents) {
@@ -525,16 +576,17 @@ export function BookingDetailPage(): ReactElement {
 
           const timestamp = new Date(event.recorded || Date.now());
 
-          // Extract user from agent
-          const agent = event.agent?.[0];
-          const user = agent?.who?.display ||
-            (agent?.name?.[0]
-              ? `${agent.name[0].given?.[0] || ''} ${agent.name[0].family || ''}`.trim()
+          // Extract user from agent - get the staff member (requestor: true), not the patient
+          const staffAgent = event.agent?.find((a: { requestor?: boolean }) => a.requestor);
+          const user =
+            staffAgent?.who?.display ||
+            (staffAgent?.name?.[0]
+              ? `${staffAgent.name[0].given?.[0] || ''} ${staffAgent.name[0].family || ''}`.trim()
               : 'System');
 
           // Parse entity details
           const { details, description: eventDesc } = parseEntityDetails(event);
-          const desc = eventDesc || (event as any).subtype?.[0]?.display || (event as any).description || '';
+          const desc = eventDesc || event.subtype?.[0]?.display || event.description || '';
 
           // Map to AuditEntry
           const descLower = desc.toLowerCase();
@@ -597,16 +649,16 @@ export function BookingDetailPage(): ReactElement {
             const previousStatus = details.previousStatus || 'unknown';
             const newStatus = details.newStatus || 'unknown';
             const reason = details.reason;
-            
+
             // Skip showing status change events that are redundant with deposit actions
             // We already show "Deposit paid", "Deposit waived" etc., so don't show the status change too
-            const isDepositRelatedReason = 
-              typeof reason === 'string' && 
+            const isDepositRelatedReason =
+              typeof reason === 'string' &&
               (reason.toLowerCase().includes('deposit paid') ||
-               reason.toLowerCase().includes('deposit waived') ||
-               reason.toLowerCase().includes('payment undone') ||
-               reason.toLowerCase().includes('waive undone'));
-            
+                reason.toLowerCase().includes('deposit waived') ||
+                reason.toLowerCase().includes('payment undone') ||
+                reason.toLowerCase().includes('waive undone'));
+
             if (!isDepositRelatedReason) {
               audits.push({
                 timestamp,
@@ -648,6 +700,22 @@ export function BookingDetailPage(): ReactElement {
 
         // Sort by timestamp (newest first)
         audits.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+        // Deduplicate entries (same timestamp + action + user within 1 second)
+        const seen = new Map<string, number>(); // key -> timestamp
+        audits = audits.filter((audit) => {
+          const key = `${audit.action}_${audit.user}`;
+          const lastSeen = seen.get(key);
+          const currentTime = audit.timestamp.getTime();
+
+          // If we haven't seen this action+user combo, or it's been more than 1 second
+          if (!lastSeen || currentTime - lastSeen > 1000) {
+            seen.set(key, currentTime);
+            return true;
+          }
+          return false;
+        });
+
         console.log('[BookingDetailPage] Audit trail loaded:', audits.length, 'entries');
         setAuditTrail(audits);
       } catch (err) {
@@ -719,13 +787,14 @@ export function BookingDetailPage(): ReactElement {
         // Record status change via AuditEvent (FHIR-compliant, auditable)
         if (patient && serviceRequests.length > 0) {
           // Include payment details when status changes due to payment
-          const paymentDetails = (newStatus === 'booked' && (reason === 'Deposit paid' || reason === 'Deposit waived'))
-            ? {
-                amount: depositAmount,
-                paymentType: reason === 'Deposit paid' ? 'manual' : undefined,
-                notes: reason === 'Deposit paid' ? paymentNotes : undefined,
-              }
-            : undefined;
+          const paymentDetails =
+            newStatus === 'booked' && (reason === 'Deposit paid' || reason === 'Deposit waived')
+              ? {
+                  amount: depositAmount,
+                  paymentType: reason === 'Deposit paid' ? 'manual' : undefined,
+                  notes: reason === 'Deposit paid' ? paymentNotes : undefined,
+                }
+              : undefined;
 
           await recordBookingStatusChange(
             medplum,
@@ -1234,10 +1303,11 @@ export function BookingDetailPage(): ReactElement {
     const canSendPaymentLink = depositInfo.status === 'pending';
     const canMarkPaid = depositInfo.status === 'requested' || depositInfo.status === 'pending';
     const canWaive = depositInfo.status === 'pending' || depositInfo.status === 'requested';
+    // Issue Refund: only for online (Stripe) payments
     const canRefund =
       (status === 'pending' || status === 'booked') &&
       depositInfo.status === 'paid' &&
-      depositInfo.paymentType === 'manual' &&
+      depositInfo.paymentType === 'online' &&
       !depositInfo.isUndone;
     // Undo payment: can undo if deposit is paid with manual payment type
     const canUndoPayment =
@@ -1294,32 +1364,32 @@ export function BookingDetailPage(): ReactElement {
   const getRoom = (): string => {
     // Get rooms from ServiceRequests (each service can have its own room)
     const roomSet = new Set<string>();
-    
+
     for (const sr of serviceRequests) {
       const roomExt = sr.extension?.find(
         (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/assigned-room'
       )?.valueString;
-      
+
       if (roomExt === 'room-1') {
         roomSet.add('Room 1');
       } else if (roomExt === 'room-2') {
         roomSet.add('Room 2');
       }
     }
-    
+
     // Fallback to appointment extension if no ServiceRequest rooms found
     if (roomSet.size === 0 && appointment) {
       const roomExt = appointment.extension?.find(
         (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/room'
       )?.valueString;
-      
+
       if (roomExt === 'room-1') {
         roomSet.add('Room 1');
       } else if (roomExt === 'room-2') {
         roomSet.add('Room 2');
       }
     }
-    
+
     return roomSet.size > 0 ? Array.from(roomSet).join(', ') : '-';
   };
 
@@ -1423,85 +1493,107 @@ export function BookingDetailPage(): ReactElement {
                   </Text>
                   <Text>{getRoom()}</Text>
                 </Grid.Col>
-                 <Grid.Col span={6}>
-                   <Text size="sm" c="dimmed">
-                     Providers
-                   </Text>
-                   <Text>
-                     {providers.map((p) => `${p.name?.[0]?.given?.[0]} ${p.name?.[0]?.family}`).join(', ') || '-'}
-                   </Text>
-                  </Grid.Col>
-                </Grid>
-               </Card>
+                <Grid.Col span={6}>
+                  <Text size="sm" c="dimmed">
+                    Providers
+                  </Text>
+                  <Text>
+                    {providers.map((p) => `${p.name?.[0]?.given?.[0]} ${p.name?.[0]?.family}`).join(', ') || '-'}
+                  </Text>
+                </Grid.Col>
+              </Grid>
+            </Card>
 
-             {/* Notes Summary Card */}
-             {(appointment?.comment || serviceRequests.some(sr => sr.extension?.find(e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes')?.valueString)) && (
-               <Card withBorder>
-                 <Title order={5} mb="md">
-                   Notes
-                 </Title>
-                 <Stack gap="md">
-                   {/* Booking Notes */}
-                   {appointment?.comment && (
-                     <div>
-                       <Text size="sm" fw={500} c="dimmed">
-                         Booking Notes
-                       </Text>
-                       <Text>{appointment.comment}</Text>
-                     </div>
-                   )}
-                   
-                   {/* Per-Service Notes */}
-                   {serviceRequests
-                     .filter(sr => sr.extension?.find(e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes')?.valueString)
-                     .map((sr, index) => {
-                       const serviceName = services.find(s => s.code?.coding?.[0]?.code === sr.code?.coding?.[0]?.code)?.title || `Service ${index + 1}`;
-                       const notes = sr.extension?.find(e => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes')?.valueString;
-                       return (
-                         <div key={sr.id}>
-                           <Text size="sm" fw={500} c="dimmed">
-                             {serviceName}
-                           </Text>
-                           <Text>{notes}</Text>
-                         </div>
-                       );
-                     })}
-                 </Stack>
-               </Card>
-             )}
+            {/* Notes Summary Card */}
+            <Card withBorder>
+              <Title order={5} mb="md">
+                Notes
+              </Title>
+              <Stack gap="md">
+                {/* Booking Notes */}
+                {appointment?.description ? (
+                  <div>
+                    <Text size="sm" fw={500} c="dimmed">
+                      Booking Notes
+                    </Text>
+                    <Text>{appointment.description}</Text>
+                  </div>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    No booking notes. Edit booking to add notes.
+                  </Text>
+                )}
 
-             {/* Services Section */}
-             <Card withBorder>
-               <Title order={5} mb="md">
-                 Services ({serviceCardData.length})
-               </Title>
-               <Stack gap="md">
-                 {serviceCardData.length > 0 ? (
-                     serviceCardData.map((cardData, index) => (
-                       <ServiceCard
-                         key={cardData.serviceRequest?.id || index}
-                         data={cardData}
-                         index={index}
-                         patient={patient as Patient}
-                         mainProvider={providers[0]}
-                         assistantProvider={providers[1]}
-                         readonly={appointment?.status === 'cancelled' || appointment?.status === 'fulfilled'}
-                         onStartService={handleStartService}
-                         onCompleteService={handleCompleteService}
-                         onSignConsent={handleSignConsent}
-                         onUpdateTreatmentData={handleUpdateTreatmentData}
-                         onUploadPhotos={handleUploadPhotos}
-                         onDeletePhoto={handleDeletePhoto}
-                         onUpdatePhotoMetadata={handleUpdatePhotoMetadata}
-                       />
-                     ))
-                 ) : (
-                   <Text c="dimmed" ta="center" py="md">
-                     No services found for this booking
-                   </Text>
-                 )}
-               </Stack>
-             </Card>
+                {/* Per-Service Notes */}
+                {serviceRequests
+                  .filter(
+                    (sr) =>
+                      sr.extension?.find(
+                        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes'
+                      )?.valueString
+                  )
+                  .map((sr, index) => {
+                    const serviceName =
+                      services.find((s) => s.code?.coding?.[0]?.code === sr.code?.coding?.[0]?.code)?.title ||
+                      `Service ${index + 1}`;
+                    const notes = sr.extension?.find(
+                      (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes'
+                    )?.valueString;
+                    return (
+                      <div key={sr.id}>
+                        <Text size="sm" fw={500} c="dimmed">
+                          {serviceName}
+                        </Text>
+                        <Text>{notes}</Text>
+                      </div>
+                    );
+                  })}
+                {serviceRequests.length > 0 &&
+                  !serviceRequests.some(
+                    (sr) =>
+                      sr.extension?.find(
+                        (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/service-notes'
+                      )?.valueString
+                  ) && (
+                    <Text size="sm" c="dimmed">
+                      No per-service notes. Edit booking to add notes for specific services.
+                    </Text>
+                  )}
+              </Stack>
+            </Card>
+
+            {/* Services Section */}
+            <Card withBorder>
+              <Title order={5} mb="md">
+                Services ({serviceCardData.length})
+              </Title>
+              <Stack gap="md">
+                {serviceCardData.length > 0 ? (
+                  serviceCardData.map((cardData, index) => (
+                    <ServiceCard
+                      key={cardData.serviceRequest?.id || index}
+                      data={cardData}
+                      index={index}
+                      patient={patient as Patient}
+                      mainProvider={providers[0]}
+                      assistantProvider={providers[1]}
+                      readonly={appointment?.status === 'cancelled' || appointment?.status === 'fulfilled'}
+                      onStartService={handleStartService}
+                      onCompleteService={handleCompleteService}
+                      onSignConsent={handleSignConsent}
+                      onUpdateTreatmentData={handleUpdateTreatmentData}
+                      onUploadPhotos={handleUploadPhotos}
+                      onDeletePhoto={handleDeletePhoto}
+                      onUpdatePhotoMetadata={handleUpdatePhotoMetadata}
+                    />
+                  ))
+                ) : (
+                  <Text c="dimmed" ta="center" py="md">
+                    No services found for this booking
+                  </Text>
+                )}
+              </Stack>
+            </Card>
 
             {/* Unified Actions Card */}
             <Card withBorder>
@@ -1755,7 +1847,12 @@ export function BookingDetailPage(): ReactElement {
       </Grid>
 
       {/* Waive Deposit Modal */}
-      <Modal opened={waiveModalOpen} onClose={() => setWaiveModalOpen(false)} title="Waive Deposit" fullScreen={isMobile}>
+      <Modal
+        opened={waiveModalOpen}
+        onClose={() => setWaiveModalOpen(false)}
+        title="Waive Deposit"
+        fullScreen={isMobile}
+      >
         <Stack>
           <Text size="sm">Please provide a reason for waiving the deposit:</Text>
           <Textarea
@@ -1768,10 +1865,14 @@ export function BookingDetailPage(): ReactElement {
             <Button variant="light" onClick={() => setWaiveModalOpen(false)}>
               Cancel
             </Button>
-            <Button color="blue" onClick={async () => {
-              await waiveDeposit();
-              setWaiveModalOpen(false);
-            }} disabled={!waiveReason.trim()}>
+            <Button
+              color="blue"
+              onClick={async () => {
+                await waiveDeposit();
+                setWaiveModalOpen(false);
+              }}
+              disabled={!waiveReason.trim()}
+            >
               Waive Deposit
             </Button>
           </Group>
@@ -1779,7 +1880,12 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Cancel Modal */}
-      <Modal opened={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Cancel Booking" fullScreen={isMobile}>
+      <Modal
+        opened={cancelModalOpen}
+        onClose={() => setCancelModalOpen(false)}
+        title="Cancel Booking"
+        fullScreen={isMobile}
+      >
         <Stack>
           <Text size="sm">Please provide a reason for cancelling this booking:</Text>
           <Textarea
@@ -1792,10 +1898,13 @@ export function BookingDetailPage(): ReactElement {
             <Button variant="light" onClick={() => setCancelModalOpen(false)}>
               Abort
             </Button>
-            <Button color="red" onClick={async () => {
-              await updateStatus('cancelled', cancelReason);
-              setCancelModalOpen(false);
-            }}>
+            <Button
+              color="red"
+              onClick={async () => {
+                await updateStatus('cancelled', cancelReason);
+                setCancelModalOpen(false);
+              }}
+            >
               Cancel Booking
             </Button>
           </Group>
@@ -1803,7 +1912,12 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Uncancel Modal */}
-      <Modal opened={uncancelModalOpen} onClose={() => setUncancelModalOpen(false)} title="Uncancel Booking" fullScreen={isMobile}>
+      <Modal
+        opened={uncancelModalOpen}
+        onClose={() => setUncancelModalOpen(false)}
+        title="Uncancel Booking"
+        fullScreen={isMobile}
+      >
         <Stack>
           <Text size="sm">Please provide a reason for uncancelling this booking:</Text>
           <Text size="xs" c="dimmed">
@@ -1850,7 +1964,12 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Mark Paid Modal */}
-      <Modal opened={markPaidModalOpen} onClose={() => setMarkPaidModalOpen(false)} title="Mark Deposit as Paid" fullScreen={isMobile}>
+      <Modal
+        opened={markPaidModalOpen}
+        onClose={() => setMarkPaidModalOpen(false)}
+        title="Mark Deposit as Paid"
+        fullScreen={isMobile}
+      >
         <Stack>
           <Text size="sm">Enter payment details:</Text>
           <NumberInput
@@ -1883,10 +2002,13 @@ export function BookingDetailPage(): ReactElement {
             >
               Cancel
             </Button>
-            <Button color="green" onClick={async () => {
-              await markAsPaid();
-              setMarkPaidModalOpen(false);
-            }}>
+            <Button
+              color="green"
+              onClick={async () => {
+                await markAsPaid();
+                setMarkPaidModalOpen(false);
+              }}
+            >
               Confirm Payment
             </Button>
           </Group>
@@ -1894,7 +2016,12 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Undo Payment Modal */}
-      <Modal opened={undoPaymentModalOpen} onClose={() => setUndoPaymentModalOpen(false)} title="Undo Manual Payment" fullScreen={isMobile}>
+      <Modal
+        opened={undoPaymentModalOpen}
+        onClose={() => setUndoPaymentModalOpen(false)}
+        title="Undo Manual Payment"
+        fullScreen={isMobile}
+      >
         <Stack>
           <Text size="sm">This will mark the deposit as requested again. Please provide a reason:</Text>
           <Text size="sm" fw={500}>
@@ -1910,10 +2037,14 @@ export function BookingDetailPage(): ReactElement {
             <Button variant="light" onClick={() => setUndoPaymentModalOpen(false)}>
               Cancel
             </Button>
-            <Button color="orange" onClick={async () => {
-              await undoPayment();
-              setUndoPaymentModalOpen(false);
-            }} disabled={!undoPaymentReason.trim()}>
+            <Button
+              color="orange"
+              onClick={async () => {
+                await undoPayment();
+                setUndoPaymentModalOpen(false);
+              }}
+              disabled={!undoPaymentReason.trim()}
+            >
               Undo Payment
             </Button>
           </Group>
@@ -1921,7 +2052,12 @@ export function BookingDetailPage(): ReactElement {
       </Modal>
 
       {/* Undo Waive Modal */}
-      <Modal opened={undoWaiveModalOpen} onClose={() => setUndoWaiveModalOpen(false)} title="Undo Waive Deposit" fullScreen={isMobile}>
+      <Modal
+        opened={undoWaiveModalOpen}
+        onClose={() => setUndoWaiveModalOpen(false)}
+        title="Undo Waive Deposit"
+        fullScreen={isMobile}
+      >
         <Stack>
           <Text size="sm">This will revert the deposit to requested status. Please provide a reason:</Text>
           <Text size="sm" fw={500}>
