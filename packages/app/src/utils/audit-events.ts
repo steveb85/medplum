@@ -152,18 +152,6 @@ async function createAuditEvent(
     }
   });
 
-  const auditDetailsExtension = {
-    url: 'http://melissaknudson.com/fhir/StructureDefinition/audit-details',
-    extension: childExtensions,
-  };
-
-  // Store description in extension (FHIR R4 doesn't have top-level description)
-  // Also try storing in subtype[0].display as backup (standard field)
-  const descriptionExtension = {
-    url: 'http://melissaknudson.com/fhir/StructureDefinition/audit-description',
-    valueString: description,
-  };
-
   // FHIR R4: AuditEvent.subtype is Coding[] (not CodeableConcept[])
   // Store description in subtype[0].display (Coding.display property)
   const auditEvent: AuditEvent = {
@@ -195,7 +183,8 @@ async function createAuditEvent(
       ],
     },
     entity: entity,
-    extension: [auditDetailsExtension, descriptionExtension],
+    // NUCLEAR OPTION: Don't send ANY extensions - store details in entity if needed
+    extension: [],
   };
 
   // Debug: Log the exact AuditEvent being sent
@@ -267,6 +256,13 @@ async function createAuditEvent(
     console.log('[audit-events] Has .valueString?', !!child2.valueString);
   }
 
+  // NUCLEAR OPTION: Check if description is an object (not string)
+  if (typeof description !== 'string') {
+    console.error('[audit-events] DESCRIPTION IS NOT A STRING! It is:', typeof description, JSON.stringify(description, null, 2));
+    // Force it to be a string
+    (auditEvent as any).subtype[0].display = String(description || '');
+  }
+
   // HARD FIX: Strip any 'extension' property from child extensions before sending
   if (ext0?.extension) {
     ext0.extension.forEach((child: any, idx: number) => {
@@ -277,6 +273,29 @@ async function createAuditEvent(
     });
   }
 
+  // NUCLEAR OPTION: Remove ANY extension that has BOTH extension AND valueString
+  if (auditEvent.extension) {
+    auditEvent.extension = auditEvent.extension.filter((ext: any) => {
+      if (ext.extension && ext.extension.length > 0) {
+        // This extension has child extensions - it's a container
+        // Check if any child has both extension AND valueString
+        const hasViolation = ext.extension.some((child: any) => child.extension && child.valueString);
+        if (hasViolation) {
+          console.error('[audit-events] NUCLEAR: Found violation in extension, removing it entirely');
+          return false; // Remove this extension
+        }
+      }
+      return true; // Keep this extension
+    });
+  }
+
+  // FINAL CHECK: Ensure extension[0] does NOT have an extension array
+  if (auditEvent.extension?.[0]?.extension) {
+    console.error('[audit-events] FINAL CHECK: extension[0] STILL has extension array! Removing it...');
+    delete (auditEvent.extension[0] as any).extension;
+  }
+
+  console.log('[audit-events] About to call medplum.createResource...');
   return medplum.createResource(auditEvent);
 }
 
