@@ -1425,3 +1425,293 @@ Commit `ddbc3a776` ("update may", May 4, 2026) introduced ALL regressions:
 - ✅ Booking creation/edits now recorded via AuditEvents
 - ✅ ALL actions show WHO, WHAT, WHEN, WHY in activity timeline
 - ✅ Build passes (TypeScript + ESLint)
+
+
+---
+
+## 13. Communications & Payments Integration Roadmap
+
+**Status:** Infrastructure Ready ✅ | **Next:** Phase 1 Implementation
+
+**Approach:** Option A - Complete all phases before going live
+
+### Overview
+
+This roadmap implements full integration of Twilio (SMS), Resend (Email), and Stripe (Payments) into the Medplum system. All infrastructure is built; we now need to connect the pieces.
+
+**API Keys Configured:**
+- ✅ Twilio (Test Account): XXXX
+- ✅ Stripe: XXXX / whsec_XXX
+- ✅ Resend: XXX
+
+**Existing Infrastructure:**
+- ✅ SMS utility (/packages/app/src/utils/sms.ts) - 8 templates ready
+- ✅ Email utility (/packages/app/src/utils/email.ts) - 8 templates ready
+- ✅ Payment logic (/packages/app/src/utils/payments.ts) - Deposit calculations ready
+- ✅ Stripe webhook (/packages/server/src/webhooks/stripe.ts) - Payment processing ready
+- ✅ Twilio webhook (/packages/server/src/webhooks/twilio.ts) - Incoming SMS ready
+- ✅ API keys configured in /packages/server/.env
+
+---
+
+### Phase 1: Connect Webhook Routes ⏱️ 2-3 hours
+
+**Goal:** Enable Stripe and Twilio to communicate with your server
+
+**Tasks:**
+1. Register webhook routes in Express server
+2. Configure Stripe webhook endpoint in Stripe Dashboard (https://api-dev.studioassistant.io/webhook/stripe)
+3. Configure Twilio webhook URL in Twilio Console (https://api-dev.studioassistant.io/webhook/twilio)
+4. Test webhook connectivity with test events
+
+**Files to Modify:**
+- /packages/server/src/app.ts (or routes configuration)
+
+**Success Criteria:**
+- [ ] Send test SMS to Twilio number → Creates Communication FHIR resource
+- [ ] Send test Stripe event → Updates appointment deposit status
+- [ ] Webhook signature verification working
+
+---
+
+### Phase 2: Wire Up "Send Payment Link" Button ⏱️ 3-4 hours
+
+**Goal:** When staff clicks "Send Payment Link", actually send SMS + Email with Stripe checkout URL
+
+**Tasks:**
+1. Integrate sendDepositRequestSMS() and sendDepositRequestEmail() into BookingDetailPage
+2. Call createStripePaymentLink() to generate Stripe checkout session
+3. Store payment link URL in ServiceRequest extension (paymentLinkUrl)
+4. Update UI to show "Payment Link Sent" timestamp/status
+5. Handle failures (no phone/email, API errors) with user-friendly messages
+6. Record AuditEvent when payment link is sent
+
+**Files to Modify:**
+- /packages/app/src/pages/BookingDetailPage.tsx (Send Payment Link button)
+- /packages/server/src/webhooks/stripe.ts (improve error handling)
+
+**Success Criteria:**
+- [ ] Create booking → Click "Send Payment Link" → SMS and Email both sent
+- [ ] SMS received with shortened payment link
+- [ ] Email received with branded HTML payment button
+- [ ] Payment link opens Stripe checkout with correct amount
+- [ ] Staff sees "Link sent at [timestamp]" in booking details
+- [ ] AuditEvent created recording who sent the link
+
+---
+
+### Phase 3: Payment Confirmation Notifications ⏱️ 2-3 hours
+
+**Goal:** When patient pays, automatically notify them and staff
+
+**Tasks:**
+1. Update Stripe webhook to trigger confirmation SMS/Email after successful payment
+2. Use sendPaymentConfirmationSMS() and sendPaymentConfirmationEmail()
+3. Update BookingDetailPage to listen for payment status changes (polling or websocket)
+4. Show "Payment Received" notification in UI with celebration/confetti
+5. Auto-change appointment status from pending → booked when deposit paid
+6. Create AuditEvent for auto-status-change
+
+**Files to Modify:**
+- /packages/server/src/webhooks/stripe.ts (add confirmation sending)
+- /packages/app/src/pages/BookingDetailPage.tsx (real-time updates)
+
+**Success Criteria:**
+- [ ] Patient pays via Stripe link → Receives confirmation SMS within 30 seconds
+- [ ] Patient receives confirmation email with appointment details
+- [ ] Staff sees real-time "Payment Received" badge in BookingDetailPage
+- [ ] Appointment status auto-changes to booked
+- [ ] Activity timeline shows "Deposit paid via online" with timestamp
+
+---
+
+### Phase 4: Automated Reminders ⏱️ 4-6 hours
+
+**Goal:** Send appointment reminders without manual intervention
+
+**Tasks:**
+1. Create reminder scheduler using node-cron or similar
+2. Check for appointments needing reminders every hour
+3. Send reminders via SMS + Email (use both for redundancy):
+   - 24-hour reminder: Day before appointment
+   - 2-hour reminder: Morning of appointment
+   - Deposit reminders: Every 24h for unpaid bookings (max 4 times)
+   - Auto-cancel warning: 24 hours before auto-cancellation deadline
+4. Store reminder sent status in ServiceRequest extensions to prevent duplicates
+5. Respect patient communication preferences (if implemented)
+
+**New Files:**
+- /packages/server/src/cron/reminders.ts - Reminder scheduler logic
+- /packages/server/src/cron/index.ts - Cron job initialization
+
+**Files to Modify:**
+- /packages/server/src/app.ts (start cron job on server startup)
+
+**Success Criteria:**
+- [ ] Booking 24 hours away → Patient receives SMS + Email reminder
+- [ ] Booking 2 hours away → Patient receives final reminder
+- [ ] Unpaid booking approaching deadline → Deposit reminder sent
+- [ ] Booking approaching auto-cancel → Warning sent 24h before
+- [ ] No duplicate reminders sent (tracked in extensions)
+- [ ] Reminders stop if booking cancelled or deposit paid
+
+---
+
+### Phase 5: Post-Treatment Follow-Up ⏱️ 2-3 hours
+
+**Goal:** Automate post-treatment care check-ins
+
+**Tasks:**
+1. Schedule follow-up messages 24-48 hours after treatment completion
+2. Trigger when appointment status changes to fulfilled
+3. Send sendPostTreatmentFollowUp() SMS
+4. Create Communication resource for staff when patient replies
+5. Staff notification via push notification when patient responds
+6. Simple sentiment analysis? (optional - check for keywords like "pain", "problem")
+
+**Files to Modify:**
+- /packages/server/src/cron/reminders.ts (add follow-up scheduling)
+- /packages/server/src/webhooks/twilio.ts (enhance reply handling)
+- /packages/app/src/notifications/templates.ts (add follow-up notification)
+
+**Success Criteria:**
+- [ ] Treatment marked complete → Follow-up SMS scheduled for +24 hours
+- [ ] Patient receives "How are you feeling?" SMS
+- [ ] Patient replies → Staff receives push notification
+- [ ] Reply stored as Communication resource linked to patient
+- [ ] Keywords like "pain", "problem" trigger urgent staff alert
+
+---
+
+### Phase 6: Two-Way SMS Communication ⏱️ 3-4 hours
+
+**Goal:** Full SMS conversation capability between patients and staff
+
+**Tasks:**
+1. Enhance Twilio webhook to handle threaded conversations
+2. Create "Messages" tab in Patient resource view
+3. Display SMS thread history from Communication resources
+4. Allow staff to send manual SMS replies from Medplum UI
+5. Handle opt-out (STOP) and opt-in (START) commands
+6. Show patient communication preferences (SMS/Email/Both/None)
+
+**New Files:**
+- /packages/app/src/components/PatientMessages.tsx - SMS thread UI
+- /packages/app/src/hooks/usePatientMessages.ts - Load message history
+
+**Files to Modify:**
+- /packages/server/src/webhooks/twilio.ts (threading, opt-out handling)
+- /packages/app/src/resource/ResourcePage.tsx (add Messages tab)
+- /packages/app/src/intake/utils/intakeToFhir.ts (store comm preferences)
+
+**Success Criteria:**
+- [ ] Patient texts office → Message appears in real-time in Medplum
+- [ ] Staff can view full SMS conversation history
+- [ ] Staff can send reply from Medplum → Patient receives SMS
+- [ ] Patient texts STOP → Marked as opted out, no more SMS sent
+- [ ] Patient texts START → Opted back in
+- [ ] Communication preferences editable in Patient profile
+
+---
+
+### Phase 7: Analytics & Monitoring Dashboard ⏱️ 3-4 hours
+
+**Goal:** Track communication effectiveness and payment metrics
+
+**Tasks:**
+1. Create admin dashboard showing:
+   - SMS Metrics: Delivery rate, response rate, opt-out rate
+   - Email Metrics: Delivery rate, open rate (via Resend), bounce rate
+   - Payment Metrics: Conversion rate (deposits paid / links sent), average time to pay
+   - No-Show Analysis: Before vs after reminder implementation
+   - Communication Volume: Messages sent by day/week/month
+2. Query AuditEvents for payment/deposit tracking
+3. Query Communication resources for message tracking
+4. Export to CSV capability
+5. Date range filtering
+
+**New Files:**
+- /packages/app/src/pages/admin/CommunicationsDashboard.tsx - Dashboard UI
+- /packages/app/src/hooks/useCommunicationAnalytics.ts - Data fetching
+
+**Files to Modify:**
+- /packages/app/src/AppRoutes.tsx (add dashboard route)
+- /packages/app/src/App.tsx (add admin menu item)
+
+**Success Criteria:**
+- [ ] Dashboard shows real SMS delivery rates
+- [ ] Dashboard shows payment conversion funnel
+- [ ] Can filter by date range (last 7 days, 30 days, custom)
+- [ ] Can filter by service type (Botox, Filler, etc.)
+- [ ] Export data to CSV for external analysis
+- [ ] No-show rate comparison (before/after reminders)
+
+---
+
+### Implementation Timeline
+
+| Phase | Estimated Time | Cumulative | Priority |
+|-------|---------------|------------|----------|
+| Phase 1: Webhook Routes | 2-3 hours | 2-3 hours | 🔴 Critical |
+| Phase 2: Payment Links | 3-4 hours | 5-7 hours | 🔴 Critical |
+| Phase 3: Confirmation | 2-3 hours | 7-10 hours | 🔴 Critical |
+| Phase 4: Reminders | 4-6 hours | 11-16 hours | 🟡 High |
+| Phase 5: Follow-up | 2-3 hours | 13-19 hours | 🟢 Medium |
+| Phase 6: Two-Way SMS | 3-4 hours | 16-23 hours | 🟢 Medium |
+| Phase 7: Analytics | 3-4 hours | 19-27 hours | 🔵 Low |
+
+**Total Estimated Time:** 3-4 days of focused development
+
+---
+
+### Open Decisions
+
+Before starting implementation, need to confirm:
+
+1. **Reminder Timing:** Current plan is 24h, 2h, deposit daily (max 4), auto-cancel 24h warning
+   - ❓ Confirm these intervals work, or adjust?
+
+2. **Communication Preferences:** Should patients choose SMS/Email/Both, or practice-wide policy?
+   - ❓ Patient-level settings or global default?
+
+3. **Payment Link:** Staff-initiated send vs auto-send on booking creation?
+   - ❓ Current plan: Staff clicks button. OK or want auto-send?
+
+4. **Test Phone Numbers:** Twilio test account only sends to verified numbers
+   - ❓ What numbers to add for testing?
+
+5. **Resend Email Domain:** Currently using noreply@studioassistant.io
+   - ❓ Verify domain DNS settings configured in Resend dashboard?
+
+---
+
+### Current Status
+
+**Last Updated:** May 9, 2026
+
+**Completed:**
+- ✅ All API keys configured in .env
+- ✅ SMS utility with 8 templates
+- ✅ Email utility with 8 templates
+- ✅ Payment logic and calculations
+- ✅ Stripe webhook handler
+- ✅ Twilio webhook handler
+- ✅ Webhook secrets configured
+
+**Next Steps:**
+1. Start Phase 1: Connect webhook routes
+2. Configure Stripe/Twilio dashboard webhook URLs
+3. Test webhook connectivity
+
+---
+
+**Document Maintenance**: Update this file after each development session with:
+
+1. New/modified files
+2. Architecture decisions
+3. New patterns discovered
+4. Integration status changes
+5. Testing checklist results
+
+**Questions?** Check INSTRUCTIONS.md for setup details, or project-context.md for full architecture.
+
