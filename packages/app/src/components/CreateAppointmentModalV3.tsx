@@ -979,24 +979,24 @@ export function CreateAppointmentModalV3({
           color: 'green',
         });
 
-        // Record booking created via AuditEvent
-        const currentUser = medplum.getProfile();
-        const currentUserPractitioner = {
-          resourceType: 'Practitioner' as const,
-          id: currentUser?.id || '',
-          name: currentUser?.name,
-        };
-        const serviceNames = selectedServices.map((s) => s.activityDefinition.title || '').filter((name): name is string => name !== '');
-        if (serviceRequests.length > 0) {
-          await recordBookingCreated(
-            medplum,
-            patient,
-            serviceRequests[0],
-            currentUserPractitioner,
-            serviceNames,
-            notes || undefined
-          );
-        }
+// Record booking created via AuditEvent
+        // const currentUser = medplum.getProfile();
+        // const currentUserPractitioner = {
+        //   resourceType: 'Practitioner' as const,
+        //   id: currentUser?.id || '',
+        //   name: currentUser?.name,
+        // };
+        // const serviceNames = selectedServices.map((s) => s.activityDefinition.title || '').filter((name): name is string => name !== '');
+        // if (serviceRequests.length > 0) {
+        //   await recordBookingCreated(
+        //     medplum,
+        //     patient,
+        //     serviceRequests[0],
+        //     currentUserPractitioner,
+        //     serviceNames,
+        //     notes || undefined
+        //   );
+        // }
       }
 
       onSuccess();
