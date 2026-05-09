@@ -523,44 +523,30 @@ export function CreateAppointmentModalV3({
         // 1. Check main provider conflicts
         const provider = item.service.provider;
         if (provider?.id) {
-          console.log('[Conflict Check] Searching for provider conflicts, ID:', provider.id);
           try {
             const result = await medplum.search('Appointment', {
               date: `ge${dateStr}`,
               _count: '50',
             });
-            
-            console.log('[Conflict Check] Found', result.entry?.length || 0, 'appointments on date');
 
             const appointments = (result.entry || [])
               .map((e) => e.resource as Appointment)
               .filter((a) => {
                 if (editMode && editAppointment?.id === a.id) {
-                  console.log('[Conflict Check] Skipping current appointment in edit mode');
                   return false;
                 }
-                
-                const hasProvider = a.participant?.some((p) => {
-                  const includesId = p.actor?.reference?.includes(provider.id || '');
-                  if (includesId) {
-                    console.log('[Conflict Check] Found matching provider in appointment:', a.id, 'participant:', p.actor?.reference);
-                  }
-                  return includesId;
-                });
-                
+
+                const hasProvider = a.participant?.some((p) =>
+                  p.actor?.reference?.includes(provider.id || '')
+                );
+
                 const timeOverlap = a.start && a.start < end && a.end && a.end > start;
-                if (hasProvider && !timeOverlap) {
-                  console.log('[Conflict Check] Provider matches but no time overlap. Appt:', a.start, '-', a.end, 'vs service:', start, '-', end);
-                }
-                
+
                 return hasProvider && timeOverlap;
               });
 
-            console.log('[Conflict Check] Provider conflicts found:', appointments.length);
-            
             if (appointments.length > 0) {
               const conflictMsg = `${provider.name?.[0]?.given?.[0]} ${provider.name?.[0]?.family} is already booked ${serviceTimeStr}`;
-              console.log('[Conflict Check] Adding provider warning:', conflictMsg);
               warnings.push(conflictMsg);
             }
           } catch (err) {
@@ -571,37 +557,27 @@ export function CreateAppointmentModalV3({
         // 2. Check assistant conflicts
         const assistant = item.service.assistant;
         if (assistant?.id) {
-          console.log('[Conflict Check] Searching for assistant conflicts, ID:', assistant.id);
           try {
             const result = await medplum.search('Appointment', {
               date: `ge${dateStr}`,
               _count: '50',
             });
-            
-            console.log('[Conflict Check] Found', result.entry?.length || 0, 'appointments for assistant check');
 
             const appointments = (result.entry || [])
               .map((e) => e.resource as Appointment)
               .filter((a) => {
                 if (editMode && editAppointment?.id === a.id) return false;
-                
-                const hasAssistant = a.participant?.some((p) => {
-                  const includesId = p.actor?.reference?.includes(assistant.id || '');
-                  if (includesId) {
-                    console.log('[Conflict Check] Found matching assistant in appointment:', a.id);
-                  }
-                  return includesId;
-                });
-                
+
+                const hasAssistant = a.participant?.some((p) =>
+                  p.actor?.reference?.includes(assistant.id || '')
+                );
+
                 const timeOverlap = a.start && a.start < end && a.end && a.end > start;
                 return hasAssistant && timeOverlap;
               });
 
-            console.log('[Conflict Check] Assistant conflicts found:', appointments.length);
-
             if (appointments.length > 0) {
               const conflictMsg = `Assistant ${assistant.name?.[0]?.given?.[0]} ${assistant.name?.[0]?.family} is already booked ${serviceTimeStr}`;
-              console.log('[Conflict Check] Adding assistant warning:', conflictMsg);
               warnings.push(conflictMsg);
             }
           } catch (err) {
@@ -612,14 +588,11 @@ export function CreateAppointmentModalV3({
         // 3. Check room conflicts (via ServiceRequests)
         const room = item.service.room;
         if (room) {
-          console.log('[Conflict Check] Searching for room conflicts, room:', room);
           try {
             // Search ServiceRequests with this room assignment
             const result = await medplum.search('ServiceRequest', {
               _count: '50',
             });
-            
-            console.log('[Conflict Check] Found', result.entry?.length || 0, 'ServiceRequests total');
 
             const serviceRequests = (result.entry || [])
               .map((e) => e.resource as ServiceRequest)
@@ -628,15 +601,9 @@ export function CreateAppointmentModalV3({
                 const srRoom = sr.extension?.find(
                   (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/assigned-room'
                 )?.valueString;
-                
-                if (srRoom === room) {
-                  console.log('[Conflict Check] Found SR with matching room:', sr.id, 'room:', srRoom);
-                  return true;
-                }
-                return false;
-              });
 
-            console.log('[Conflict Check] ServiceRequests in room', room, ':', serviceRequests.length);
+                return srRoom === room;
+              });
 
             if (serviceRequests.length > 0) {
               // Get linked appointments to check times
@@ -646,34 +613,25 @@ export function CreateAppointmentModalV3({
                 );
                 if (linkedApptExt?.valueReference?.reference) {
                   const apptId = linkedApptExt.valueReference.reference.split('/')[1];
-                  console.log('[Conflict Check] Checking linked appointment:', apptId);
-                  
+
                   if (apptId && (!editMode || editAppointment?.id !== apptId)) {
                     try {
                       const appt = await medplum.readResource('Appointment', apptId);
-                      console.log('[Conflict Check] Linked appt time:', appt.start, '-', appt.end);
-                      
+
                       if (
                         appt.start &&
                         appt.start < end &&
                         appt.end &&
                         appt.end > start
                       ) {
-                        console.log('[Conflict Check] TIME OVERLAP DETECTED!');
                         const conflictMsg = `${getRoomDisplay(room)} is already booked ${serviceTimeStr}`;
                         warnings.push(conflictMsg);
                         break; // Only show one room conflict per service
-                      } else {
-                        console.log('[Conflict Check] No time overlap with linked appt');
                       }
                     } catch (err) {
-                      console.log('[Conflict Check] Error reading appointment:', apptId, err);
+                      console.error('Error reading appointment:', apptId, err);
                     }
-                  } else {
-                    console.log('[Conflict Check] Skipping current appointment in edit mode or no apptId');
                   }
-                } else {
-                  console.log('[Conflict Check] SR has no linked appointment:', sr.id);
                 }
               }
             }
@@ -683,7 +641,6 @@ export function CreateAppointmentModalV3({
         }
       }
 
-      console.log('[Conflict Check] Total warnings:', warnings.length, warnings);
       return warnings;
     },
     [medplum, editMode, editAppointment, selectedDate]
@@ -717,13 +674,9 @@ export function CreateAppointmentModalV3({
   // Check all conflicts when timeline changes (on Schedule/Review pages)
   // Debounced to avoid too many searches while user is selecting
   useEffect(() => {
-    console.log('[CreateAppointmentModalV3] Scheduling conflict check, items:', scheduleTimelineItems.length);
-    
     const timeoutId = setTimeout(() => {
-      console.log('[CreateAppointmentModalV3] Running conflict check for', scheduleTimelineItems.length, 'items');
       if (scheduleTimelineItems.length > 0) {
         checkAllConflicts(scheduleTimelineItems).then((warnings) => {
-          console.log('[CreateAppointmentModalV3] Conflict check result:', warnings);
           setProviderConflictWarnings(warnings);
         });
       } else {
@@ -732,7 +685,6 @@ export function CreateAppointmentModalV3({
     }, 500); // 500ms debounce
 
     return () => {
-      console.log('[CreateAppointmentModalV3] Cancelling previous conflict check');
       clearTimeout(timeoutId);
     };
   }, [scheduleTimelineItems, checkAllConflicts]);
@@ -1381,7 +1333,6 @@ export function CreateAppointmentModalV3({
   // Handle initialSlot changes when modal is open
   useEffect(() => {
     if (isOpen && initialSlot) {
-      console.log('[CreateAppointmentModalV3] Setting date/time from initialSlot:', initialSlot);
       setSelectedDate(initialSlot.start);
 
       // Round to nearest 30-minute interval to match dropdown options
@@ -1394,21 +1345,11 @@ export function CreateAppointmentModalV3({
       const minutes = roundedMinute.toString().padStart(2, '0');
       const roundedTime = `${hours}:${minutes}`;
 
-      console.log(
-        '[CreateAppointmentModalV3] Rounded time:',
-        roundedTime,
-        '(original:',
-        `${slotHour}:${slotMinute}`,
-        ')'
-      );
-
       // Verify the rounded time exists in the slots
       const slotExists = timeSlots.some((slot) => slot.value === roundedTime);
       if (slotExists) {
-        console.log('[CreateAppointmentModalV3] Time slot found in options:', roundedTime);
         setSelectedTime(roundedTime);
       } else {
-        console.warn('[CreateAppointmentModalV3] Time slot NOT found:', roundedTime, '- using 09:00');
         setSelectedTime('09:00');
       }
     }
