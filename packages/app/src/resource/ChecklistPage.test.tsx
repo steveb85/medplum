@@ -4,16 +4,16 @@ import { MockClient } from '@medplum/mock';
 import { act, fireEvent, renderAppRoutes, screen } from '../test-utils/render';
 
 describe('ChecklistPage', () => {
-  async function setup(url: string, medplum = new MockClient()): Promise<void> {
+  async function setup(url: string, medplum?: MockClient): Promise<void> {
+    const client = medplum ?? new MockClient();
+    jest.spyOn(client, 'isProjectAdmin').mockReturnValue(true);
     await act(async () => {
-      renderAppRoutes(medplum, url);
+      renderAppRoutes(client, url);
     });
   }
 
   test('RequestGroup checklist', async () => {
-    const medplum = new MockClient();
-    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
-    await setup('/RequestGroup/workflow-request-group-1/checklist', medplum);
+    await setup('/RequestGroup/workflow-request-group-1/checklist');
     expect(await screen.findByText('Checklist')).toBeInTheDocument();
   });
 

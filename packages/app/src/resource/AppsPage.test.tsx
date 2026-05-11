@@ -11,10 +11,12 @@ import { AppRoutes } from '../AppRoutes';
 import { act, fireEvent, render, screen, waitFor } from '../test-utils/render';
 
 describe('AppsPage', () => {
-  async function setup(url: string, medplum = new MockClient()): Promise<void> {
+  async function setup(url: string, medplum?: MockClient): Promise<void> {
+    const client = medplum ?? new MockClient();
+    jest.spyOn(client, 'isProjectAdmin').mockReturnValue(true);
     await act(async () => {
       render(
-        <MedplumProvider medplum={medplum}>
+        <MedplumProvider medplum={client}>
           <MemoryRouter initialEntries={[url]} initialIndex={0}>
             <MantineProvider>
               <Notifications />

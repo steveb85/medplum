@@ -5,15 +5,14 @@ import type { Bot, Subscription } from '@medplum/fhirtypes';
 import { MockClient } from '@medplum/mock';
 import { act, fireEvent, renderAppRoutes, screen } from '../test-utils/render';
 
-const medplum = new MockClient();
-
 describe('SubscriptionsPage', () => {
-  function setup(url: string): void {
+  function setup(url: string, medplum = new MockClient()): void {
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     renderAppRoutes(medplum, url);
   }
 
   test('Renders', async () => {
-    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
+    const medplum = new MockClient();
     const bot = await medplum.createResource<Bot>({
       resourceType: 'Bot',
     });
@@ -31,7 +30,7 @@ describe('SubscriptionsPage', () => {
 
     // load bot page
     await act(async () => {
-      setup(`/${getReferenceString(bot)}`);
+      setup(`/${getReferenceString(bot)}`, medplum);
     });
 
     const subscriptionsTab = screen.getByRole('tab', { name: 'Subscriptions' });
@@ -52,6 +51,7 @@ describe('SubscriptionsPage', () => {
   });
 
   test('Renders test changes', async () => {
+    const medplum = new MockClient();
     const bot = await medplum.createResource<Bot>({
       resourceType: 'Bot',
     });
@@ -69,7 +69,7 @@ describe('SubscriptionsPage', () => {
 
     // directly load bot subscriptions page
     await act(async () => {
-      setup(`/${getReferenceString(bot)}/subscriptions`);
+      setup(`/${getReferenceString(bot)}/subscriptions`, medplum);
     });
 
     // click on a subscription

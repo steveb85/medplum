@@ -7,9 +7,11 @@ import { MockClient } from '@medplum/mock';
 import { act, fireEvent, renderAppRoutes, screen, userEvent } from '../test-utils/render';
 
 describe('ResourcePage', () => {
-  async function setup(url: string, medplum = new MockClient()): Promise<void> {
+  async function setup(url: string, medplum?: MockClient): Promise<void> {
+    const client = medplum ?? new MockClient();
+    jest.spyOn(client, 'isProjectAdmin').mockReturnValue(true);
     await act(async () => {
-      renderAppRoutes(medplum, url);
+      renderAppRoutes(client, url);
     });
   }
 

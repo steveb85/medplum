@@ -12,10 +12,12 @@ const navigateMock = jest.fn();
 
 async function setup(url = '/'): Promise<UserEvent> {
   const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  const medplum = new MockClient();
+  jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
   await act(async () => {
     render(
       <MemoryRouter initialEntries={[url]} initialIndex={0}>
-        <MedplumProvider medplum={new MockClient()} navigate={navigateMock}>
+        <MedplumProvider medplum={medplum} navigate={navigateMock}>
           <MantineProvider>
             <App />
           </MantineProvider>
