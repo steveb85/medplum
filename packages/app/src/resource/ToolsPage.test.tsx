@@ -53,6 +53,7 @@ describe('ToolsPage', () => {
 
   beforeAll(async () => {
     medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     medplum.router.router.add('GET', 'Agent/:id/$status', async () => [
       allOk,
       {

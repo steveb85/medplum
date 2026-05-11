@@ -11,7 +11,9 @@ describe('ChecklistPage', () => {
   }
 
   test('RequestGroup checklist', async () => {
-    await setup('/RequestGroup/workflow-request-group-1/checklist');
+    const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
+    await setup('/RequestGroup/workflow-request-group-1/checklist', medplum);
     expect(await screen.findByText('Checklist')).toBeInTheDocument();
   });
 

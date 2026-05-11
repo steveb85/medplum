@@ -60,12 +60,16 @@ describe('ResourcePage', () => {
   });
 
   test('History tab renders', async () => {
-    await setup('/Practitioner/123/history');
+    const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
+    await setup('/Practitioner/123/history', medplum);
     expect(await screen.findByText('History')).toBeInTheDocument();
   });
 
   test('Blame tab renders', async () => {
-    await setup('/Practitioner/123/blame');
+    const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
+    await setup('/Practitioner/123/blame', medplum);
     expect(await screen.findByText('Blame')).toBeInTheDocument();
   });
 

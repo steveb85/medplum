@@ -12,6 +12,7 @@ import { act, fireEvent, render, screen } from './test-utils/render';
 
 // logged out
 const medplum = new MockClient({ profile: null });
+jest.spyOn(medplum, 'isSuperAdmin').mockReturnValue(false);
 
 describe('SignInPage', () => {
   function setup(url = '/signin', medplumClient: MedplumClient = medplum): void {

@@ -4,10 +4,8 @@ import type { Questionnaire, ValueSet } from '@medplum/fhirtypes';
 import { MockClient } from '@medplum/mock';
 import { act, renderAppRoutes, screen } from '../test-utils/render';
 
-const medplum = new MockClient();
-
 describe('PreviewPage', () => {
-  async function setup(url: string): Promise<void> {
+  async function setup(url: string, medplum = new MockClient()): Promise<void> {
     renderAppRoutes(medplum, url);
   }
 
@@ -23,32 +21,38 @@ describe('PreviewPage', () => {
   });
 
   test('ValueSet preview tab appears in ResourcePage', async () => {
+    const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     const valueSet = await medplum.createResource<ValueSet>({
       resourceType: 'ValueSet',
       status: 'active',
       url: 'http://example.com/valueset/test',
     });
 
-    await setup(`/ValueSet/${valueSet.id}`);
+    await setup(`/ValueSet/${valueSet.id}`, medplum);
 
     // Wait for the page to load and check for Preview tab
     expect(await screen.findByText('Preview')).toBeInTheDocument();
   });
 
   test('Questionnaire preview tab appears in ResourcePage', async () => {
+    const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     const questionnaire = await medplum.createResource<Questionnaire>({
       resourceType: 'Questionnaire',
       status: 'active',
       title: 'Test Questionnaire',
     });
 
-    await setup(`/Questionnaire/${questionnaire.id}`);
+    await setup(`/Questionnaire/${questionnaire.id}`, medplum);
 
     // Wait for the page to load and check for Preview tab
     expect(await screen.findByText('Preview')).toBeInTheDocument();
   });
 
   test('Navigates to preview tab', async () => {
+    const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     const valueSet = await medplum.createResource<ValueSet>({
       resourceType: 'ValueSet',
       status: 'active',
@@ -68,7 +72,7 @@ describe('PreviewPage', () => {
     // Mock valueSetExpand
     medplum.valueSetExpand = jest.fn().mockResolvedValue(valueSet);
 
-    await setup(`/ValueSet/${valueSet.id}`);
+    await setup(`/ValueSet/${valueSet.id}`, medplum);
 
     const previewTab = await screen.findByText('Preview');
     expect(previewTab).toBeInTheDocument();

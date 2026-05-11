@@ -13,6 +13,7 @@ describe('SubscriptionsPage', () => {
   }
 
   test('Renders', async () => {
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     const bot = await medplum.createResource<Bot>({
       resourceType: 'Bot',
     });

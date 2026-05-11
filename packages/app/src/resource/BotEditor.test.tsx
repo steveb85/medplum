@@ -51,7 +51,9 @@ describe('BotEditor', () => {
   });
 
   test('Bot editor', async () => {
-    await setup('/Bot/123/editor');
+    const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
+    await setup('/Bot/123/editor', medplum);
     expect(await screen.findByText('Editor')).toBeInTheDocument();
     expect(await screen.findByTestId('code-frame')).toBeInTheDocument();
     expect(screen.getByText('Editor')).toBeInTheDocument();

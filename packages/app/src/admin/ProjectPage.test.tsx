@@ -11,6 +11,7 @@ async function setup(url: string): Promise<void> {
 
 describe('ProjectPage', () => {
   beforeAll(() => {
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     medplum.setActiveLoginOverride({
       accessToken: '123',
       refreshToken: '456',

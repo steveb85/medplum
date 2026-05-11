@@ -74,6 +74,7 @@ describe('HomePage', () => {
 
   test('New button on Bot page', async () => {
     const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     medplum.setActiveLoginOverride({
       accessToken: '123',
       refreshToken: '456',

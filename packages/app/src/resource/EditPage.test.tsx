@@ -33,6 +33,7 @@ describe('EditPage', () => {
   }
 
   test('Edit tab renders', async () => {
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     await setup('/Practitioner/123/edit');
     expect(await screen.findByText('Edit')).toBeInTheDocument();
   });

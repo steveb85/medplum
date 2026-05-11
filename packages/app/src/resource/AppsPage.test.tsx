@@ -36,7 +36,9 @@ describe('AppsPage', () => {
   });
 
   test('Patient apps', async () => {
-    await setup('/Patient/123/apps');
+    const medplum = new MockClient();
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
+    await setup('/Patient/123/apps', medplum);
     expect(await screen.findByText('Apps')).toBeInTheDocument();
     expect(screen.getByText('Vitals')).toBeInTheDocument();
   });

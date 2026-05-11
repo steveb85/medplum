@@ -13,6 +13,9 @@ describe('AuditEventPage', () => {
   }
 
   test('Renders', async () => {
+    // Mock as project admin so Event tab is visible
+    jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
+
     const bot = await medplum.createResource<Bot>({
       resourceType: 'Bot',
     });
