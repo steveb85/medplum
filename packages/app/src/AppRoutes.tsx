@@ -165,6 +165,7 @@ export function AppRoutes(): JSX.Element {
           <Route path="rooms" element={<RoomsPage />} />
           <Route path="equipment" element={<EquipmentPage />} />
           <Route path="accesspolicies" element={<AccessPoliciesPage />} />
+          <Route path="sites" element={<SitesPage />} />
           <Route path="services" element={<ServiceCatalogPage />} />
           <Route path="staff/new" element={<PractitionerFormPage />} />
 <Route path="staff/:id/edit" element={<PractitionerFormPage />} />

@@ -1,3 +1,4 @@
+import type { Patient, Appointment, ActivityDefinition } from '@medplum/fhirtypes';
 import {
   isEmailConfigured,
   sendEmail,
@@ -10,90 +11,176 @@ import {
   sendAppointmentCancelledEmail,
   sendPostTreatmentFollowUpEmail,
   validateEmail,
+  emailTemplates,
 } from './email';
-import type { Patient, Appointment, ActivityDefinition } from '@medplum/fhirtypes';
+
+const mockPatient: Patient = {
+  resourceType: 'Patient',
+  id: 'patient-1',
+  name: [{ given: ['Jane'], family: 'Doe' }],
+  telecom: [{ system: 'email', value: 'jane@example.com' }],
+};
+
+const mockPatientNoEmail: Patient = {
+  resourceType: 'Patient',
+  id: 'patient-2',
+  name: [{ given: ['No'], family: 'Email' }],
+};
+
+const mockAppointment: Appointment = {
+  resourceType: 'Appointment',
+  id: 'appt-1',
+  status: 'booked',
+  start: '2026-01-20T14:30:00Z',
+  participant: [],
+};
+
+const mockServices: ActivityDefinition[] = [
+  { resourceType: 'ActivityDefinition', id: 'ad-1', status: 'active', title: 'Botox' },
+];
 
 describe('Email Utilities', () => {
   describe('isEmailConfigured', () => {
-    test.todo('should return true when API key and from email set');
-    test.todo('should return false when API key missing');
-    test.todo('should return false when from email missing');
+    test('should return false when env vars not set (test env)', () => {
+      expect(isEmailConfigured()).toBe(false);
+    });
   });
 
   describe('sendEmail', () => {
-    test.todo('should send email via Resend API');
-    test.todo('should return success with id on success');
-    test.todo('should return error when not configured');
-    test.todo('should handle network errors gracefully');
-    test.todo('should show notification in dev mode');
-    test.todo('should use sandbox in dev environment');
-    test.todo('should include both HTML and text versions');
-    test.todo('should set correct from address');
+    test('should return not configured without env vars', async () => {
+      const result = await sendEmail('test@example.com', 'Subject', '<p>HTML</p>', 'Text');
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Email not configured');
+    });
+  });
+
+  describe('Email Templates', () => {
+    test('depositRequest template contains all variables', () => {
+      const tmpl = emailTemplates.depositRequest.html;
+      expect(tmpl).toContain('{patientName}');
+      expect(tmpl).toContain('{serviceType}');
+      expect(tmpl).toContain('{date}');
+      expect(tmpl).toContain('{time}');
+      expect(tmpl).toContain('{depositAmount}');
+      expect(tmpl).toContain('{hours}');
+      expect(tmpl).toContain('{paymentLink}');
+    });
+
+    test('depositRequest has correct subject line', () => {
+      expect(emailTemplates.depositRequest.subject).toContain('Deposit Required');
+    });
+
+    test('paymentConfirmation template contains all variables', () => {
+      const html = emailTemplates.paymentConfirmation.html;
+      expect(html).toContain('{patientName}');
+      expect(html).toContain('{amount}');
+      expect(html).toContain('{date}');
+      expect(html).toContain('{time}');
+      expect(html).toContain('{serviceType}');
+    });
+
+    test('paymentConfirmation has correct subject line', () => {
+      expect(emailTemplates.paymentConfirmation.subject).toContain('Deposit Received');
+    });
+
+    test('depositReminder template contains payment button', () => {
+      const html = emailTemplates.depositReminder.html;
+      expect(html).toContain('{depositAmount}');
+      expect(html).toContain('{paymentLink}');
+    });
+
+    test('appointmentReminder24h mentions arriving 10 minutes early', () => {
+      const html = emailTemplates.appointmentReminder24h.html;
+      expect(html).toContain('10 minutes early');
+    });
   });
 
   describe('sendDepositRequestEmail', () => {
-    test.todo('should generate HTML email from template');
-    test.todo('should generate text email from template');
-    test.todo('should replace all template variables');
-    test.todo('should include payment button in HTML');
-    test.todo('should calculate hours remaining correctly');
-    test.todo('should return error when patient has no email');
-    test.todo('should use correct subject line');
+    test('should return error when patient has no email', async () => {
+      const result = await sendDepositRequestEmail(mockPatientNoEmail, mockAppointment, mockServices, 250, 'https://pay.example.com/123');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('email');
+    });
+
+    test('should return not configured when env vars missing', async () => {
+      const result = await sendDepositRequestEmail(mockPatient, mockAppointment, mockServices, 250, 'https://pay.example.com/123');
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('sendPaymentConfirmationEmail', () => {
-    test.todo('should generate confirmation email');
-    test.todo('should include all appointment details');
-    test.todo('should include amount paid');
-    test.todo('should format date nicely');
-    test.todo('should format time nicely');
-    test.todo('should return error when no email');
+    test('should return error when no email', async () => {
+      const result = await sendPaymentConfirmationEmail(mockPatientNoEmail, mockAppointment, mockServices, 250);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('email');
+    });
   });
 
   describe('sendDepositReminderEmail', () => {
-    test.todo('should generate reminder email');
-    test.todo('should include payment button');
-    test.todo('should include all relevant details');
+    test('should return error when no email', async () => {
+      const result = await sendDepositReminderEmail(mockPatientNoEmail, mockAppointment, mockServices, 250, 'https://pay.example.com/123');
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('sendAppointmentReminder24hEmail', () => {
-    test.todo('should generate 24h reminder email');
-    test.todo('should include formatted date');
-    test.todo('should include formatted time');
-    test.todo('should include service type');
-    test.todo('should mention arriving 10 minutes early');
+    test('should return error when no email', async () => {
+      const result = await sendAppointmentReminder24hEmail(mockPatientNoEmail, mockAppointment, mockServices);
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('sendAppointmentReminder2hEmail', () => {
-    test.todo('should generate 2h reminder email');
-    test.todo('should include time');
+    test('should return error when no email', async () => {
+      const result = await sendAppointmentReminder2hEmail(mockPatientNoEmail, mockAppointment);
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('sendAutoCancelWarningEmail', () => {
-    test.todo('should generate warning email');
-    test.todo('should use urgent styling');
-    test.todo('should include payment button');
-    test.todo('should include all relevant details');
+    test('should return error when no email', async () => {
+      const result = await sendAutoCancelWarningEmail(mockPatientNoEmail, mockAppointment, mockServices, 'https://pay.example.com/123');
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('sendAppointmentCancelledEmail', () => {
-    test.todo('should generate cancellation email');
-    test.todo('should include contact info');
-    test.todo('should offer rescheduling');
+    test('should return error when no email', async () => {
+      const result = await sendAppointmentCancelledEmail(mockPatientNoEmail, mockAppointment, mockServices);
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('sendPostTreatmentFollowUpEmail', () => {
-    test.todo('should generate follow-up email');
-    test.todo('should include contact info');
-    test.todo('should ask how patient is feeling');
+    test('should return error when no email', async () => {
+      const result = await sendPostTreatmentFollowUpEmail(mockPatientNoEmail, mockServices);
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('validateEmail', () => {
-    test.todo('should validate standard email format');
-    test.todo('should reject missing @ symbol');
-    test.todo('should reject missing domain');
-    test.todo('should reject missing local part');
-    test.todo('should handle + in local part');
-    test.todo('should reject consecutive dots');
+    test('should validate standard email format', () => {
+      expect(validateEmail('user@example.com')).toBe(true);
+    });
+
+    test('should reject missing @ symbol', () => {
+      expect(validateEmail('userexample.com')).toBe(false);
+    });
+
+    test('should reject missing domain', () => {
+      expect(validateEmail('user@.com')).toBe(false);
+    });
+
+    test('should reject missing local part', () => {
+      expect(validateEmail('@example.com')).toBe(false);
+    });
+
+    test('should handle + in local part', () => {
+      expect(validateEmail('user+tag@example.com')).toBe(true);
+    });
+
+    test('should reject missing dot in domain', () => {
+      expect(validateEmail('user@example')).toBe(false);
+    });
   });
 });

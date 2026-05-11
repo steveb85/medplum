@@ -2,7 +2,7 @@ import { MockClient } from '@medplum/mock';
 import { render, screen, waitFor } from '../test-utils/render';
 import { PatientIntakePage } from '../intake/PatientIntakePage';
 import { MedplumProvider } from '@medplum/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 
 describe('PatientIntakePage', () => {
   let medplum: MockClient;
@@ -11,10 +11,10 @@ describe('PatientIntakePage', () => {
     medplum = new MockClient();
   });
 
-  const renderPage = (mode = 'self-service') => {
+  const renderPage = (initialEntries = ['/intake']) => {
     return render(
       <MedplumProvider medplum={medplum}>
-        <MemoryRouter initialEntries={[`/intake?mode=${mode}`]}>
+        <MemoryRouter initialEntries={initialEntries}>
           <PatientIntakePage />
         </MemoryRouter>
       </MedplumProvider>
@@ -22,23 +22,39 @@ describe('PatientIntakePage', () => {
   };
 
   describe('Self-Service Mode', () => {
-    test.todo('should render intake form in self-service mode');
-    test.todo('should show welcome message');
-    test.todo('should display all 8 steps');
-    test.todo('should allow completing intake');
-    test.todo('should show success screen after submission');
-    test.todo('should create Patient resource');
+    test('should render intake form', async () => {
+      renderPage();
+      expect(await screen.findByText('Patient Intake Form')).toBeInTheDocument();
+    });
+
+    test('should show wizard with step 1', async () => {
+      renderPage();
+      expect(await screen.findByText('Step 1: Welcome')).toBeInTheDocument();
+    });
+
+    test('should not show coordinator alert in self-service mode', async () => {
+      renderPage();
+      await screen.findByText('Patient Intake Form');
+      expect(screen.queryByText(/Coordinator Mode/i)).not.toBeInTheDocument();
+    });
   });
 
   describe('Coordinator Mode', () => {
-    test.todo('should render in coordinator mode');
-    test.todo('should show coordinator header');
-    test.todo('should allow coordinator-assisted completion');
+    test('should render in coordinator mode', async () => {
+      renderPage(['/intake?mode=coordinator']);
+      expect(await screen.findByText('Patient Intake Form')).toBeInTheDocument();
+    });
+
+    test('should show coordinator header', async () => {
+      renderPage(['/intake?mode=coordinator']);
+      expect(await screen.findByText(/Coordinator Mode/i)).toBeInTheDocument();
+    });
   });
 
   describe('Navigation', () => {
-    test.todo('should navigate between steps');
-    test.todo('should validate before proceeding');
-    test.todo('should show step progress');
+    test('should show step progress', async () => {
+      renderPage();
+      expect(await screen.findByText('Step 1 of 8')).toBeInTheDocument();
+    });
   });
 });

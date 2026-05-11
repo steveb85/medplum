@@ -8,9 +8,7 @@ import { MemoryRouter } from 'react-router';
 import { AppRoutes } from '../AppRoutes';
 import { act, fireEvent, render, screen } from '../test-utils/render';
 
-const medplum = new MockClient();
-
-async function setup(url: string): Promise<void> {
+async function setup(url: string, medplum: MockClient): Promise<void> {
   await act(async () => {
     render(
       <MedplumProvider medplum={medplum}>
@@ -26,7 +24,11 @@ async function setup(url: string): Promise<void> {
 }
 
 describe('SitesPage', () => {
-  beforeAll(() => {
+  let medplum: MockClient;
+
+  beforeEach(() => {
+    medplum = new MockClient();
+    jest.spyOn(medplum, 'isSuperAdmin').mockReturnValue(false);
     jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
     medplum.setActiveLoginOverride({
       accessToken: '123',
@@ -41,13 +43,13 @@ describe('SitesPage', () => {
   });
 
   test('Renders', async () => {
-    await setup('/admin/sites');
+    await setup('/admin/sites', medplum);
     expect(await screen.findByText('Project Sites')).toBeInTheDocument();
     expect(screen.getByText('Project Sites')).toBeInTheDocument();
   });
 
   test('Add and submit', async () => {
-    await setup('/admin/sites');
+    await setup('/admin/sites', medplum);
     expect(await screen.findByTitle('Add Site')).toBeInTheDocument();
 
     // Click the "Add" button

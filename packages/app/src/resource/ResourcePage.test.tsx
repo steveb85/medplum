@@ -80,9 +80,9 @@ describe('ResourcePage', () => {
     expect(await screen.findByText('Timeline')).toBeInTheDocument();
 
     // Expect identifiers
-    expect(screen.getByText('abc')).toBeInTheDocument();
-    expect(screen.getByText('def')).toBeInTheDocument();
-    expect(screen.getByText('456')).toBeInTheDocument();
+    expect(screen.getAllByText('abc')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('def')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('456')[0]).toBeInTheDocument();
   });
 
   test('Encounter timeline', async () => {

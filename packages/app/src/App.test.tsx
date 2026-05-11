@@ -9,10 +9,12 @@ import type { UserEvent } from './test-utils/render';
 import { act, render, screen, userEvent } from './test-utils/render';
 
 const navigateMock = jest.fn();
+let medplum: MockClient;
 
 async function setup(url = '/'): Promise<UserEvent> {
   const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-  const medplum = new MockClient();
+  medplum = new MockClient();
+  jest.spyOn(medplum, 'isSuperAdmin').mockReturnValue(false);
   jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(true);
   await act(async () => {
     render(
@@ -39,6 +41,7 @@ describe('App', () => {
       jest.runOnlyPendingTimers();
     });
     jest.useRealTimers();
+    localStorage.removeItem('appShellLayoutVersion');
   });
 
   test('Click logo', async () => {
@@ -83,14 +86,15 @@ describe('App', () => {
   });
 
   test('Resource Type Search', async () => {
+    // Use v1 layout so ResourceTypeInput is rendered (not Spotlight)
+    localStorage.setItem('appShellLayoutVersion', 'v1');
     const user = await setup();
     await openNav(user);
 
-    const input = await screen.findByPlaceholderText('Resource Type');
+    const input = screen.getByPlaceholderText('Resource Type');
 
     // Enter random text
     await user.type(input, 'Different');
-
     await user.type(input, 'Test');
 
     // Wait for the drop down

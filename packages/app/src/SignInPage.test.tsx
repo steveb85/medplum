@@ -13,6 +13,7 @@ import { act, fireEvent, render, screen } from './test-utils/render';
 // logged out
 const medplum = new MockClient({ profile: null });
 jest.spyOn(medplum, 'isSuperAdmin').mockReturnValue(false);
+jest.spyOn(medplum, 'isProjectAdmin').mockReturnValue(false);
 
 describe('SignInPage', () => {
   function setup(url = '/signin', medplumClient: MedplumClient = medplum): void {
@@ -147,19 +148,28 @@ describe('SignInPage', () => {
   });
 
   test('Does NOT automatically redirect to next if logged in and next NOT present', async () => {
-    setup('/signin', new MockClient({ profile: DrAliceSmith }));
+    const loggedInMedplum = new MockClient({ profile: DrAliceSmith });
+    jest.spyOn(loggedInMedplum, 'isSuperAdmin').mockReturnValue(false);
+    jest.spyOn(loggedInMedplum, 'isProjectAdmin').mockReturnValue(false);
+    setup('/signin', loggedInMedplum);
 
     expectSigninPageRendered();
   });
 
   test('Automatically redirects to next if logged in and next present', async () => {
-    setup('/signin?next=/batch', new MockClient({ profile: DrAliceSmith }));
+    const loggedInMedplum = new MockClient({ profile: DrAliceSmith });
+    jest.spyOn(loggedInMedplum, 'isSuperAdmin').mockReturnValue(false);
+    jest.spyOn(loggedInMedplum, 'isProjectAdmin').mockReturnValue(false);
+    setup('/signin?next=/batch', loggedInMedplum);
 
     expect(await screen.findByText('Batch Create')).toBeInTheDocument();
   });
 
   test('Automatically redirects to homepage if logged with bad next', async () => {
-    setup('/signin?next=https%3A%2F%2Fevil.com', new MockClient({ profile: DrAliceSmith }));
+    const loggedInMedplum = new MockClient({ profile: DrAliceSmith });
+    jest.spyOn(loggedInMedplum, 'isSuperAdmin').mockReturnValue(false);
+    jest.spyOn(loggedInMedplum, 'isProjectAdmin').mockReturnValue(false);
+    setup('/signin?next=https%3A%2F%2Fevil.com', loggedInMedplum);
 
     // should redirect to the homepage
     expect(await screen.findByTestId('search-control')).toBeInTheDocument();
