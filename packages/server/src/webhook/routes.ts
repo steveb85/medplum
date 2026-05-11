@@ -9,6 +9,8 @@ import { getResponseBodyFromResult, getResponseContentType } from '../bots/utils
 import { sendOutcome } from '../fhir/outcomes';
 import { getGlobalSystemRepo, getProjectSystemRepo } from '../fhir/repo';
 import { sendBinaryResponse } from '../fhir/response';
+import { stripeWebhookHandler } from '../webhooks/stripe';
+import { twilioWebhookHandler, twilioStatusCallbackHandler } from '../webhooks/twilio';
 
 /**
  * Handles HTTP requests for anonymous webhooks.
@@ -70,4 +72,13 @@ export const webhookHandler = async (req: Request, res: Response): Promise<void>
 };
 
 export const webhookRouter = Router();
+
+// Bot webhooks (existing)
 webhookRouter.post('/:id', webhookHandler);
+
+// Stripe webhook for payment processing
+webhookRouter.post('/stripe', stripeWebhookHandler);
+
+// Twilio webhooks for SMS
+webhookRouter.post('/twilio', twilioWebhookHandler);
+webhookRouter.post('/twilio/status', twilioStatusCallbackHandler);

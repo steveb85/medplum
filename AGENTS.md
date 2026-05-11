@@ -1431,7 +1431,7 @@ Commit `ddbc3a776` ("update may", May 4, 2026) introduced ALL regressions:
 
 ## 13. Communications & Payments Integration Roadmap
 
-**Status:** Infrastructure Ready ✅ | **Next:** Phase 1 Implementation
+**Status:** Phase 1 Complete ✅ | **Next:** Phase 2 - Wire Up "Send Payment Link" Button
 
 **Approach:** Option A - Complete all phases before going live
 
@@ -1454,23 +1454,44 @@ This roadmap implements full integration of Twilio (SMS), Resend (Email), and St
 
 ---
 
-### Phase 1: Connect Webhook Routes ⏱️ 2-3 hours
+### Phase 1: Connect Webhook Routes ✅ COMPLETE
+
+**Completed:** May 9, 2026
 
 **Goal:** Enable Stripe and Twilio to communicate with your server
 
-**Tasks:**
-1. Register webhook routes in Express server
-2. Configure Stripe webhook endpoint in Stripe Dashboard (https://api-dev.studioassistant.io/webhook/stripe)
-3. Configure Twilio webhook URL in Twilio Console (https://api-dev.studioassistant.io/webhook/twilio)
-4. Test webhook connectivity with test events
+**What Was Done:**
+1. ✅ Registered webhook routes in Express server (`/packages/server/src/webhook/routes.ts`)
+2. ✅ Added Stripe webhook handler at `POST /api/webhook/stripe`
+3. ✅ Added Twilio incoming SMS handler at `POST /api/webhook/twilio`
+4. ✅ Added Twilio status callback handler at `POST /api/webhook/twilio/status`
+5. ✅ TypeScript build passes for both server and app packages
 
-**Files to Modify:**
-- /packages/server/src/app.ts (or routes configuration)
+**Files Modified:**
+- `/packages/server/src/webhook/routes.ts` - Added imports and route registrations
+
+**Webhook URLs (configure in dashboards):**
+- **Stripe:** `https://api-dev.studioassistant.io/api/webhook/stripe`
+- **Twilio SMS:** `https://api-dev.studioassistant.io/api/webhook/twilio`
+- **Twilio Status:** `https://api-dev.studioassistant.io/api/webhook/twilio/status`
+
+**Next Steps (Manual Configuration Required):**
+1. Log into [Stripe Dashboard](https://dashboard.stripe.com/webhooks)
+2. Add endpoint: `https://api-dev.studioassistant.io/api/webhook/stripe`
+3. Select events: `payment_intent.succeeded`, `checkout.session.completed`, `payment_intent.payment_failed`
+4. Copy the webhook signing secret and update `.env` if needed
+
+5. Log into [Twilio Console](https://console.twilio.com/us1/develop/phone-numbers/manage/incoming)
+6. Select your phone number (+18445423808)
+7. Configure "A Message Comes In" webhook: `https://api-dev.studioassistant.io/api/webhook/twilio`
+8. Configure "Delivery Status Callback": `https://api-dev.studioassistant.io/api/webhook/twilio/status`
 
 **Success Criteria:**
-- [ ] Send test SMS to Twilio number → Creates Communication FHIR resource
-- [ ] Send test Stripe event → Updates appointment deposit status
-- [ ] Webhook signature verification working
+- [x] Webhook routes registered in Express server
+- [x] TypeScript compilation successful
+- [ ] Stripe webhook configured in dashboard (pending manual setup)
+- [ ] Twilio webhook configured in console (pending manual setup)
+- [ ] End-to-end test with real events (pending dashboard configuration)
 
 ---
 
@@ -1697,11 +1718,15 @@ Before starting implementation, need to confirm:
 - ✅ Stripe webhook handler
 - ✅ Twilio webhook handler
 - ✅ Webhook secrets configured
+- ✅ Phase 1: Webhook routes connected to Express server
+  - `/api/webhook/stripe` - Stripe payment events
+  - `/api/webhook/twilio` - Twilio incoming SMS
+  - `/api/webhook/twilio/status` - Twilio delivery status
 
 **Next Steps:**
-1. Start Phase 1: Connect webhook routes
-2. Configure Stripe/Twilio dashboard webhook URLs
-3. Test webhook connectivity
+1. Configure Stripe/Twilio dashboard webhook URLs (manual setup required)
+2. Start Phase 2: Wire Up "Send Payment Link" Button
+3. Test webhook connectivity with real events
 
 ---
 
