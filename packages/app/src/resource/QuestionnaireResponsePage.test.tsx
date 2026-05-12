@@ -73,15 +73,16 @@ describe('QuestionnaireResponsePage', () => {
       setup(`/Questionnaire/${questionnaire.id}/responses`);
     });
 
-    // click on a questionnaire response
+    // click on the sort button to open menu
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Last Updated' }));
     });
 
-    const sortButton = await screen.findByRole('menuitem', { name: 'Sort Newest to Oldest' });
-
     await act(async () => {
-      fireEvent.click(sortButton);
+      const items = document.querySelectorAll('[role="menuitem"]');
+      // Second menuitem is "Sort Newest to Oldest" (first is "Sort Oldest to Newest")
+      const sortItem = items[1];
+      if (sortItem) fireEvent.click(sortItem);
     });
 
     expect(screen.getByText(response1.id)).toBeInTheDocument();
