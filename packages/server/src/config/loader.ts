@@ -122,9 +122,11 @@ function deepMerge(base: Record<string, unknown>, overlay: Record<string, unknow
  * @returns The configuration for tests.
  */
 export async function loadTestConfig(): Promise<MedplumServerConfig> {
-  const config = await loadConfig('file:medplum.config.json');
-  config.binaryStorage = 'file:' + mkdtempSync(join(tmpdir(), 'medplum-temp-storage'));
-  config.allowedOrigins = undefined;
+const config = await loadConfig('file:medplum.config.json');
+config.baseUrl = 'http://localhost:8104/';
+config.appBaseUrl = 'http://localhost:3000/';
+config.binaryStorage = 'file:' + mkdtempSync(join(tmpdir(), 'medplum-temp-storage'));
+config.allowedOrigins = undefined;
   config.database.host = process.env['POSTGRES_HOST'] ?? 'localhost';
   config.database.port = process.env['POSTGRES_PORT'] ? Number.parseInt(process.env['POSTGRES_PORT'], 10) : 5432;
   config.database.dbname = 'medplum_test';

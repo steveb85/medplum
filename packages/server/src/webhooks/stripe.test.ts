@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Request, Response } from 'express';
-import { stripeWebhookHandler, createStripePaymentLink } from '../webhooks/stripe';
+import { stripeWebhookHandler, createStripePaymentLink, createPaymentLinkHandler } from '../webhooks/stripe';
 import { getGlobalSystemRepo } from '../fhir/repo';
 import { getLogger } from '../logger';
 
@@ -1000,6 +1000,108 @@ describe('Stripe Webhook Handler', () => {
 
       process.env.STRIPE_SECRET_KEY = originalKey;
       process.env.MEDPLUM_APP_BASE_URL = originalAppUrl;
+    });
+  });
+
+  describe('createPaymentLinkHandler', () => {
+    let handlerReq: Partial<Request>;
+    let handlerRes: Partial<Response>;
+    let handlerJson: jest.Mock;
+    let handlerStatus: jest.Mock;
+
+    beforeEach(() => {
+      handlerJson = jest.fn();
+      handlerStatus = jest.fn().mockReturnValue({ json: handlerJson });
+      handlerRes = {
+        status: handlerStatus,
+        json: handlerJson,
+      };
+    });
+
+    test('should return 400 if appointmentId missing', async () => {
+      handlerReq = {
+        body: { amount: 50, patientEmail: 'test@example.com' },
+      } as Partial<Request>;
+
+      await createPaymentLinkHandler(handlerReq as Request, handlerRes as Response);
+
+      expect(handlerStatus).toHaveBeenCalledWith(400);
+      expect(handlerJson).toHaveBeenCalledWith({ error: 'Missing appointmentId' });
+    });
+
+    test('should return 400 if amount is not positive', async () => {
+      handlerReq = {
+        body: { appointmentId: 'appt-123', amount: -10 },
+      } as Partial<Request>;
+
+      await createPaymentLinkHandler(handlerReq as Request, handlerRes as Response);
+
+      expect(handlerStatus).toHaveBeenCalledWith(400);
+      expect(handlerJson).toHaveBeenCalledWith({ error: 'Invalid amount' });
+    });
+
+    test('should return 400 if Stripe not configured', async () => {
+      const originalKey = process.env.STRIPE_SECRET_KEY;
+      delete process.env.STRIPE_SECRET_KEY;
+
+      handlerReq = {
+        body: { appointmentId: 'appt-123', amount: 50, patientEmail: 'test@example.com' },
+      } as Partial<Request>;
+
+      await createPaymentLinkHandler(handlerReq as Request, handlerRes as Response);
+
+      expect(handlerStatus).toHaveBeenCalledWith(400);
+      expect(handlerJson).toHaveBeenCalledWith({ error: 'Stripe not configured' });
+
+      process.env.STRIPE_SECRET_KEY = originalKey;
+    });
+
+    test('should return payment URL on success', async () => {
+      const mockResponse = { url: 'https://checkout.stripe.com/test-session' };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockResponse),
+      } as any);
+
+      const originalKey = process.env.STRIPE_SECRET_KEY;
+      process.env.STRIPE_SECRET_KEY = 'sk_test_secret';
+
+      handlerReq = {
+        body: {
+          appointmentId: 'appt-123',
+          amount: 50,
+          patientEmail: 'test@example.com',
+          patientName: 'Test Patient',
+        },
+      } as Partial<Request>;
+
+      await createPaymentLinkHandler(handlerReq as Request, handlerRes as Response);
+
+      expect(handlerJson).toHaveBeenCalledWith({ url: 'https://checkout.stripe.com/test-session' });
+
+      process.env.STRIPE_SECRET_KEY = originalKey;
+    });
+
+    test('should handle Stripe API errors', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        text: jest.fn().mockResolvedValue('Stripe API error'),
+      } as any);
+
+      const originalKey = process.env.STRIPE_SECRET_KEY;
+      process.env.STRIPE_SECRET_KEY = 'sk_test_secret';
+
+      handlerReq = {
+        body: { appointmentId: 'appt-123', amount: 50 },
+      } as Partial<Request>;
+
+      await createPaymentLinkHandler(handlerReq as Request, handlerRes as Response);
+
+      expect(handlerStatus).toHaveBeenCalledWith(400);
+      expect(handlerJson).toHaveBeenCalledWith({ error: 'Failed to create payment link' });
+
+      process.env.STRIPE_SECRET_KEY = originalKey;
     });
   });
 });

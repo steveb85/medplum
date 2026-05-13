@@ -26,6 +26,11 @@ describe('Webhook Routes', () => {
       expect(res.status).not.toBe(404);
     });
 
+    test('should register POST /create-payment-link for payment link creation', async () => {
+      const res = await request(app).post('/create-payment-link');
+      expect(res.status).not.toBe(404);
+    });
+
     test('should register POST /twilio for Twilio SMS webhooks', async () => {
       const res = await request(app).post('/twilio');
       expect(res.status).not.toBe(404);

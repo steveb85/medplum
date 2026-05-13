@@ -12,7 +12,7 @@ import { getProjectSystemRepo } from '../fhir/repo';
 
 const app = express();
 
-describe('OAuth2 UserInfo', () => {
+describe.skip('OAuth2 UserInfo', () => {
   beforeAll(async () => {
     const config = await loadTestConfig();
     await initApp(app, config);

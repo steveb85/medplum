@@ -9,7 +9,7 @@ import { getResponseBodyFromResult, getResponseContentType } from '../bots/utils
 import { sendOutcome } from '../fhir/outcomes';
 import { getGlobalSystemRepo, getProjectSystemRepo } from '../fhir/repo';
 import { sendBinaryResponse } from '../fhir/response';
-import { stripeWebhookHandler } from '../webhooks/stripe';
+import { stripeWebhookHandler, createPaymentLinkHandler } from '../webhooks/stripe';
 import { twilioWebhookHandler, twilioStatusCallbackHandler } from '../webhooks/twilio';
 
 /**
@@ -78,6 +78,9 @@ webhookRouter.post('/:id', webhookHandler);
 
 // Stripe webhook for payment processing
 webhookRouter.post('/stripe', stripeWebhookHandler);
+
+// Stripe payment link creation (called from app)
+webhookRouter.post('/create-payment-link', createPaymentLinkHandler);
 
 // Twilio webhooks for SMS
 webhookRouter.post('/twilio', twilioWebhookHandler);

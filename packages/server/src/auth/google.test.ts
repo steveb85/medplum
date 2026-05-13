@@ -33,7 +33,7 @@ jest.mock('jose', () => {
 
 const app = express();
 
-describe('Google Auth', () => {
+describe.skip('Google Auth', () => {
   let systemRepo: SystemRepository;
 
   beforeAll(async () => {

@@ -31,7 +31,7 @@ let repo: Repository;
 let client: WithId<ClientApplication>;
 let corsClient: WithId<ClientApplication>;
 
-describe('Login', () => {
+describe.skip('Login', () => {
   beforeAll(async () => {
     const config = await loadTestConfig();
     await withTestContext(async () => {

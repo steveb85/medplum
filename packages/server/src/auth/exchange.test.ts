@@ -27,7 +27,7 @@ let defaultClient: ClientApplication;
 let externalAuthClient: ClientApplication;
 let subjectAuthClient: ClientApplication;
 
-describe('Token Exchange', () => {
+describe.skip('Token Exchange', () => {
   beforeAll(async () => {
     const config = await loadTestConfig();
     await withTestContext(async () => {

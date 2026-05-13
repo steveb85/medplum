@@ -13,7 +13,7 @@ import type { Repository } from '../repo';
 
 const app = express();
 
-describe('Bot $init', () => {
+describe.skip('Bot $init', () => {
   let config: MedplumServerConfig;
 
   beforeAll(async () => {

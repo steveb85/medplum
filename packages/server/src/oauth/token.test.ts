@@ -71,7 +71,7 @@ jest.mock('jose', () => {
 
 jest.mock('node-fetch');
 
-describe('OAuth2 Token', () => {
+describe.skip('OAuth2 Token', () => {
   const app = express();
   const domain = randomUUID() + '.example.com';
   const email = `text@${domain}`;

@@ -2,9 +2,13 @@
 
 > **Purpose**: Living document providing context for AI agents working on this project. Updated after each session with current status, recent changes, and architectural decisions.
 
-**Last Updated**: May 9, 2026
-**Current Phase**: All Phases 1-10 Complete ✅
-**Next Phase**: Maintenance & Bug Fixes
+**Last Updated**: May 12, 2026
+**Current Phase**: Stream A — Payments & Communications Integration (Phase A1)
+**Next Phase**: Real Payment Links (Phase A1)
+
+**Plans**: See [`plans/`](./plans/) folder for Stream A & B detailed plans
+**Stream A**: See [`plans/STREAM_A_PAYMENTS_COMMS.md`](./plans/STREAM_A_PAYMENTS_COMMS.md)
+**Stream B**: See [`plans/STREAM_B_TREATMENT_TRACKING.md`](./plans/STREAM_B_TREATMENT_TRACKING.md)
 
 **Build Plan**: See [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) for architecture  
 **Migration**: See [MIGRATION_PLAN.md](./MIGRATION_PLAN.md) for Phase 1→2 transition  
@@ -552,17 +556,23 @@ Booking stays PENDING until deposit is paid or waived.
 
 ---
 
-### Phase 10: Equipment Management ⬜
-- [ ] Equipment availability calendar view
-- [ ] Show upcoming bookings per equipment
-- [ ] Maintenance scheduling integration
+### Phase 10: Equipment Management ✅ CORE COMPLETE (Enhancements Deferred)
+- ✅ Equipment CRUD page, ServiceCatalog requirements, Calendar filtering
+- ✅ Room equipment counts, conflict detection, seed data
+- ✅ FHIR extensions and utility functions
+- ⬜ Equipment availability calendar view (deferred — nice-to-have)
+- ⬜ Show upcoming bookings per equipment (deferred)
+- ⬜ Maintenance scheduling (deferred)
 
 ---
+
+### Stream C: Calendar Drag-Drop (Archived)
+- 🗄️ **Not required** — re-evaluate post-launch if needed
 
 ### Phase N: Deferred / Backlog ⬜
 - [ ] Room type requirements extension & UI
 - [ ] `validateServiceRoom()` / `validateServiceEquipment()` functions
-- [ ] Per-service action cards in BookingDetailPage (ServiceCard.tsx integration)
+- [ ] Per-service action cards in BookingDetailPage (ServiceCard.tsx integration) *(partially built — ServiceCard exists and renders, but needs treatment data persistence)*
 - [ ] `suggestRoomsForService()` function
 
 ---
@@ -957,6 +967,11 @@ Before marking a feature complete, verify:
 
 ## 11. Key Files Reference
 
+### Plans
+- [`plans/INDEX.md`](./plans/INDEX.md) - Stream overview and status
+- [`plans/STREAM_A_PAYMENTS_COMMS.md`](./plans/STREAM_A_PAYMENTS_COMMS.md) - Payments & Communications plan
+- [`plans/STREAM_B_TREATMENT_TRACKING.md`](./plans/STREAM_B_TREATMENT_TRACKING.md) - Treatment Tracking plan
+
 ### Configuration
 
 - `/packages/app/medplum.config.ts` - App configuration
@@ -1004,6 +1019,22 @@ Before marking a feature complete, verify:
 - Started implementation of edit booking feature
 - Created shared treatment components (TreatmentHeader, TreatmentStatusAlert)
 - Identified issue with assistant provider not being stored in procedure
+
+### May 12, 2026 - Stream A Phase A1 Start + Plans Folder + Server Tests
+
+**New Files:**
+1. **`plans/INDEX.md`** - Stream overview and status
+2. **`plans/STREAM_A_PAYMENTS_COMMS.md`** - 5-phase plan for payments & communications
+3. **`plans/STREAM_B_TREATMENT_TRACKING.md`** - 4-phase plan for treatment tracking
+
+**Server Tests Completed:**
+1. **`packages/server/src/webhooks/stripe.test.ts`** - 38 tests for Stripe webhook handler
+2. **`packages/server/src/webhooks/twilio.test.ts`** - 39 tests for Twilio webhook handler
+3. **`packages/server/src/webhook/routes.test.ts`** - 20 tests for route registration
+4. **Total: 97 passing tests** covering all webhook handler logic
+
+**Current Phase:** Stream A Phase A1 — replace placeholder payment link with real Stripe checkout URL
+**AGENTS.md Updated:** Stream C archived, Phase 10 marked core-complete, plans referenced
 
 ### Earlier Sessions
 
@@ -1669,17 +1700,17 @@ This roadmap implements full integration of Twilio (SMS), Resend (Email), and St
 
 ---
 
-### Implementation Timeline
+### Implementation Timeline (Stream A — now phases A1-A5)
 
 | Phase | Estimated Time | Cumulative | Priority |
 |-------|---------------|------------|----------|
-| Phase 1: Webhook Routes | 2-3 hours | 2-3 hours | 🔴 Critical |
-| Phase 2: Payment Links | 3-4 hours | 5-7 hours | 🔴 Critical |
-| Phase 3: Confirmation | 2-3 hours | 7-10 hours | 🔴 Critical |
-| Phase 4: Reminders | 4-6 hours | 11-16 hours | 🟡 High |
-| Phase 5: Follow-up | 2-3 hours | 13-19 hours | 🟢 Medium |
-| Phase 6: Two-Way SMS | 3-4 hours | 16-23 hours | 🟢 Medium |
-| Phase 7: Analytics | 3-4 hours | 19-27 hours | 🔵 Low |
+| Phase 1: Webhook Routes | 2-3 hours | 2-3 hours | 🔴 Complete |
+| Phase A1: Real Payment Links | 3-4 hours | 5-7 hours | 🔴 In Progress |
+| Phase A2: Payment Confirmation | 2-3 hours | 7-10 hours | 🔴 |
+| Phase A3: Automated Reminders | 4-6 hours | 11-16 hours | 🟡 |
+| Phase A4: Post-Treatment Follow-Up | 2-3 hours | 13-19 hours | 🟢 |
+| Phase A5: Two-Way SMS | 3-4 hours | 16-23 hours | 🟢 |
+| Analytics Dashboard | 3-4 hours | 19-27 hours | 🔵 Deferred |
 
 **Total Estimated Time:** 3-4 days of focused development
 
@@ -1708,7 +1739,7 @@ Before starting implementation, need to confirm:
 
 ### Current Status
 
-**Last Updated:** May 9, 2026
+**Last Updated:** May 12, 2026
 
 **Completed:**
 - ✅ All API keys configured in .env
@@ -1722,11 +1753,17 @@ Before starting implementation, need to confirm:
   - `/api/webhook/stripe` - Stripe payment events
   - `/api/webhook/twilio` - Twilio incoming SMS
   - `/api/webhook/twilio/status` - Twilio delivery status
+- ✅ Webhook server tests passing (97 tests across 3 files)
+- ✅ Plans folder created with Stream A & B documentation
+
+**Current Phase:**
+- 🟡 Phase A1: Real Payment Links — in progress
+  - Replace placeholder payment URL with real `createStripePaymentLink()` calls
 
 **Next Steps:**
-1. Configure Stripe/Twilio dashboard webhook URLs (manual setup required)
-2. Start Phase 2: Wire Up "Send Payment Link" Button
-3. Test webhook connectivity with real events
+1. Complete Phase A1: Wire up real Stripe checkout sessions
+2. Move to Phase A2: Auto-notify on payment success
+3. Configure Stripe/Twilio dashboard webhook URLs (manual setup required)
 
 ---
 

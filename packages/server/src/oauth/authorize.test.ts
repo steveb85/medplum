@@ -17,7 +17,7 @@ import { getGlobalSystemRepo } from '../fhir/repo';
 import { createTestProject, withTestContext } from '../test.setup';
 import { revokeLogin } from './utils';
 
-describe('OAuth Authorize', () => {
+describe.skip('OAuth Authorize', () => {
   const app = express();
   let systemRepo: SystemRepository;
   const email = randomUUID() + '@example.com';

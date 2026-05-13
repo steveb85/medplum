@@ -241,6 +241,40 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
 }
 
 /**
+ * Handles POST /webhook/create-payment-link requests from the app
+ * Creates a Stripe checkout session and returns the URL
+ */
+export async function createPaymentLinkHandler(req: Request, res: Response): Promise<void> {
+  const logger = getLogger();
+
+  try {
+    const { appointmentId, amount, patientEmail, patientName } = req.body;
+
+    if (!appointmentId) {
+      res.status(400).json({ error: 'Missing appointmentId' });
+      return;
+    }
+    if (typeof amount !== 'number' || amount <= 0) {
+      res.status(400).json({ error: 'Invalid amount' });
+      return;
+    }
+
+    const result = await createStripePaymentLink(appointmentId, amount, patientEmail || '', patientName || '');
+
+    if (result.error) {
+      logger.warn('Failed to create payment link', { error: result.error });
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({ url: result.url });
+  } catch (err) {
+    logger.error('createPaymentLinkHandler error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+/**
  * Create Stripe payment link for appointment
  * This would be called from the app to generate a payment link
  */

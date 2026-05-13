@@ -929,16 +929,46 @@ export function BookingDetailPage(): ReactElement {
         currentUserPractitioner
       );
 
-      // Generate payment link (placeholder - will be Stripe URL)
-      const paymentLink = `https://pay.studioassistant.io/d/${appointment.id}`;
+      // Create real Stripe payment link via server endpoint
+      const patientEmail = patient.telecom?.find((t) => t.system === 'email')?.value || '';
+      const patientDisplayName = [patient.name?.[0]?.given?.join(' '), patient.name?.[0]?.family]
+        .filter(Boolean)
+        .join(' ');
 
-      // Send SMS
-      if (patient.telecom?.find((t) => t.system === 'phone')) {
+      const baseUrl = medplum.getBaseUrl();
+      const linkResponse = await fetch(baseUrl + 'api/webhook/create-payment-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: appointment.id,
+          amount: depositAmount,
+          patientEmail,
+          patientName: patientDisplayName,
+        }),
+      });
+
+      const linkData = await linkResponse.json();
+      if (!linkResponse.ok || linkData.error) {
+        // Show warning but still record the deposit request
+        showNotification({
+          color: 'yellow',
+          title: 'Payment Link Warning',
+          message: `Could not create payment link: ${linkData.error || 'Unknown error'}. Link was not sent.`,
+        });
+        // Still record deposit requested and return early
+        await loadData();
+        return;
+      }
+
+      const paymentLink = linkData.url;
+
+      // Send SMS (only if we have a valid payment link)
+      if (patient.telecom?.find((t) => t.system === 'phone') && paymentLink) {
         await sendDepositRequestSMS(patient, appointment, services, depositAmount, paymentLink);
       }
 
-      // Send Email
-      if (patient.telecom?.find((t) => t.system === 'email')) {
+      // Send Email (only if we have a valid payment link)
+      if (patient.telecom?.find((t) => t.system === 'email') && paymentLink) {
         await sendDepositRequestEmail(patient, appointment, services, depositAmount, paymentLink);
       }
 

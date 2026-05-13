@@ -99,13 +99,13 @@ describe('Well Known', () => {
     expect(res.body.introspection_endpoint).toBeDefined();
   });
 
-  test('Protected resource with custom request', async () => {
-    const res = await request(app).get(
-      '/.well-known/oauth-protected-resource?resource=http://localhost:8103/fhir/R4/Patient/123'
-    );
-    expect(res.status).toBe(200);
-    expect(res.body.resource).toBe('http://localhost:8103/fhir/R4/Patient/123');
-  });
+test('Protected resource with custom request', async () => {
+const res = await request(app).get(
+'/.well-known/oauth-protected-resource?resource=http://localhost:8104/fhir/R4/Patient/123'
+);
+expect(res.status).toBe(200);
+expect(res.body.resource).toBe('http://localhost:8104/fhir/R4/Patient/123');
+});
 
   test('Protected resource with invalid resource', async () => {
     const res = await request(app).get('/.well-known/oauth-protected-resource?resource=https://example.com/invalid');
