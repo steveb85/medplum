@@ -292,6 +292,7 @@ export type WorkerName =
   | 'reindex'
   | 'batch'
   | 'post-deploy-migration'
+  | 'reminder'
   | 'set-accounts';
 
 export interface MedplumWorkersConfig {

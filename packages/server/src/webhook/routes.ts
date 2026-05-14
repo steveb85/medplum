@@ -73,14 +73,18 @@ export const webhookHandler = async (req: Request, res: Response): Promise<void>
 
 export const webhookRouter = Router();
 
-// Bot webhooks (existing)
-webhookRouter.post('/:id', webhookHandler);
-
 // Stripe webhook for payment processing
 webhookRouter.post('/stripe', stripeWebhookHandler);
 
-// Stripe payment link creation (called from app)
+// Twilio webhooks for SMS
+webhookRouter.post('/twilio', twilioWebhookHandler);
+webhookRouter.post('/twilio/status', twilioStatusCallbackHandler);
+
+// Payment link endpoint
 webhookRouter.post('/create-payment-link', createPaymentLinkHandler);
+
+// Bot webhooks (existing) - generic catch-all must come last
+webhookRouter.post('/:id', webhookHandler);
 
 // Twilio webhooks for SMS
 webhookRouter.post('/twilio', twilioWebhookHandler);

@@ -508,6 +508,41 @@ export function BookingDetailPage(): ReactElement {
     load().catch(() => {});
   }, [loadData]);
 
+  // Poll for deposit status changes when payment is pending
+  useEffect(() => {
+    if (!patient || serviceRequests.length === 0) {
+      return;
+    }
+    if (depositInfo.status !== 'pending' && depositInfo.status !== 'requested') {
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const patientId = patient.id;
+        const firstServiceRequestId = serviceRequests[0]?.id;
+        const updatedInfo = await getDepositStatusFromAuditEvents(medplum, patientId, firstServiceRequestId);
+
+        if (updatedInfo.status !== depositInfo.status) {
+          console.log('[BookingDetailPage] Deposit status changed:', depositInfo.status, '→', updatedInfo.status);
+          setDepositInfo(updatedInfo);
+
+          if (updatedInfo.status === 'paid') {
+            showNotification({
+              title: 'Payment Received',
+              message: `Deposit of $${(updatedInfo.amount || 0).toFixed(2)} has been confirmed!`,
+              color: 'green',
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[BookingDetailPage] Polling error:', err);
+      }
+    }, 10000);
+
+    return () => clearInterval(intervalId);
+  }, [patient, serviceRequests, depositInfo.status, medplum]);
+
   // Load audit trail when serviceRequests change (avoids race condition with React state)
   useEffect(() => {
     const loadAuditTrail = async (): Promise<void> => {

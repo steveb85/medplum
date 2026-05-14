@@ -142,7 +142,20 @@ export async function twilioWebhookHandler(req: Request, res: Response): Promise
     // Check for common keywords
     const lowerBody = Body.toLowerCase().trim();
 
-    if (lowerBody.includes('cancel')) {
+    // Urgent keywords take priority
+    const urgentKeywords = ['pain', 'problem', 'hurts', 'hurting', 'bleeding', 'swelling', 'infection', 'emergency', 'urgent'];
+    const hasUrgentKeyword = urgentKeywords.some((kw) => lowerBody.includes(kw));
+
+    if (hasUrgentKeyword) {
+      autoResponse =
+        'We received your message and have flagged it for urgent review. A team member will contact you shortly. If this is a medical emergency, please call 911.';
+      logger.warn('Urgent patient SMS detected', {
+        patientId: patient.id,
+        messageSid: MessageSid,
+        body: Body,
+        matchedKeyword: urgentKeywords.find((kw) => lowerBody.includes(kw)),
+      });
+    } else if (lowerBody.includes('cancel')) {
       autoResponse =
         'We received your cancellation request. A coordinator will contact you shortly to confirm. Reply STOP to opt out of SMS notifications.';
     } else if (lowerBody.includes('reschedule')) {

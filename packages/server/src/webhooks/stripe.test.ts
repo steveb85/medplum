@@ -148,9 +148,19 @@ describe('Stripe Webhook Handler', () => {
           readResource: jest.fn().mockResolvedValue({
             resourceType: 'Appointment',
             id: 'test-123',
+            status: 'pending',
             extension: [],
           }),
           updateResource: jest.fn().mockResolvedValue({}),
+          readReference: jest.fn().mockResolvedValue({
+            resourceType: 'Patient',
+            id: 'patient-1',
+            name: [{ given: ['Jane'], family: 'Doe' }],
+            telecom: [
+              { system: 'phone', value: '555-1234' },
+              { system: 'email', value: 'jane@example.com' },
+            ],
+          }),
         };
         (getGlobalSystemRepo as jest.Mock).mockReturnValue(mockRepo);
 
@@ -189,9 +199,19 @@ describe('Stripe Webhook Handler', () => {
           readResource: jest.fn().mockResolvedValue({
             resourceType: 'Appointment',
             id: 'test-123',
+            status: 'pending',
             extension: [],
           }),
           updateResource: jest.fn().mockResolvedValue({}),
+          readReference: jest.fn().mockResolvedValue({
+            resourceType: 'Patient',
+            id: 'patient-1',
+            name: [{ given: ['Jane'], family: 'Doe' }],
+            telecom: [
+              { system: 'phone', value: '555-1234' },
+              { system: 'email', value: 'jane@example.com' },
+            ],
+          }),
         };
         (getGlobalSystemRepo as jest.Mock).mockReturnValue(mockRepo);
 
@@ -214,6 +234,7 @@ describe('Stripe Webhook Handler', () => {
         const mockAppointment = {
           resourceType: 'Appointment',
           id: 'test-123',
+          status: 'pending',
           extension: [
             {
               url: 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info',
@@ -228,6 +249,15 @@ describe('Stripe Webhook Handler', () => {
         const mockRepo = {
           readResource: jest.fn().mockResolvedValue(mockAppointment),
           updateResource: jest.fn().mockResolvedValue({}),
+          readReference: jest.fn().mockResolvedValue({
+            resourceType: 'Patient',
+            id: 'patient-1',
+            name: [{ given: ['Jane'], family: 'Doe' }],
+            telecom: [
+              { system: 'phone', value: '555-1234' },
+              { system: 'email', value: 'jane@example.com' },
+            ],
+          }),
         };
         (getGlobalSystemRepo as jest.Mock).mockReturnValue(mockRepo);
 
@@ -427,6 +457,147 @@ describe('Stripe Webhook Handler', () => {
       });
     });
 
+    describe('Payment auto-confirm', () => {
+      test('should change appointment status to booked on payment success', async () => {
+        mockReq = {
+          body: {
+            type: 'payment_intent.succeeded',
+            data: {
+              object: { id: 'pi_test', metadata: { appointmentId: 'test-123' } },
+            },
+          },
+          headers: { 'stripe-signature': 'test' },
+        } as Partial<Request>;
+
+        const mockAppointment = {
+          resourceType: 'Appointment',
+          id: 'test-123',
+          status: 'pending',
+          participant: [
+            { actor: { reference: 'Patient/patient-1' }, status: 'accepted' },
+          ],
+          extension: [],
+        };
+
+        const mockPatient = {
+          resourceType: 'Patient',
+          id: 'patient-1',
+          name: [{ given: ['Jane'], family: 'Doe' }],
+          telecom: [
+            { system: 'phone', value: '555-1234' },
+            { system: 'email', value: 'jane@example.com' },
+          ],
+        };
+
+        const mockRepo = {
+          readResource: jest.fn().mockResolvedValue(mockAppointment),
+          updateResource: jest.fn().mockResolvedValue({}),
+          readReference: jest.fn().mockResolvedValue(mockPatient),
+        };
+        (getGlobalSystemRepo as jest.Mock).mockReturnValue(mockRepo);
+
+        await stripeWebhookHandler(mockReq as Request, mockRes as Response);
+
+        // Verify appointment status was changed to booked
+        expect(mockRepo.updateResource).toHaveBeenCalledWith(
+          expect.objectContaining({ status: 'booked' })
+        );
+      });
+
+      test('should handle patient without contact info', async () => {
+        mockReq = {
+          body: {
+            type: 'payment_intent.succeeded',
+            data: {
+              object: { id: 'pi_test', metadata: { appointmentId: 'test-123' } },
+            },
+          },
+          headers: { 'stripe-signature': 'test' },
+        } as Partial<Request>;
+
+        const mockAppointment = {
+          resourceType: 'Appointment',
+          id: 'test-123',
+          status: 'pending',
+          participant: [
+            { actor: { reference: 'Patient/patient-1' }, status: 'accepted' },
+          ],
+          extension: [],
+        };
+
+        const mockPatient = {
+          resourceType: 'Patient',
+          id: 'patient-1',
+          name: [{ given: ['Jane'], family: 'Doe' }],
+          telecom: [],
+        };
+
+        const mockRepo = {
+          readResource: jest.fn().mockResolvedValue(mockAppointment),
+          updateResource: jest.fn().mockResolvedValue({}),
+          readReference: jest.fn().mockResolvedValue(mockPatient),
+        };
+        (getGlobalSystemRepo as jest.Mock).mockReturnValue(mockRepo);
+
+        await stripeWebhookHandler(mockReq as Request, mockRes as Response);
+
+        // Should still succeed even without contact info
+        expect(mockRepo.updateResource).toHaveBeenCalledWith(
+          expect.objectContaining({ status: 'booked' })
+        );
+        expect(jsonMock).toHaveBeenCalledWith({ received: true, status: 'paid' });
+      });
+
+      test('should confirm booking via checkout.session.completed', async () => {
+        mockReq = {
+          body: {
+            type: 'checkout.session.completed',
+            data: {
+              object: {
+                id: 'cs_test',
+                payment_intent: 'pi_test',
+                metadata: { appointmentId: 'test-123' },
+              },
+            },
+          },
+          headers: { 'stripe-signature': 'test' },
+        } as Partial<Request>;
+
+        const mockAppointment = {
+          resourceType: 'Appointment',
+          id: 'test-123',
+          status: 'pending',
+          participant: [
+            { actor: { reference: 'Patient/patient-1' }, status: 'accepted' },
+          ],
+          extension: [],
+        };
+
+        const mockPatient = {
+          resourceType: 'Patient',
+          id: 'patient-1',
+          name: [{ given: ['Jane'], family: 'Doe' }],
+          telecom: [
+            { system: 'phone', value: '555-1234' },
+          ],
+        };
+
+        const mockRepo = {
+          readResource: jest.fn().mockResolvedValue(mockAppointment),
+          updateResource: jest.fn().mockResolvedValue({}),
+          readReference: jest.fn().mockResolvedValue(mockPatient),
+        };
+        (getGlobalSystemRepo as jest.Mock).mockReturnValue(mockRepo);
+
+        await stripeWebhookHandler(mockReq as Request, mockRes as Response);
+
+        expect(mockRepo.updateResource).toHaveBeenCalledWith(
+          expect.objectContaining({ status: 'booked' })
+        );
+        expect(jsonMock).toHaveBeenCalledWith({ received: true, status: 'paid' });
+      });
+    });
+
     describe('checkout.session.completed', () => {
       test('should extract appointmentId from session metadata', async () => {
         mockReq = {
@@ -446,12 +617,22 @@ describe('Stripe Webhook Handler', () => {
         const mockAppointment = {
           resourceType: 'Appointment',
           id: 'test-123',
+          status: 'pending',
           extension: [],
         };
 
         const mockRepo = {
           readResource: jest.fn().mockResolvedValue(mockAppointment),
           updateResource: jest.fn().mockResolvedValue({}),
+          readReference: jest.fn().mockResolvedValue({
+            resourceType: 'Patient',
+            id: 'patient-1',
+            name: [{ given: ['Jane'], family: 'Doe' }],
+            telecom: [
+              { system: 'phone', value: '555-1234' },
+              { system: 'email', value: 'jane@example.com' },
+            ],
+          }),
         };
         (getGlobalSystemRepo as jest.Mock).mockReturnValue(mockRepo);
 
@@ -478,12 +659,22 @@ describe('Stripe Webhook Handler', () => {
         const mockAppointment = {
           resourceType: 'Appointment',
           id: 'test-123',
+          status: 'pending',
           extension: [],
         };
 
         const mockRepo = {
           readResource: jest.fn().mockResolvedValue(mockAppointment),
           updateResource: jest.fn().mockResolvedValue({}),
+          readReference: jest.fn().mockResolvedValue({
+            resourceType: 'Patient',
+            id: 'patient-1',
+            name: [{ given: ['Jane'], family: 'Doe' }],
+            telecom: [
+              { system: 'phone', value: '555-1234' },
+              { system: 'email', value: 'jane@example.com' },
+            ],
+          }),
         };
         (getGlobalSystemRepo as jest.Mock).mockReturnValue(mockRepo);
 

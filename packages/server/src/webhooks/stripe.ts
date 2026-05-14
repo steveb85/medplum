@@ -5,8 +5,9 @@
 
 import type { Request, Response } from 'express';
 import { getGlobalSystemRepo } from '../fhir/repo';
-import type { Appointment, Extension } from '@medplum/fhirtypes';
+import type { Appointment, Extension, Patient } from '@medplum/fhirtypes';
 import { getLogger } from '../logger';
+import { sendPaymentConfirmationSMS, sendPaymentConfirmationEmail } from './notifications';
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
@@ -94,6 +95,82 @@ function buildDepositInfoExtensions(depositInfo: {
   };
 }
 
+async function confirmBookingOnPayment(
+  appointmentId: string,
+  paymentIntentId: string,
+  paymentMethod: string,
+  logger: ReturnType<typeof getLogger>
+): Promise<void> {
+  const repo = getGlobalSystemRepo();
+
+  // Read the appointment
+  const appointment = await repo.readResource<Appointment>('Appointment', appointmentId);
+
+  // Get existing deposit info for amount
+  const existingExt = appointment.extension?.find(
+    (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
+  );
+  const amount = existingExt?.extension?.find((e) => e.url === 'amount')?.valueInteger ?? 0;
+
+  // Update deposit status
+  const depositExt = buildDepositInfoExtensions({
+    status: 'paid',
+    amount,
+    paidAt: new Date(),
+    paymentIntentId,
+    paymentMethod,
+  });
+
+  const existingExts = appointment.extension?.filter(
+    (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
+  ) || [];
+
+  // Update appointment status to booked and deposit info
+  const updatedAppointment: Appointment = {
+    ...appointment,
+    status: 'booked',
+    extension: [...existingExts, depositExt],
+  };
+
+  await repo.updateResource(updatedAppointment);
+  logger.info('Booking confirmed on payment', { appointmentId, paymentIntentId });
+
+  // Send confirmation notifications
+  try {
+    // Get patient info for notifications
+    const patientRef = appointment.participant?.find(
+      (p) => p.actor?.reference?.startsWith('Patient/')
+    )?.actor;
+    if (patientRef?.reference) {
+      const patient = await repo.readReference<Patient>(patientRef as any);
+      const patientName = patient.name?.[0]?.given?.[0] || 'Patient';
+      const phone = patient.telecom?.find((t) => t.system === 'phone')?.value;
+      const email = patient.telecom?.find((t) => t.system === 'email')?.value;
+
+      const appointmentDate = appointment.start
+        ? new Date(appointment.start).toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : 'your scheduled date';
+
+      // Send SMS if phone available
+      if (phone) {
+        await sendPaymentConfirmationSMS(phone, patientName, appointmentDate);
+      }
+
+      // Send email if email available
+      if (email) {
+        await sendPaymentConfirmationEmail(email, patientName, appointmentDate, amount);
+      }
+    }
+  } catch (notifErr) {
+    logger.error('Error sending payment confirmation notifications', { error: notifErr, appointmentId });
+  }
+}
+
 /**
  * Handle Stripe webhook
  */
@@ -120,8 +197,6 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
     const event = req.body as StripeEvent;
     logger.info('Stripe webhook received', { eventType: event.type, eventId: event.id });
 
-    const repo = getGlobalSystemRepo();
-
     switch (event.type) {
       case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object as StripePaymentIntent;
@@ -133,39 +208,7 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
           return;
         }
 
-        // Update appointment
-        const appointment = await repo.readResource<Appointment>('Appointment', appointmentId);
-
-        // Get existing deposit info
-        const existingExt = appointment.extension?.find(
-          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        );
-        const amount = existingExt?.extension?.find((e) => e.url === 'amount')?.valueInteger ?? 0;
-
-        // Update deposit status
-        const depositExt = buildDepositInfoExtensions({
-          status: 'paid',
-          amount,
-          paidAt: new Date(),
-          paymentIntentId: paymentIntent.id,
-          paymentMethod: 'stripe',
-        });
-
-        // Remove existing deposit extension
-        const existingExts = appointment.extension?.filter(
-          (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        ) || [];
-
-        const updatedAppointment: Appointment = {
-          ...appointment,
-          extension: [...existingExts, depositExt],
-        };
-
-        await repo.updateResource(updatedAppointment);
-        logger.info('Deposit marked as paid', { appointmentId, paymentIntentId: paymentIntent.id });
-
-        // TODO: Send confirmation notification to patient
-        // This would integrate with Twilio/Resend
+        await confirmBookingOnPayment(appointmentId, paymentIntent.id, 'stripe', logger);
 
         res.json({ received: true, status: 'paid' });
         break;
@@ -181,37 +224,7 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
           return;
         }
 
-        // Update appointment
-        const appointment = await repo.readResource<Appointment>('Appointment', appointmentId);
-
-        // Get existing deposit info
-        const existingExt = appointment.extension?.find(
-          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        );
-        const amount = existingExt?.extension?.find((e) => e.url === 'amount')?.valueInteger ??
-          (session.amount_total ? session.amount_total / 100 : 0);
-
-        // Update deposit status
-        const depositExt = buildDepositInfoExtensions({
-          status: 'paid',
-          amount,
-          paidAt: new Date(),
-          paymentIntentId: session.payment_intent,
-          paymentMethod: 'stripe_checkout',
-        });
-
-        // Remove existing deposit extension
-        const existingExts = appointment.extension?.filter(
-          (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info'
-        ) || [];
-
-        const updatedAppointment: Appointment = {
-          ...appointment,
-          extension: [...existingExts, depositExt],
-        };
-
-        await repo.updateResource(updatedAppointment);
-        logger.info('Deposit marked as paid via checkout', { appointmentId, sessionId: session.id });
+        await confirmBookingOnPayment(appointmentId, session.payment_intent, 'stripe_checkout', logger);
 
         res.json({ received: true, status: 'paid' });
         break;
@@ -223,7 +236,6 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
 
         if (appointmentId) {
           logger.warn('Payment failed', { appointmentId, paymentIntentId: paymentIntent.id });
-          // Optionally notify staff about failed payment
         }
 
         res.json({ received: true, status: 'failed' });

@@ -10,6 +10,7 @@ import { addDispatchJobs, initDispatchWorker } from './dispatch';
 import { initDownloadWorker } from './download';
 import { initPostDeployMigrationWorker } from './post-deploy-migration';
 import { initReindexWorker } from './reindex';
+import { initReminderWorker } from './reminders';
 import { initSetAccountsWorker } from './set-accounts';
 import { initSubscriptionWorker } from './subscription';
 import type { WorkerInitializer } from './utils';
@@ -23,6 +24,7 @@ const workerDefs: { name: WorkerName; init: WorkerInitializer }[] = [
   { name: 'reindex', init: initReindexWorker },
   { name: 'batch', init: initBatchWorker },
   { name: 'post-deploy-migration', init: initPostDeployMigrationWorker },
+  { name: 'reminder', init: initReminderWorker },
   { name: 'set-accounts', init: initSetAccountsWorker },
 ];
 

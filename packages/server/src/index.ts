@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import express from 'express';
 import gracefulShutdown from 'http-graceful-shutdown';
+import dotenv from 'dotenv';
 import { initApp, shutdownApp } from './app';
 import { loadConfig } from './config/loader';
 import { globalLogger } from './logger';
 import { getServerVersion } from './util/version';
+
+// Load environment variables from .env file
+dotenv.config();
 export async function main(configName: string): Promise<void> {
   process.on('unhandledRejection', (err: any) => {
     globalLogger.error('Unhandled promise rejection', err);
