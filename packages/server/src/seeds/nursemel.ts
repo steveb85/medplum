@@ -272,6 +272,9 @@ async function createProviderAccessPolicy(systemRepo: SystemRepository, project:
       { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
       // Equipment management
       { resourceType: 'Device', interaction: ['read', 'vread', 'search'] },
+      // Numbing tasks and audit events
+      { resourceType: 'Task', interaction: ['read', 'vread', 'create', 'update', 'search'] },
+      { resourceType: 'AuditEvent', interaction: ['read', 'vread', 'create', 'search'] },
     ],
   });
 
@@ -330,6 +333,9 @@ async function createCoordinatorAccessPolicy(systemRepo: SystemRepository, proje
       { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
       // Equipment management
       { resourceType: 'Device', interaction: ['read', 'vread', 'search'] },
+      // Numbing tasks and audit events
+      { resourceType: 'Task', interaction: ['read', 'vread', 'create', 'search'] },
+      { resourceType: 'AuditEvent', interaction: ['read', 'vread', 'search'] },
     ],
   });
 
@@ -388,6 +394,9 @@ async function createProjectAdminAccessPolicy(systemRepo: SystemRepository, proj
       { resourceType: 'UserConfiguration', interaction: ['read', 'vread', 'create', 'update', 'search'] },
       // Equipment management (admin full access)
       { resourceType: 'Device', interaction: ['read', 'vread', 'create', 'update', 'search'] },
+      // Numbing tasks and audit events
+      { resourceType: 'Task', interaction: ['read', 'vread', 'create', 'update', 'search'] },
+      { resourceType: 'AuditEvent', interaction: ['read', 'vread', 'create', 'search'] },
     ],
   });
 
@@ -441,6 +450,9 @@ async function createAssistantAccessPolicy(systemRepo: SystemRepository, project
       { resourceType: 'Immunization', interaction: ['read', 'vread', 'search'] },
       // Service catalog (ActivityDefinitions) - needed for booking
       { resourceType: 'ActivityDefinition', interaction: ['read', 'vread', 'search'] },
+      // Numbing tasks and audit events
+      { resourceType: 'Task', interaction: ['read', 'vread', 'create', 'update', 'search'] },
+      { resourceType: 'AuditEvent', interaction: ['read', 'vread', 'create', 'search'] },
     ],
   });
 

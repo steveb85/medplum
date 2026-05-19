@@ -165,7 +165,7 @@ async function send24hReminders(): Promise<void> {
     }
 
     await setExtension(appt, REMINDER_24H_EXT);
-    logger.info('24h reminder sent', { appointmentId: appt.id, patientName });
+    logger.info('24h reminder sent', { appointmentId: appt.id });
   }
 }
 
@@ -226,7 +226,7 @@ async function send2hReminders(): Promise<void> {
     }
 
     await setExtension(appt, REMINDER_2H_EXT);
-    logger.info('2h reminder sent', { appointmentId: appt.id, patientName });
+    logger.info('2h reminder sent', { appointmentId: appt.id });
   }
 }
 

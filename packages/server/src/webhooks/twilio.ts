@@ -110,7 +110,7 @@ export async function twilioWebhookHandler(req: Request, res: Response): Promise
     const body = req.body as TwilioWebhookBody;
     const { MessageSid, From, To, Body } = body;
 
-    logger.info('Twilio SMS received', { messageSid: MessageSid, from: From });
+    logger.info('Twilio SMS received', { messageSid: MessageSid });
 
     // Verify this is from Twilio (check signature)
     // TODO: Implement Twilio signature verification
@@ -122,7 +122,7 @@ export async function twilioWebhookHandler(req: Request, res: Response): Promise
     const patient = await findPatientByPhone(From);
 
     if (!patient) {
-      logger.warn('SMS from unknown number', { from: From });
+      logger.warn('SMS from unknown number', { messageSid: MessageSid });
       // Still respond with TwiML to acknowledge receipt
       res.set('Content-Type', 'text/xml');
       res.send(`<?xml version="1.0" encoding="UTF-8"?>
@@ -152,7 +152,6 @@ export async function twilioWebhookHandler(req: Request, res: Response): Promise
       logger.warn('Urgent patient SMS detected', {
         patientId: patient.id,
         messageSid: MessageSid,
-        body: Body,
         matchedKeyword: urgentKeywords.find((kw) => lowerBody.includes(kw)),
       });
     } else if (lowerBody.includes('cancel')) {

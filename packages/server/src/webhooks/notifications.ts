@@ -41,7 +41,7 @@ export async function sendSMS(phone: string, message: string, logLabel?: string)
       const error = await response.text();
       getLogger().error('Failed to send SMS', { error, label: logLabel });
     } else {
-      getLogger().info('SMS sent', { to: phone, label: logLabel });
+      getLogger().info('SMS sent', { label: logLabel });
     }
   } catch (err) {
     getLogger().error('Error sending SMS', { error: err, label: logLabel });
@@ -87,7 +87,7 @@ export async function sendEmail(
       const error = await response.text();
       getLogger().error('Failed to send email', { error, label: logLabel });
     } else {
-      getLogger().info('Email sent', { to: email, label: logLabel });
+      getLogger().info('Email sent', { label: logLabel });
     }
   } catch (err) {
     getLogger().error('Error sending email', { error: err, label: logLabel });
