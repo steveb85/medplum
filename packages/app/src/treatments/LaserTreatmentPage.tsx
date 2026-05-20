@@ -6,7 +6,7 @@ import { Alert, Badge, Button, Divider, Group, Paper, Select, Stack, Text, Texta
 import { showNotification } from '@mantine/notifications';
 import { normalizeErrorString } from '@medplum/core';
 import { Document, Loading, useMedplum } from '@medplum/react';
-import type { Appointment } from '@medplum/fhirtypes';
+import type { Appointment, Procedure } from '@medplum/fhirtypes';
 import { IconEdit } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useState, useCallback, useEffect } from 'react';
@@ -15,6 +15,7 @@ import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
+import { EXTENSION_URLS } from '../utils/fhir-extensions';
 // NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
 
 // Laser types
@@ -76,6 +77,7 @@ export function LaserTreatmentPage(): JSX.Element {
     loading,
     saving,
     user,
+    setProcedure,
     handleBeginTreatment,
     handleCompleteTreatment,
     handleBeforePhotoUpload,
@@ -137,6 +139,74 @@ export function LaserTreatmentPage(): JSX.Element {
     }
   }, [procedure, medplum]);
 
+  const handleAddSession = useCallback((): void => {
+    const newSession: LaserSession = {
+      id: `session-${Date.now()}`,
+      area: '',
+      laserType: '',
+      settings: '',
+      passes: 1,
+      skinType: '',
+      notes: '',
+    };
+    setSessions((prev) => [...prev, newSession]);
+  }, []);
+
+  const handleUpdateSession = useCallback((id: string, updates: Partial<LaserSession>): void => {
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+  }, []);
+
+  const handleRemoveSession = useCallback((id: string): void => {
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  const handleSave = useCallback(async (): Promise<void> => {
+    if (!procedure) return;
+
+    try {
+      const updated: Procedure = {
+        ...procedure,
+        extension: [
+          ...(procedure.extension?.filter(
+            (e) =>
+              e.url !== EXTENSION_URLS.procedure.laserSessions &&
+              e.url !== EXTENSION_URLS.procedure.treatmentNotes &&
+              e.url !== EXTENSION_URLS.procedure.recommendedSessions
+          ) || []),
+          {
+            url: EXTENSION_URLS.procedure.laserSessions,
+            valueString: JSON.stringify(sessions),
+          },
+          {
+            url: EXTENSION_URLS.procedure.recommendedSessions,
+            valueInteger: recommendedSessions,
+          },
+          {
+            url: EXTENSION_URLS.procedure.treatmentNotes,
+            valueString: generalNotes,
+          },
+        ],
+      };
+
+      const saved = await medplum.updateResource(updated);
+      setProcedure(saved);
+
+      showNotification({
+        title: 'Saved',
+        message: 'Laser treatment details saved',
+        color: 'green',
+      });
+    } catch (err) {
+      showNotification({
+        title: 'Error',
+        message: normalizeErrorString(err),
+        color: 'red',
+      });
+    }
+  }, [procedure, sessions, recommendedSessions, generalNotes, medplum]);
+
+  const completedSessions = sessions.length;
+
   // Must have a procedureId
   if (!procedureId) {
     return (
@@ -160,47 +230,6 @@ export function LaserTreatmentPage(): JSX.Element {
       </Document>
     );
   }
-
-  const handleAddSession = (): void => {
-    const newSession: LaserSession = {
-      id: `session-${Date.now()}`,
-      area: '',
-      laserType: '',
-      settings: '',
-      passes: 1,
-      skinType: '',
-      notes: '',
-    };
-    setSessions([...sessions, newSession]);
-  };
-
-  const handleUpdateSession = (id: string, updates: Partial<LaserSession>): void => {
-    setSessions(sessions.map((s) => (s.id === id ? { ...s, ...updates } : s)));
-  };
-
-  const handleRemoveSession = (id: string): void => {
-    setSessions(sessions.filter((s) => s.id !== id));
-  };
-
-  const handleSave = useCallback(async (): Promise<void> => {
-    if (!procedure) return;
-
-    try {
-      showNotification({
-        title: 'Saved',
-        message: 'Laser treatment details saved',
-        color: 'green',
-      });
-    } catch (err) {
-      showNotification({
-        title: 'Error',
-        message: normalizeErrorString(err),
-        color: 'red',
-      });
-    }
-  }, [procedure]);
-
-  const completedSessions = sessions.length;
 
   return (
     <Document>

@@ -4,16 +4,17 @@
 import { Alert, Button, Divider, Group, Paper, Stack, Text, Textarea, Title } from '@mantine/core';
 import { showNotification } from '@mantine/notifications';
 import { normalizeErrorString } from '@medplum/core';
-import { Document, Loading } from '@medplum/react';
+import { Document, Loading, useMedplum } from '@medplum/react';
 import { IconCamera, IconEdit } from '@tabler/icons-react';
-import type { Appointment } from '@medplum/fhirtypes';
+import type { Appointment, Procedure } from '@medplum/fhirtypes';
 import type { JSX } from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
+import { EXTENSION_URLS } from '../utils/fhir-extensions';
 // NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
 
 export function ConsultationTreatmentPage(): JSX.Element {
@@ -28,6 +29,7 @@ export function ConsultationTreatmentPage(): JSX.Element {
     loading,
     saving,
     user,
+    setProcedure,
     handleBeginTreatment,
     handleCompleteTreatment,
     handleBeforePhotoUpload,
@@ -40,6 +42,7 @@ export function ConsultationTreatmentPage(): JSX.Element {
     canUploadBeforePhotos,
     canUploadAfterPhotos,
   } = useTreatmentData();
+  const medplum = useMedplum();
 
   // Local state for consultation notes
   const [notes, setNotes] = useState('');
@@ -47,6 +50,90 @@ export function ConsultationTreatmentPage(): JSX.Element {
   const [followUpDate, setFollowUpDate] = useState('');
   const [appointment, setAppointment] = useState<Appointment | undefined>();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Load existing data from procedure
+  useEffect(() => {
+    if (procedure) {
+      const notesExt = procedure.extension?.find(
+        (e) => e.url === EXTENSION_URLS.procedure.consultationNotes
+      );
+      if (notesExt?.valueString) {
+        setNotes(notesExt.valueString);
+      }
+
+      const recExt = procedure.extension?.find(
+        (e) => e.url === EXTENSION_URLS.procedure.recommendations
+      );
+      if (recExt?.valueString) {
+        setRecommendations(recExt.valueString);
+      }
+
+      const followUpExt = procedure.extension?.find(
+        (e) => e.url === EXTENSION_URLS.procedure.followUpDate
+      );
+      if (followUpExt?.valueString) {
+        setFollowUpDate(followUpExt.valueString);
+      }
+
+      // Load linked appointment
+      const linkedAppointmentRef = procedure.extension?.find(
+        (e) => e.url === EXTENSION_URLS.common.linkedAppointment
+      )?.valueReference?.reference;
+      if (linkedAppointmentRef?.startsWith('Appointment/')) {
+        const appointmentId = linkedAppointmentRef.split('/')[1];
+        medplum.readResource('Appointment', appointmentId)
+          .then((apt) => setAppointment(apt))
+          .catch((err) => console.error('Error loading appointment:', err));
+      }
+    }
+  }, [procedure, medplum]);
+
+  const handleSaveNotes = useCallback(async (): Promise<void> => {
+    if (!procedure) return;
+
+    try {
+      const updated: Procedure = {
+        ...procedure,
+        extension: [
+          ...(procedure.extension?.filter(
+            (e) =>
+              e.url !== EXTENSION_URLS.procedure.consultationNotes &&
+              e.url !== EXTENSION_URLS.procedure.recommendations &&
+              e.url !== EXTENSION_URLS.procedure.followUpDate
+          ) || []),
+          {
+            url: EXTENSION_URLS.procedure.consultationNotes,
+            valueString: notes,
+          },
+          {
+            url: EXTENSION_URLS.procedure.recommendations,
+            valueString: recommendations,
+          },
+          ...(followUpDate
+            ? [{
+                url: EXTENSION_URLS.procedure.followUpDate,
+                valueString: followUpDate,
+              }]
+            : []),
+        ],
+      };
+
+      const saved = await medplum.updateResource(updated);
+      setProcedure(saved);
+
+      showNotification({
+        title: 'Notes Saved',
+        message: 'Consultation notes have been saved',
+        color: 'green',
+      });
+    } catch (err) {
+      showNotification({
+        title: 'Error',
+        message: normalizeErrorString(err),
+        color: 'red',
+      });
+    }
+  }, [procedure, notes, recommendations, followUpDate, medplum]);
 
   // Must have a procedureId
   if (!procedureId) {
@@ -71,23 +158,6 @@ export function ConsultationTreatmentPage(): JSX.Element {
       </Document>
     );
   }
-
-  const handleSaveNotes = useCallback(async (): Promise<void> => {
-    // Save notes to procedure extension
-    try {
-      showNotification({
-        title: 'Notes Saved',
-        message: 'Consultation notes have been saved',
-        color: 'green',
-      });
-    } catch (err) {
-      showNotification({
-        title: 'Error',
-        message: normalizeErrorString(err),
-        color: 'red',
-      });
-    }
-  }, []);
 
   return (
     <Document>

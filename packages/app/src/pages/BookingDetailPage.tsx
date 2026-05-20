@@ -40,6 +40,7 @@ import { ConsentModal } from '../components/ConsentModal';
 import { CreateAppointmentModalV3 } from '../components/CreateAppointmentModalV3';
 import type { ServiceCardData, ServiceStatus } from '../components/ServiceCard';
 import { ServiceCard } from '../components/ServiceCard';
+import { normalizeErrorString } from '@medplum/core';
 import {
   getDepositStatusFromAuditEvents,
   parseEntityDetails,
@@ -345,9 +346,45 @@ export function BookingDetailPage(): ReactElement {
     [patient, serviceRequests, medplum]
   );
 
-  const handleUpdateTreatmentData = useCallback((serviceRequestId: string, data: Record<string, unknown>) => {
-    console.log('Update treatment data:', serviceRequestId, data);
-  }, []);
+  const handleUpdateTreatmentData = useCallback(async (serviceRequestId: string, data: Record<string, unknown>) => {
+    try {
+      const sr = serviceRequests.find((s) => s.id === serviceRequestId);
+      if (!sr) {
+        console.error('ServiceRequest not found:', serviceRequestId);
+        return;
+      }
+
+      const updated: ServiceRequest = {
+        ...sr,
+        extension: [
+          ...(sr.extension?.filter(
+            (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-notes'
+          ) || []),
+          {
+            url: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
+            valueString: JSON.stringify(data),
+          },
+        ],
+      };
+
+      const saved = await medplum.updateResource(updated);
+      setServiceRequests((prev) =>
+        prev.map((s) => (s.id === serviceRequestId ? saved : s))
+      );
+
+      showNotification({
+        title: 'Saved',
+        message: 'Treatment data saved',
+        color: 'green',
+      });
+    } catch (err) {
+      showNotification({
+        title: 'Error',
+        message: normalizeErrorString(err),
+        color: 'red',
+      });
+    }
+  }, [serviceRequests, medplum]);
 
   const handleUploadPhotos = useCallback((serviceRequestId: string) => {
     console.log('Upload photos:', serviceRequestId);
@@ -520,6 +557,7 @@ export function BookingDetailPage(): ReactElement {
     const intervalId = setInterval(async () => {
       try {
         const patientId = patient.id;
+        if (!patientId) return;
         const firstServiceRequestId = serviceRequests[0]?.id;
         const updatedInfo = await getDepositStatusFromAuditEvents(medplum, patientId, firstServiceRequestId);
 

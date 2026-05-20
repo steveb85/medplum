@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from 'react-router';
 import { showNotification } from '@mantine/notifications';
 import { getReferenceString, normalizeErrorString, createReference } from '@medplum/core';
 import { useMedplum } from '@medplum/react';
+import type { Dispatch, SetStateAction } from 'react';
 import type { Patient, Practitioner, Procedure, Media, Attachment, Reference } from '@medplum/fhirtypes';
 import { getMedSpaRole } from '../../auth/role';
 import { createNotification } from '../../notifications/utils';
@@ -22,6 +23,7 @@ export interface TreatmentData {
   user: Practitioner | undefined;
   patientId: string;
   procedureId: string | null;
+  setProcedure: Dispatch<SetStateAction<Procedure | undefined>>;
 }
 
 export interface TreatmentActions {
@@ -376,6 +378,7 @@ export function useTreatmentData(): TreatmentData & TreatmentActions {
     user,
     patientId,
     procedureId,
+    setProcedure,
     loadTreatment,
     handleBeginTreatment,
     handleCompleteTreatment,

@@ -41,6 +41,21 @@ export const EXTENSION_URLS = {
     depositInfo: 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info',
     practitionerColor: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
   },
+  // Procedure (treatment) extensions
+  procedure: {
+    fillerEntries: 'http://melissaknudson.com/fhir/StructureDefinition/filler-entries',
+    laserSessions: 'http://melissaknudson.com/fhir/StructureDefinition/laser-sessions',
+    treatmentNotes: 'http://melissaknudson.com/fhir/StructureDefinition/treatment-notes',
+    recommendedSessions: 'http://melissaknudson.com/fhir/StructureDefinition/recommended-sessions',
+    treatmentAreas: 'http://melissaknudson.com/fhir/StructureDefinition/treatment-areas',
+    unitsUsed: 'http://melissaknudson.com/fhir/StructureDefinition/units-used',
+    productBrand: 'http://melissaknudson.com/fhir/StructureDefinition/product-brand',
+    injectionMap: 'http://melissaknudson.com/fhir/StructureDefinition/injection-map',
+    relatedProcedure: 'http://melissaknudson.com/fhir/StructureDefinition/related-procedure',
+    consultationNotes: 'http://melissaknudson.com/fhir/StructureDefinition/consultation-notes',
+    recommendations: 'http://melissaknudson.com/fhir/StructureDefinition/recommendations',
+    followUpDate: 'http://melissaknudson.com/fhir/StructureDefinition/follow-up-date',
+  },
 } as const;
 
 // ============================================================================

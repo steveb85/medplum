@@ -6,7 +6,7 @@ import { Alert, Badge, Button, Divider, Group, Paper, Select, Stack, Text, Texta
 import { showNotification } from '@mantine/notifications';
 import { normalizeErrorString } from '@medplum/core';
 import { Document, Loading, useMedplum } from '@medplum/react';
-import type { Appointment } from '@medplum/fhirtypes';
+import type { Appointment, Procedure } from '@medplum/fhirtypes';
 import { IconEdit } from '@tabler/icons-react';
 import type { JSX } from 'react';
 import { useState, useCallback, useEffect } from 'react';
@@ -15,6 +15,7 @@ import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
+import { EXTENSION_URLS } from '../utils/fhir-extensions';
 // NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
 
 // Filler areas
@@ -67,6 +68,7 @@ export function FillerTreatmentPage(): JSX.Element {
     loading,
     saving,
     user,
+    setProcedure,
     handleBeginTreatment,
     handleCompleteTreatment,
     handleBeforePhotoUpload,
@@ -123,6 +125,65 @@ export function FillerTreatmentPage(): JSX.Element {
     }
   }, [procedure, medplum]);
 
+  const handleAddFiller = useCallback((): void => {
+    const newEntry: FillerEntry = {
+      id: `filler-${Date.now()}`,
+      area: '',
+      product: '',
+      volume: 0.5,
+      notes: '',
+    };
+    setFillers((prev) => [...prev, newEntry]);
+  }, []);
+
+  const handleUpdateFiller = useCallback((id: string, updates: Partial<FillerEntry>): void => {
+    setFillers((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
+  }, []);
+
+  const handleRemoveFiller = useCallback((id: string): void => {
+    setFillers((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+
+  const handleSave = useCallback(async (): Promise<void> => {
+    if (!procedure) return;
+
+    try {
+      const updated: Procedure = {
+        ...procedure,
+        extension: [
+          ...(procedure.extension?.filter(
+            (e) =>
+              e.url !== EXTENSION_URLS.procedure.fillerEntries &&
+              e.url !== EXTENSION_URLS.procedure.treatmentNotes
+          ) || []),
+          {
+            url: EXTENSION_URLS.procedure.fillerEntries,
+            valueString: JSON.stringify(fillers),
+          },
+          {
+            url: EXTENSION_URLS.procedure.treatmentNotes,
+            valueString: generalNotes,
+          },
+        ],
+      };
+
+      const saved = await medplum.updateResource(updated);
+      setProcedure(saved);
+
+      showNotification({
+        title: 'Saved',
+        message: 'Filler treatment details saved',
+        color: 'green',
+      });
+    } catch (err) {
+      showNotification({
+        title: 'Error',
+        message: normalizeErrorString(err),
+        color: 'red',
+      });
+    }
+  }, [procedure, fillers, generalNotes, medplum]);
+
   // Must have a procedureId
   if (!procedureId) {
     return (
@@ -146,44 +207,6 @@ export function FillerTreatmentPage(): JSX.Element {
       </Document>
     );
   }
-
-  const handleAddFiller = (): void => {
-    const newEntry: FillerEntry = {
-      id: `filler-${Date.now()}`,
-      area: '',
-      product: '',
-      volume: 0.5,
-      notes: '',
-    };
-    setFillers([...fillers, newEntry]);
-  };
-
-  const handleUpdateFiller = (id: string, updates: Partial<FillerEntry>): void => {
-    setFillers(fillers.map((f) => (f.id === id ? { ...f, ...updates } : f)));
-  };
-
-  const handleRemoveFiller = (id: string): void => {
-    setFillers(fillers.filter((f) => f.id !== id));
-  };
-
-  const handleSave = useCallback(async (): Promise<void> => {
-    if (!procedure) return;
-
-    try {
-      // Save to procedure
-      showNotification({
-        title: 'Saved',
-        message: 'Filler treatment details saved',
-        color: 'green',
-      });
-    } catch (err) {
-      showNotification({
-        title: 'Error',
-        message: normalizeErrorString(err),
-        color: 'red',
-      });
-    }
-  }, [procedure]);
 
   const totalVolume = fillers.reduce((sum, f) => sum + (f.volume || 0), 0);
 
