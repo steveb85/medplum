@@ -55,6 +55,12 @@ export const EXTENSION_URLS = {
     consultationNotes: 'http://melissaknudson.com/fhir/StructureDefinition/consultation-notes',
     recommendations: 'http://melissaknudson.com/fhir/StructureDefinition/recommendations',
     followUpDate: 'http://melissaknudson.com/fhir/StructureDefinition/follow-up-date',
+    // SOAP Note
+    soapNote: 'http://melissaknudson.com/fhir/StructureDefinition/soap-note',
+    // Procedure Note (CMS 11-line-item)
+    procedureNote: 'http://melissaknudson.com/fhir/StructureDefinition/procedure-note',
+    // Patient reference panel
+    patientRefLastReviewed: 'http://melissaknudson.com/fhir/StructureDefinition/patient-ref-last-reviewed',
   },
 } as const;
 
