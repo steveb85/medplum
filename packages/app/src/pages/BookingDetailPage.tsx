@@ -33,11 +33,12 @@ import {
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import type { ReactElement } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getMedSpaRole } from '../auth/role';
 import { ConsentModal } from '../components/ConsentModal';
 import { CreateAppointmentModalV3 } from '../components/CreateAppointmentModalV3';
+import { TreatmentModal } from '../components/TreatmentModal';
 import type { ServiceCardData, ServiceStatus } from '../components/ServiceCard';
 import { ServiceCard } from '../components/ServiceCard';
 import { normalizeErrorString } from '@medplum/core';
@@ -57,6 +58,7 @@ import { sendDepositRequestEmail, sendPaymentConfirmationEmail } from '../utils/
 import type { DepositStatus } from '../utils/payments';
 import { formatDepositAmount, getDepositStatusColor } from '../utils/payments';
 import { sendDepositRequestSMS, sendPaymentConfirmationSMS } from '../utils/sms';
+import { EXTENSION_URLS } from '../utils/fhir-extensions';
 
 // Appointment status configuration
 // STATUS FLOW: pending → booked → arrived → fulfilled
@@ -68,6 +70,23 @@ const statusConfig: Record<string, { color: string; label: string }> = {
   cancelled: { color: 'red', label: 'Cancelled' },
   noshow: { color: 'gray', label: 'No Show' },
 };
+
+function parseTreatmentData(sr: ServiceRequest): Record<string, unknown> {
+  const notesExt = sr.extension?.find(
+    (e) => e.url === EXTENSION_URLS.serviceRequest.serviceNotes
+  );
+  if (notesExt?.valueString) {
+    try {
+      const parsed = JSON.parse(notesExt.valueString);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return parsed;
+      }
+    } catch {
+      return { notes: notesExt.valueString };
+    }
+  }
+  return {};
+}
 
 // WORKFLOW: Pending → Booked (via deposit paid/waived) → Arrived → Fulfilled
 // - All bookings start as PENDING (regardless of who creates them)
@@ -154,6 +173,7 @@ export function BookingDetailPage(): ReactElement {
   const [refundModalOpen, setRefundModalOpen] = useState(false);
   const [refundAmount, setRefundAmount] = useState<number>(0);
   const [refundReason, setRefundReason] = useState('');
+  const [treatmentModalServiceRequest, setTreatmentModalServiceRequest] = useState<ServiceRequest | null>(null);
 
   // DEBUG: Log when depositInfo changes
   useEffect(() => {
@@ -192,7 +212,7 @@ export function BookingDetailPage(): ReactElement {
 
         // Determine status from extensions or defaults
         const statusExt = sr.extension?.find(
-          (e) => e.url === 'http://melissaknudson.com/fhir/StructureDefinition/serviceStatus'
+          (e) => e.url === EXTENSION_URLS.serviceRequest.serviceStatus
         );
         // Map status to ServiceStatus type (handles type conversion)
         const rawStatus = statusExt?.valueString || 'pending';
@@ -205,8 +225,9 @@ export function BookingDetailPage(): ReactElement {
         return {
           serviceRequest: sr,
           service: service as ActivityDefinition,
-          photos: [], // TODO: Load photos linked to this ServiceRequest
+          photos: [],
           status,
+          treatmentData: parseTreatmentData(sr),
         };
       })
       .filter(
@@ -237,15 +258,15 @@ export function BookingDetailPage(): ReactElement {
         // Update service status to in-progress
         const updatedExtensions = [
           ...(sr.extension || []).filter(
-            (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-status'
+            (e) => e.url !== EXTENSION_URLS.serviceRequest.serviceStatus
           ),
           {
-            url: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
+            url: EXTENSION_URLS.serviceRequest.serviceStatus,
             valueString: 'in-progress',
           },
         ];
 
-        await medplum.updateResource({
+        const saved = await medplum.updateResource({
           ...sr,
           extension: updatedExtensions,
         });
@@ -260,14 +281,21 @@ export function BookingDetailPage(): ReactElement {
 
         await recordTreatmentMilestone(medplum, patient, sr, 'started', currentUserPractitioner);
 
+        // Update local state to keep card expanded
+        setServiceRequests((prev) =>
+          prev.map((s) => (s.id === serviceRequestId ? saved : s))
+        );
+
+        // Auto-open treatment modal
+        setTreatmentModalServiceRequest(saved);
+
         showNotification({ color: 'green', title: 'Success', message: 'Service started' });
-        await loadData();
       } catch (err) {
         console.error('Error starting service:', err);
         showNotification({ color: 'red', title: 'Error', message: 'Failed to start service' });
       }
     },
-    [patient, serviceRequests, medplum]
+    [patient, serviceRequests, medplum, setServiceRequests]
   );
 
   // Handle signing consent for a service
@@ -313,15 +341,15 @@ export function BookingDetailPage(): ReactElement {
         // Update service status to completed
         const updatedExtensions = [
           ...(sr.extension || []).filter(
-            (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-status'
+            (e) => e.url !== EXTENSION_URLS.serviceRequest.serviceStatus
           ),
           {
-            url: 'http://melissaknudson.com/fhir/StructureDefinition/service-status',
+            url: EXTENSION_URLS.serviceRequest.serviceStatus,
             valueString: 'completed',
           },
         ];
 
-        await medplum.updateResource({
+        const saved = await medplum.updateResource({
           ...sr,
           extension: updatedExtensions,
         });
@@ -336,8 +364,12 @@ export function BookingDetailPage(): ReactElement {
 
         await recordTreatmentMilestone(medplum, patient, sr, 'completed', currentUserPractitioner);
 
+        // Update local state to keep card expanded
+        setServiceRequests((prev) =>
+          prev.map((s) => (s.id === serviceRequestId ? saved : s))
+        );
+
         showNotification({ color: 'green', title: 'Success', message: 'Service completed' });
-        await loadData();
       } catch (err) {
         console.error('Error completing service:', err);
         showNotification({ color: 'red', title: 'Error', message: 'Failed to complete service' });
@@ -358,10 +390,10 @@ export function BookingDetailPage(): ReactElement {
         ...sr,
         extension: [
           ...(sr.extension?.filter(
-            (e) => e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/service-notes'
+            (e) => e.url !== EXTENSION_URLS.serviceRequest.serviceNotes
           ) || []),
           {
-            url: 'http://melissaknudson.com/fhir/StructureDefinition/service-notes',
+            url: EXTENSION_URLS.serviceRequest.serviceNotes,
             valueString: JSON.stringify(data),
           },
         ],
@@ -371,20 +403,31 @@ export function BookingDetailPage(): ReactElement {
       setServiceRequests((prev) =>
         prev.map((s) => (s.id === serviceRequestId ? saved : s))
       );
-
-      showNotification({
-        title: 'Saved',
-        message: 'Treatment data saved',
-        color: 'green',
-      });
     } catch (err) {
       showNotification({
-        title: 'Error',
+        title: 'Error saving treatment data',
         message: normalizeErrorString(err),
         color: 'red',
       });
     }
   }, [serviceRequests, medplum]);
+
+  const handleOpenTreatment = useCallback((serviceRequestId: string) => {
+    const sr = serviceRequests.find((s) => s.id === serviceRequestId);
+    if (sr) {
+      setTreatmentModalServiceRequest(sr);
+    }
+  }, [serviceRequests]);
+
+  const handleTreatmentSaved = useCallback((updated: ServiceRequest) => {
+    setServiceRequests((prev) =>
+      prev.map((s) => (s.id === updated.id ? updated : s))
+    );
+  }, []);
+
+  const handleCloseTreatmentModal = useCallback(() => {
+    setTreatmentModalServiceRequest(null);
+  }, []);
 
   const handleUploadPhotos = useCallback((serviceRequestId: string) => {
     console.log('Upload photos:', serviceRequestId);
@@ -754,7 +797,7 @@ export function BookingDetailPage(): ReactElement {
               details: desc,
               user,
             });
-          } else if (descLower.includes('treatment service')) {
+          } else if (descLower.includes('treatment service') || descLower.includes('treatment milestone')) {
             audits.push({
               timestamp,
               action: desc,
@@ -1694,14 +1737,12 @@ export function BookingDetailPage(): ReactElement {
                       patient={patient as Patient}
                       mainProvider={providers[0]}
                       assistantProvider={providers[1]}
-                      readonly={appointment?.status === 'cancelled' || appointment?.status === 'fulfilled'}
+                      readonly={appointment?.status === 'cancelled' || appointment?.status === 'fulfilled' || role === 'coordinator'}
                       onStartService={handleStartService}
                       onCompleteService={handleCompleteService}
                       onSignConsent={handleSignConsent}
                       onUpdateTreatmentData={handleUpdateTreatmentData}
-                      onUploadPhotos={handleUploadPhotos}
-                      onDeletePhoto={handleDeletePhoto}
-                      onUpdatePhotoMetadata={handleUpdatePhotoMetadata}
+                      onOpenTreatment={handleOpenTreatment}
                     />
                   ))
                 ) : (
@@ -2229,6 +2270,17 @@ export function BookingDetailPage(): ReactElement {
         editAppointment={appointment || undefined}
         editServiceRequests={serviceRequests}
       />
+
+      {/* Treatment Modal */}
+      {treatmentModalServiceRequest && patient && (
+        <TreatmentModal
+          opened={!!treatmentModalServiceRequest}
+          onClose={handleCloseTreatmentModal}
+          serviceRequest={treatmentModalServiceRequest}
+          patient={patient}
+          onSaved={handleTreatmentSaved}
+        />
+      )}
     </Stack>
   );
 }

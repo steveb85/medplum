@@ -4,7 +4,7 @@
 import { Alert, Badge, Button, Divider, Group, Paper, Stack, Text, Title } from '@mantine/core';
 import { showNotification } from '@mantine/notifications';
 import { createReference, getReferenceString, normalizeErrorString } from '@medplum/core';
-import type { Appointment, Attachment, Media, Observation, Patient, Practitioner, Procedure } from '@medplum/fhirtypes';
+import type { Appointment, Attachment, Media, Patient, Practitioner, Procedure } from '@medplum/fhirtypes';
 import { Document, Loading, useMedplum } from '@medplum/react';
 import { IconCircleCheck, IconEdit, IconPlayerPlay } from '@tabler/icons-react';
 import type { JSX } from 'react';
@@ -17,18 +17,18 @@ import { createNotification } from '../notifications/utils';
 import type { InjectionMap } from '../treatment-map';
 import { TreatmentMap } from '../treatment-map';
 import { PhotoUploadSection } from './PhotoUploadSection';
+import { PatientReferencePanel } from '../treatments/shared/PatientReferencePanel';
+import { SOAPNoteSection, DEFAULT_SOAP_NOTE } from '../treatments/shared/SOAPNoteSection';
+import type { SOAPNoteData } from '../treatments/shared/SOAPNoteSection';
+import { ProcedureNoteSection, DEFAULT_PROCEDURE_NOTE } from '../treatments/shared/ProcedureNoteSection';
+import type { ProcedureNoteData } from '../treatments/shared/ProcedureNoteSection';
+import { loadProviderOptions } from '../treatments/shared/loadProviders';
+import type { ProviderOption } from '../treatments/shared/loadProviders';
+import { EXTENSION_URLS } from '../utils/fhir-extensions';
 
 // NOTIFICATION_OPPORTUNITY: When coordinator uploads photos,
 // notify provider that photos are ready
 // Location: After photo upload in PhotoUploadSection
-
-interface TreatmentRecord {
-  procedure: Procedure;
-  observation?: Observation;
-  beforePhotos: Media[];
-  afterPhotos: Media[];
-  injectionMap?: InjectionMap;
-}
 
 // Status configuration
 const statusConfig: Record<string, { color: string; label: string; description: string }> = {
@@ -118,6 +118,9 @@ export function BotoxTreatmentPage(): JSX.Element {
   const [afterPhotos, setAfterPhotos] = useState<Attachment[]>([]);
   const [appointment, setAppointment] = useState<Appointment | undefined>();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [soapNote, setSoapNote] = useState<SOAPNoteData>(DEFAULT_SOAP_NOTE);
+  const [procedureNote, setProcedureNote] = useState<ProcedureNoteData>(DEFAULT_PROCEDURE_NOTE);
+  const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
 
   // Load patient
   useEffect(() => {
@@ -208,6 +211,25 @@ export function BotoxTreatmentPage(): JSX.Element {
           const appt = await medplum.readResource('Appointment', appointmentId);
           setAppointment(appt);
         }
+
+        // Load SOAP note
+        const soapExt = p.extension?.find(
+          (e) => e.url === EXTENSION_URLS.procedure.soapNote
+        );
+        if (soapExt?.valueString) {
+          try { setSoapNote(JSON.parse(soapExt.valueString)); } catch { setSoapNote(DEFAULT_SOAP_NOTE); }
+        }
+
+        // Load procedure note
+        const procNoteExt = p.extension?.find(
+          (e) => e.url === EXTENSION_URLS.procedure.procedureNote
+        );
+        if (procNoteExt?.valueString) {
+          try { setProcedureNote(JSON.parse(procNoteExt.valueString)); } catch { setProcedureNote(DEFAULT_PROCEDURE_NOTE); }
+        }
+
+        // Load practitioners for provider selects
+        loadProviderOptions(medplum).then(setProviderOptions).catch(console.error);
 
         // Load before/after photos
         await reloadPhotos();
@@ -476,7 +498,9 @@ export function BotoxTreatmentPage(): JSX.Element {
                 e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/treatment-areas' &&
                 e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/units-used' &&
                 e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/product-brand' &&
-                e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/injection-map'
+                e.url !== 'http://melissaknudson.com/fhir/StructureDefinition/injection-map' &&
+                e.url !== EXTENSION_URLS.procedure.soapNote &&
+                e.url !== EXTENSION_URLS.procedure.procedureNote
             ) || []),
             {
               url: 'http://melissaknudson.com/fhir/StructureDefinition/treatment-areas',
@@ -515,6 +539,14 @@ export function BotoxTreatmentPage(): JSX.Element {
                 ]),
               ],
             },
+            {
+              url: EXTENSION_URLS.procedure.soapNote,
+              valueString: JSON.stringify(soapNote),
+            },
+            {
+              url: EXTENSION_URLS.procedure.procedureNote,
+              valueString: JSON.stringify(procedureNote),
+            },
           ],
         };
 
@@ -537,7 +569,7 @@ export function BotoxTreatmentPage(): JSX.Element {
         setSaving(false);
       }
     },
-    [procedure, patient, medplum]
+    [procedure, patient, medplum, soapNote, procedureNote]
   );
 
   // Upload a before photo
@@ -806,6 +838,18 @@ export function BotoxTreatmentPage(): JSX.Element {
             isSaving={saving}
           />
         )}
+
+        <Divider />
+
+        <PatientReferencePanel patientId={patientId} />
+
+        <Divider />
+
+        <SOAPNoteSection value={soapNote} onChange={setSoapNote} readonly={!canEditInjections()} />
+
+        <Divider />
+
+        <ProcedureNoteSection value={procedureNote} onChange={setProcedureNote} readonly={!canEditInjections()} supervisingProviderOptions={providerOptions} />
 
   {/* Photo Upload Sections */}
       <PhotoUploadSection

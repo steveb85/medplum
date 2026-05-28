@@ -1497,6 +1497,7 @@ export function CreateAppointmentModalV3({
                 Patient <span style={{ color: 'red' }}>*</span>
               </Text>
               <ResourceInput
+                key={`patient-input-${patient?.id || 'empty'}`}
                 resourceType="Patient"
                 name="patient"
                 placeholder="Search for patient..."

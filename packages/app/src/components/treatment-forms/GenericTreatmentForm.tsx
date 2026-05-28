@@ -1,8 +1,6 @@
-// SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
-// SPDX-License-Identifier: Apache-2.0
-
 import { Box, Stack, Text, Textarea, Title } from '@mantine/core';
 import type { JSX } from 'react';
+import { useState } from 'react';
 
 interface GenericTreatmentFormProps {
   onChange: (data: GenericTreatmentData) => void;
@@ -16,13 +14,14 @@ export interface GenericTreatmentData {
 }
 
 export function GenericTreatmentForm({ onChange, value, readonly }: GenericTreatmentFormProps): JSX.Element {
+  const [localNotes, setLocalNotes] = useState(value.notes || '');
+
   return (
     <Stack gap="md">
       <Title order={5}>
         Treatment Notes
       </Title>
 
-      {/* Notes */}
       <Box>
         <Text size="sm" fw={500} mb="xs">Notes:</Text>
         {readonly ? (
@@ -33,11 +32,13 @@ export function GenericTreatmentForm({ onChange, value, readonly }: GenericTreat
           </Box>
         ) : (
           <Textarea
-            value={value.notes || ''}
-            onChange={(e) => onChange({ ...value, notes: e.target.value })}
+            value={localNotes}
+            onChange={(e) => {
+              setLocalNotes(e.target.value);
+              onChange({ ...value, notes: e.target.value });
+            }}
             placeholder="Enter treatment notes, observations, and any relevant details..."
             minRows={4}
-            disabled={readonly}
           />
         )}
       </Box>

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { Alert, Badge, Button, Divider, Group, Paper, Select, Stack, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { Badge, Button, Divider, Group, Paper, Select, Stack, Text, Textarea, TextInput, Title } from '@mantine/core';
 
 import { showNotification } from '@mantine/notifications';
 import { normalizeErrorString } from '@medplum/core';
@@ -14,6 +14,13 @@ import { useSearchParams } from 'react-router';
 import { TreatmentStatusAlert } from './shared/TreatmentStatusAlert';
 import { TreatmentHeader } from './shared/TreatmentHeader';
 import { useTreatmentData } from './shared/useTreatmentData';
+import { PatientReferencePanel } from './shared/PatientReferencePanel';
+import { SOAPNoteSection, DEFAULT_SOAP_NOTE } from './shared/SOAPNoteSection';
+import type { SOAPNoteData } from './shared/SOAPNoteSection';
+import { ProcedureNoteSection, DEFAULT_PROCEDURE_NOTE } from './shared/ProcedureNoteSection';
+import type { ProcedureNoteData } from './shared/ProcedureNoteSection';
+import { loadProviderOptions } from './shared/loadProviders';
+import type { ProviderOption } from './shared/loadProviders';
 import { PhotoUploadSection } from '../nurse-mel/PhotoUploadSection';
 import { EXTENSION_URLS } from '../utils/fhir-extensions';
 // NOTE: CreateAppointmentModal removed - Phase 2 will implement multi-service booking
@@ -77,6 +84,7 @@ export function LaserTreatmentPage(): JSX.Element {
     loading,
     saving,
     user,
+    patientId,
     setProcedure,
     handleBeginTreatment,
     handleCompleteTreatment,
@@ -97,6 +105,9 @@ export function LaserTreatmentPage(): JSX.Element {
   const [recommendedSessions, setRecommendedSessions] = useState(4);
   const [appointment, setAppointment] = useState<Appointment | undefined>();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [soapNote, setSoapNote] = useState<SOAPNoteData>(DEFAULT_SOAP_NOTE);
+  const [procedureNote, setProcedureNote] = useState<ProcedureNoteData>(DEFAULT_PROCEDURE_NOTE);
+  const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
 
   // Load existing data
   useEffect(() => {
@@ -136,8 +147,29 @@ export function LaserTreatmentPage(): JSX.Element {
           .then((apt) => setAppointment(apt))
           .catch((err) => console.error('Error loading appointment:', err));
       }
+
+      // Load SOAP note
+      const soapExt = procedure.extension?.find(
+        (e) => e.url === EXTENSION_URLS.procedure.soapNote
+      );
+      if (soapExt?.valueString) {
+        try { setSoapNote(JSON.parse(soapExt.valueString)); } catch { setSoapNote(DEFAULT_SOAP_NOTE); }
+      }
+
+      // Load procedure note
+      const procNoteExt = procedure.extension?.find(
+        (e) => e.url === EXTENSION_URLS.procedure.procedureNote
+      );
+      if (procNoteExt?.valueString) {
+        try { setProcedureNote(JSON.parse(procNoteExt.valueString)); } catch { setProcedureNote(DEFAULT_PROCEDURE_NOTE); }
+      }
     }
   }, [procedure, medplum]);
+
+  // Load practitioners for provider selects
+  useEffect(() => {
+    loadProviderOptions(medplum).then(setProviderOptions).catch(console.error);
+  }, [medplum]);
 
   const handleAddSession = useCallback((): void => {
     const newSession: LaserSession = {
@@ -171,7 +203,9 @@ export function LaserTreatmentPage(): JSX.Element {
             (e) =>
               e.url !== EXTENSION_URLS.procedure.laserSessions &&
               e.url !== EXTENSION_URLS.procedure.treatmentNotes &&
-              e.url !== EXTENSION_URLS.procedure.recommendedSessions
+              e.url !== EXTENSION_URLS.procedure.recommendedSessions &&
+              e.url !== EXTENSION_URLS.procedure.soapNote &&
+              e.url !== EXTENSION_URLS.procedure.procedureNote
           ) || []),
           {
             url: EXTENSION_URLS.procedure.laserSessions,
@@ -184,6 +218,14 @@ export function LaserTreatmentPage(): JSX.Element {
           {
             url: EXTENSION_URLS.procedure.treatmentNotes,
             valueString: generalNotes,
+          },
+          {
+            url: EXTENSION_URLS.procedure.soapNote,
+            valueString: JSON.stringify(soapNote),
+          },
+          {
+            url: EXTENSION_URLS.procedure.procedureNote,
+            valueString: JSON.stringify(procedureNote),
           },
         ],
       };
@@ -203,7 +245,7 @@ export function LaserTreatmentPage(): JSX.Element {
         color: 'red',
       });
     }
-  }, [procedure, sessions, recommendedSessions, generalNotes, medplum]);
+  }, [procedure, sessions, recommendedSessions, generalNotes, soapNote, procedureNote, medplum]);
 
   const completedSessions = sessions.length;
 
@@ -375,18 +417,33 @@ export function LaserTreatmentPage(): JSX.Element {
               disabled={!canEdit()}
             />
 
-            {canEdit() && (
-              <Group justify="flex-end">
-                <Button onClick={handleSave} loading={saving}>
-                  Save Treatment Details
-                </Button>
-              </Group>
-            )}
           </Stack>
         </Paper>
 
-      {/* Photos */}
-      <Divider />
+        <Divider />
+
+        <PatientReferencePanel patientId={patientId} />
+
+        <Divider />
+
+        <SOAPNoteSection value={soapNote} onChange={setSoapNote} readonly={!canEdit()} />
+
+        <Divider />
+
+        <ProcedureNoteSection value={procedureNote} onChange={setProcedureNote} readonly={!canEdit()} supervisingProviderOptions={providerOptions} />
+
+        <Divider />
+
+        {canEdit() && (
+          <Group justify="flex-end">
+            <Button onClick={handleSave} loading={saving} size="md">
+              Save All Changes
+            </Button>
+          </Group>
+        )}
+
+        <Divider />
+
       <PhotoUploadSection
         beforePhotos={beforePhotos}
         afterPhotos={afterPhotos}

@@ -39,9 +39,14 @@ interface ServiceFormData {
 }
 
 const SERVICE_CATEGORIES = [
-  { value: 'injection', label: 'Injection' },
-  { value: 'laser', label: 'Laser' },
-  { value: 'consult', label: 'Consultation' },
+  { value: 'neurotoxin', label: 'Neurotoxin' },
+  { value: 'injectable-filler', label: 'Injectable Filler' },
+  { value: 'laser-ipl', label: 'Laser/IPL' },
+  { value: 'laser-resurfacing', label: 'Laser Resurfacing' },
+  { value: 'rf-skin-tightening', label: 'RF Skin Tightening' },
+  { value: 'ultrasound', label: 'Ultrasound' },
+  { value: 'microneedling', label: 'Microneedling' },
+  { value: 'consultation', label: 'Consultation' },
   { value: 'prep', label: 'Prep' },
   { value: 'other', label: 'Other' },
 ];
@@ -62,11 +67,21 @@ const UNIT_TYPES = [
 
 function getCategoryBadgeColor(category: string): string {
   switch (category) {
-    case 'injection':
+    case 'neurotoxin':
       return 'blue';
-    case 'laser':
+    case 'injectable-filler':
+      return 'violet';
+    case 'laser-ipl':
       return 'red';
-    case 'consult':
+    case 'laser-resurfacing':
+      return 'orange';
+    case 'rf-skin-tightening':
+      return 'pink';
+    case 'ultrasound':
+      return 'teal';
+    case 'microneedling':
+      return 'grape';
+    case 'consultation':
       return 'green';
     case 'prep':
       return 'gray';

@@ -3,7 +3,13 @@ import { render, screen, waitFor } from '../test-utils/render';
 import { FillerTreatmentPage } from './FillerTreatmentPage';
 import { MedplumProvider } from '@medplum/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import type { Patient, Procedure, Appointment } from '@medplum/fhirtypes';
+import type { Patient, Procedure, Appointment, Practitioner } from '@medplum/fhirtypes';
+
+// Mock getMedSpaRole to return 'provider' so save button is visible
+jest.mock('../auth/role', () => ({
+  ...jest.requireActual('../auth/role'),
+  getMedSpaRole: () => 'provider',
+}));
 
 describe('FillerTreatmentPage', () => {
   let medplum: MockClient;
@@ -61,6 +67,41 @@ describe('FillerTreatmentPage', () => {
     test('should display patient name', async () => {
       renderPage();
       expect(await screen.findByText(/Jane Doe/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('Save Flow', () => {
+    test('should persist filler data on save', async () => {
+      const updateSpy = jest.spyOn(medplum, 'updateResource');
+
+      renderPage();
+
+      // Wait for page to load and save button to appear
+      await screen.findAllByText('Filler Treatment');
+      const saveButton = await screen.findByText('Save All Changes');
+
+      // Click save
+      saveButton.click();
+
+      // Wait for save to complete
+      await waitFor(() => {
+        expect(updateSpy).toHaveBeenCalled();
+      });
+
+      // Verify the updated procedure has expected structure
+      const updatedProcedure = updateSpy.mock.calls[0][0] as Procedure;
+      expect(updatedProcedure.resourceType).toBe('Procedure');
+      expect(updatedProcedure.extension).toBeDefined();
+    });
+
+    test('should render SOAP note section', async () => {
+      renderPage();
+      expect(await screen.findByText('SOAP Note')).toBeInTheDocument();
+    });
+
+    test('should render procedure note section', async () => {
+      renderPage();
+      expect(await screen.findByText('Procedure Note')).toBeInTheDocument();
     });
   });
 });

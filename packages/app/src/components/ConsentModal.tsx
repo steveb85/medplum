@@ -374,11 +374,9 @@ export function ConsentModal({
                     height={100}
                   />
 
-                  {patientSignature && (
-                    <Text size="xs" c="dimmed">
-                      Signed: {new Date().toLocaleDateString()}
-                    </Text>
-                  )}
+                  <Text size="xs" c="dimmed" style={{ minHeight: '1.2em' }}>
+                    {patientSignature ? `Signed: ${new Date().toLocaleDateString()}` : ''}
+                  </Text>
                 </Stack>
               </Card>
 
@@ -412,11 +410,9 @@ export function ConsentModal({
                     disabled={!witness}
                   />
 
-                  {witnessSignature && (
-                    <Text size="xs" c="dimmed">
-                      Signed: {new Date().toLocaleDateString()}
-                    </Text>
-                  )}
+                  <Text size="xs" c="dimmed" style={{ minHeight: '1.2em' }}>
+                    {witnessSignature ? `Signed: ${new Date().toLocaleDateString()}` : ''}
+                  </Text>
                 </Stack>
               </Card>
             </Stack>

@@ -13,3 +13,10 @@ export { getTreatmentType, getTreatmentPageRoute } from './shared/getTreatmentTy
 export { TreatmentStatusAlert, statusConfig } from './shared/TreatmentStatusAlert';
 export { TreatmentHeader } from './shared/TreatmentHeader';
 export { useTreatmentData } from './shared/useTreatmentData';
+export { PatientReferencePanel } from './shared/PatientReferencePanel';
+export { SOAPNoteSection, DEFAULT_SOAP_NOTE } from './shared/SOAPNoteSection';
+export type { SOAPNoteData } from './shared/SOAPNoteSection';
+export { ProcedureNoteSection, DEFAULT_PROCEDURE_NOTE } from './shared/ProcedureNoteSection';
+export type { ProcedureNoteData } from './shared/ProcedureNoteSection';
+export { loadProviderOptions } from './shared/loadProviders';
+export type { ProviderOption } from './shared/loadProviders';

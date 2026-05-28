@@ -226,6 +226,9 @@ export function AppRoutes(): JSX.Element {
       <Route path="treatments" element={<TreatmentsTabWrapper />} />
       <Route path="patient-info" element={<PatientEditPage />} />
       <Route path="botox-treatment" element={<BotoxTreatmentPage />} />
+      <Route path="filler-treatment" element={<FillerTreatmentPage />} />
+      <Route path="laser-treatment" element={<LaserTreatmentPage />} />
+      <Route path="consultation-treatment" element={<ConsultationTreatmentPage />} />
       <Route path="tools" element={<ToolsPage />} />
           <Route path="payload" element={<CommunicationPayloadPage />} />
           <Route path="profiles" element={<ProfilesPage />} />

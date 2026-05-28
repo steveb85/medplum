@@ -40,6 +40,7 @@ export const EXTENSION_URLS = {
     room: 'http://melissaknudson.com/fhir/StructureDefinition/room',
     depositInfo: 'http://melissaknudson.com/fhir/StructureDefinition/deposit-info',
     practitionerColor: 'http://melissaknudson.com/fhir/StructureDefinition/practitioner-color',
+    supervisingProvider: 'http://melissaknudson.com/fhir/StructureDefinition/supervising-provider',
   },
   // Procedure (treatment) extensions
   procedure: {
